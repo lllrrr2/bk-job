@@ -24,146 +24,174 @@
 
 package com.tencent.bk.job.manage.service;
 
-import com.tencent.bk.job.common.cc.model.InstanceTopologyDTO;
-import com.tencent.bk.job.common.model.BaseSearchCondition;
-import com.tencent.bk.job.common.model.PageData;
-import com.tencent.bk.job.common.model.dto.ApplicationHostInfoDTO;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
-import com.tencent.bk.job.common.model.dto.DynamicGroupInfoDTO;
-import com.tencent.bk.job.common.model.vo.HostInfoVO;
-import com.tencent.bk.job.manage.common.consts.whiteip.ActionScopeEnum;
-import com.tencent.bk.job.manage.model.web.request.AgentStatisticsReq;
-import com.tencent.bk.job.manage.model.web.request.ipchooser.AppTopologyTreeNode;
-import com.tencent.bk.job.manage.model.web.request.ipchooser.ListHostByBizTopologyNodesReq;
-import com.tencent.bk.job.manage.model.web.vo.CcTopologyNodeVO;
-import com.tencent.bk.job.manage.model.web.vo.NodeInfoVO;
-import com.tencent.bk.job.manage.model.web.vo.index.AgentStatistics;
+import com.tencent.bk.job.common.constant.ResourceScopeTypeEnum;
+import com.tencent.bk.job.common.exception.NotFoundException;
+import com.tencent.bk.job.common.model.dto.ApplicationDTO;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
- * @since 7/11/2019 19:10
+ * 业务Service
  */
 public interface ApplicationService {
 
-    void setWhiteIPService(WhiteIPService whiteIPService);
-
     /**
-     * 根据当前业务Id查询包含该业务的业务集与全业务
+     * 判断业务是否存在
      *
-     * @param appId
-     * @return
+     * @param bizId 业务ID
+     * @return 是否存在
      */
-    List<Long> getFullAppIds(Long appId);
+    boolean existBiz(long bizId);
 
     /**
-     * 根据给定条件查询主机信息
+     * 根据资源范围获取Job业务ID
      *
-     * @param applicationHostInfoCondition 业务查询条件
-     * @param baseSearchCondition          通用查询分页条件
-     * @return 带分页信息的主机信息列表
+     * @param resourceScope 资源范围
+     * @return Job业务ID
      */
-    PageData<ApplicationHostInfoDTO> listAppHost(ApplicationHostInfoDTO applicationHostInfoCondition,
-                                                 BaseSearchCondition baseSearchCondition);
+    Long getAppIdByScope(ResourceScope resourceScope);
 
     /**
-     * 查询指定业务的拓扑树
+     * 根据Job业务ID获取资源范围
      *
-     * @param username 用户名
-     * @param appId    业务 ID
-     * @return 拓扑结构树
+     * @param appId Job业务ID
+     * @return 资源范围
      */
-    CcTopologyNodeVO listAppTopologyTree(String username, Long appId);
+    ResourceScope getScopeByAppId(Long appId);
 
     /**
-     * 查询带主机信息的业务的拓扑树
+     * 批量根据业务ID列表获取资源范围
      *
-     * @param username 用户名
-     * @param appId    业务 ID
-     * @return 带主机信息的拓扑结构树
+     * @param appIds 业务ID列表
+     * @return 业务ID与资源范围的映射关系Map
      */
-    CcTopologyNodeVO listAppTopologyHostTree(String username, Long appId);
+    Map<Long, ResourceScope> getScopeByAppIds(Collection<Long> appIds);
 
     /**
-     * 查询带主机数量信息的业务拓扑树
+     * 批量根据资源范围获取业务ID
      *
-     * @param username 用户名
-     * @param appId    业务 ID
-     * @return 带主机数量信息的拓扑结构树
+     * @param scopeList 资源范围列表
+     * @return 资源范围与业务ID的映射关系Map
      */
-    CcTopologyNodeVO listAppTopologyHostCountTree(String username, Long appId);
-
-    PageData<HostInfoVO> listHostByBizTopologyNodes(String username, Long appId, ListHostByBizTopologyNodesReq req);
-
-    PageData<String> listIPByBizTopologyNodes(String username, Long appId, ListHostByBizTopologyNodesReq req);
-
-    List<AppTopologyTreeNode> getAppTopologyTreeNodeDetail(String username, Long appId,
-                                                           List<AppTopologyTreeNode> treeNodeList);
-
-    List<List<InstanceTopologyDTO>> queryNodePaths(String username, Long appId, List<InstanceTopologyDTO> nodeList);
-
-    List<NodeInfoVO> getHostsByNode(String username, Long appId, List<AppTopologyTreeNode> treeNodeList);
+    Map<ResourceScope, Long> getAppIdByScopeList(Collection<ResourceScope> scopeList);
 
     /**
-     * 获取业务下动态分组列表
+     * 根据Job业务ID获取Job业务
      *
-     * @param appId    业务 ID
-     * @param username 用户名
-     * @return 动态分组信息列表
+     * @param appId Job业务ID
+     * @return Job业务
+     * @throws NotFoundException 业务不存在
      */
-    List<DynamicGroupInfoDTO> getDynamicGroupList(String username, Long appId);
+    ApplicationDTO getAppByAppId(Long appId) throws NotFoundException;
 
     /**
-     * 根据动态分组 ID 列表批量获取带主机信息的动态分组信息列表
+     * 根据资源范围拉取业务信息
      *
-     * @param username           用户名
-     * @param appId              业务 ID
-     * @param dynamicGroupIdList 动态分组 ID 列表
-     * @return 带主机信息的动态分组信息列表
-     */
-    List<DynamicGroupInfoDTO> getDynamicGroupHostList(String username, Long appId, List<String> dynamicGroupIdList);
-
-    /**
-     * 根据 IP 列表查询主机信息
-     *
-     * @param username    用户名
-     * @param appId       业务 ID
-     * @param checkIpList 待查询的 IP 列表
-     * @return 主机信息列表
-     */
-    List<HostInfoVO> getHostsByIp(String username, Long appId, ActionScopeEnum actionScope, List<String> checkIpList);
-
-    List<ApplicationInfoDTO> listAllAppsFromLocalDB();
-
-    /**
-     * 判断用户是否有业务权限
-     * <p>
-     * 接入权限中心后不应使用本接口
-     *
-     * @param appId    业务 ID
-     * @param username 用户名
-     * @return 是否有业务权限
-     */
-    @Deprecated
-    boolean checkAppPermission(long appId, String username);
-
-    /**
-     * 根据业务 ID 拉取业务信息
-     *
-     * @param appId 业务 ID
+     * @param scope 资源范围
      * @return 业务信息
      */
-    ApplicationInfoDTO getAppInfoById(Long appId);
+    ApplicationDTO getAppByScope(ResourceScope scope);
 
-    List<HostInfoVO> listHostByBizTopologyNodes(String username, Long appId, List<AppTopologyTreeNode> appTopoNodeList);
+    /**
+     * 根据资源范围拉取业务信息
+     *
+     * @param scopeType 资源范围类型
+     * @param scopeId   资源范围ID
+     * @return 业务
+     * @throws NotFoundException 业务/业务集不存在时抛出异常
+     */
+    ApplicationDTO getAppByScope(String scopeType, String scopeId) throws NotFoundException;
 
-    AgentStatistics getAgentStatistics(String username, Long appId, AgentStatisticsReq agentStatisticsReq);
+    /**
+     * 根据Job业务ID批量查询Job业务
+     *
+     * @param appIds Job业务Id列表
+     * @return Job业务列表
+     */
+    List<ApplicationDTO> listAppsByAppIds(Collection<Long> appIds);
 
-    void fillAgentStatus(List<ApplicationHostInfoDTO> hosts);
+    /**
+     * 根据业务ID批量查询业务
+     *
+     * @param bizIds 业务Id列表
+     * @return 业务列表
+     */
+    List<ApplicationDTO> listBizAppsByBizIds(Collection<Long> bizIds);
 
-    Long createApp(ApplicationInfoDTO applicationInfoDTO);
+    /**
+     * 根据目标业务appId查询与该业务关联的业务集、全业务的appId（包含自身）
+     *
+     * @param appId 目标业务appId
+     * @return 与目标业务关联的业务集、全业务的appId（包含自身）
+     */
+    List<Long> getRelatedAppIds(Long appId);
 
-    Integer countApps(String username);
+    /**
+     * 根据资源范围类型获取业务列表
+     *
+     * @param scopeType 资源范围类型
+     * @return 业务列表
+     */
+    List<ApplicationDTO> listAppsByScopeType(ResourceScopeTypeEnum scopeType);
 
-    Boolean existsHost(Long appId, String ip);
+    /**
+     * 获取作业平台所有业务
+     *
+     * @return 业务列表
+     */
+    List<ApplicationDTO> listAllApps();
+
+    /**
+     * 创建业务
+     *
+     * @param application 业务
+     * @return 业务ID
+     */
+    Long createApp(ApplicationDTO application);
+
+    /**
+     * 获取Job业务数量
+     *
+     * @return 业务数量
+     */
+    Integer countApps();
+
+    /**
+     * 更新业务
+     *
+     * @param application 业务
+     */
+    void updateApp(ApplicationDTO application);
+
+    /**
+     * 删除业务
+     *
+     * @param appId Job业务ID
+     */
+    void deleteApp(Long appId);
+
+    /**
+     * 恢复已删除的Job业务
+     *
+     * @param appId Job业务ID
+     */
+    void restoreDeletedApp(long appId);
+
+    /**
+     * 根据资源范围获取业务，包含已经被逻辑删除的业务
+     *
+     * @param scope 资源范围
+     * @return 业务
+     */
+    ApplicationDTO getAppByScopeIncludingDeleted(ResourceScope scope);
+
+    /**
+     * 获取作业平台所有已删除的业务
+     *
+     * @return 业务列表
+     */
+    List<ApplicationDTO> listAllDeletedApps();
 }

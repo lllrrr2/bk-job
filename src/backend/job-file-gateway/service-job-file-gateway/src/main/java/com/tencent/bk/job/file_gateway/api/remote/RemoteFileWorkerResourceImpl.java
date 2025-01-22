@@ -25,14 +25,14 @@
 package com.tencent.bk.job.file_gateway.api.remote;
 
 import com.tencent.bk.job.common.model.Response;
-import com.tencent.bk.job.file_gateway.consts.TaskStatusEnum;
+import com.tencent.bk.job.file_gateway.model.dto.FileTaskProgressDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileWorkerDTO;
 import com.tencent.bk.job.file_gateway.model.req.inner.HeartBeatReq;
 import com.tencent.bk.job.file_gateway.model.req.inner.OffLineAndReDispatchReq;
 import com.tencent.bk.job.file_gateway.model.req.inner.UpdateFileSourceTaskReq;
 import com.tencent.bk.job.file_gateway.service.FileSourceTaskService;
 import com.tencent.bk.job.file_gateway.service.FileWorkerService;
-import com.tencent.bk.job.file_gateway.service.ReDispatchService;
+import com.tencent.bk.job.file_gateway.service.dispatch.ReDispatchService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,17 +65,10 @@ public class RemoteFileWorkerResourceImpl implements RemoteFileWorkerResource {
 
     @Override
     public Response<String> updateFileSourceTask(UpdateFileSourceTaskReq updateFileSourceTaskReq) {
-        log.debug("Input=({})", updateFileSourceTaskReq);
-        String taskId = updateFileSourceTaskReq.getFileSourceTaskId();
-        String filePath = updateFileSourceTaskReq.getFilePath();
-        String downloadPath = updateFileSourceTaskReq.getDownloadPath();
-        Long fileSize = updateFileSourceTaskReq.getFileSize();
-        String speed = updateFileSourceTaskReq.getSpeed();
-        Integer progress = updateFileSourceTaskReq.getProgress();
-        String content = updateFileSourceTaskReq.getContent();
-        TaskStatusEnum status = updateFileSourceTaskReq.getStatus();
-        return Response.buildSuccessResp(fileSourceTaskService.updateFileSourceTask(taskId, filePath,
-            downloadPath, fileSize, speed, progress, content, status));
+        log.info("updateFileSourceTaskReq=({})", updateFileSourceTaskReq);
+        FileTaskProgressDTO fileTaskProgressDTO =
+            FileTaskProgressDTO.fromUpdateFileSourceTaskReq(updateFileSourceTaskReq);
+        return Response.buildSuccessResp(fileSourceTaskService.updateFileSourceTask(fileTaskProgressDTO));
     }
 
     @Override

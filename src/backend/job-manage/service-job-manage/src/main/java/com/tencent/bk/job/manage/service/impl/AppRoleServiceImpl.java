@@ -25,13 +25,21 @@
 package com.tencent.bk.job.manage.service.impl;
 
 import com.tencent.bk.job.common.cc.model.AppRoleDTO;
-import com.tencent.bk.job.common.cc.sdk.CcClient;
-import com.tencent.bk.job.common.cc.sdk.CcClientFactory;
+import com.tencent.bk.job.common.cc.sdk.BizSetCmdbClient;
+import com.tencent.bk.job.common.cc.sdk.CmdbClientFactory;
+import com.tencent.bk.job.common.cc.sdk.IBizCmdbClient;
+import com.tencent.bk.job.common.constant.ResourceScopeTypeEnum;
+import com.tencent.bk.job.common.model.dto.ApplicationDTO;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.manage.service.AppRoleService;
+import com.tencent.bk.job.manage.service.ApplicationService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -39,15 +47,35 @@ import java.util.Set;
 @Service
 public class AppRoleServiceImpl implements AppRoleService {
 
+    private final ApplicationService applicationService;
+    private final BizSetCmdbClient bizSetCmdbClient;
+
+    @Autowired
+    public AppRoleServiceImpl(@Lazy ApplicationService applicationService,
+                              BizSetCmdbClient bizSetCmdbClient) {
+        this.applicationService = applicationService;
+        this.bizSetCmdbClient = bizSetCmdbClient;
+    }
+
     @Override
     public List<AppRoleDTO> listAppRoles(String lang) {
-        CcClient ccClient = CcClientFactory.getCcClient(lang);
-        return ccClient.getAppRoleList();
+        IBizCmdbClient bizCmdbClient = CmdbClientFactory.getCmdbClient(lang);
+        return bizCmdbClient.listRoles();
     }
 
     @Override
     public Set<String> listAppUsersByRole(Long appId, String role) {
-        CcClient ccClient = CcClientFactory.getCcClient(JobContextUtil.getUserLang());
-        return ccClient.getAppUsersByRole(appId, role);
+        ApplicationDTO application = applicationService.getAppByAppId(appId);
+        ResourceScope scope = application.getScope();
+        if (scope.getType() == ResourceScopeTypeEnum.BIZ) {
+            IBizCmdbClient bizCmdbClient = CmdbClientFactory.getCmdbClient(JobContextUtil.getUserLang());
+            return bizCmdbClient.listUsersByRole(Long.valueOf(scope.getId()), role);
+        } else if (scope.getType() == ResourceScopeTypeEnum.BIZ_SET) {
+            // 业务集当前只支持运维人员
+            return bizSetCmdbClient.listUsersByRole(Long.valueOf(scope.getId()), role);
+        } else {
+            log.warn("Not supported resourceScope:{}", scope);
+        }
+        return Collections.emptySet();
     }
 }

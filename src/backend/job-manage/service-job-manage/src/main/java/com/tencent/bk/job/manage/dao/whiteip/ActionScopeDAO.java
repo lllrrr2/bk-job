@@ -31,11 +31,6 @@ import org.jooq.DSLContext;
 import java.util.List;
 
 public interface ActionScopeDAO {
-    Long insertActionScope(DSLContext dslContext, ActionScopeDTO actionScopeDTO);
-
-    int deleteActionScopeById(DSLContext dslContext, Long id);
-
-    ActionScopeDTO getActionScopeById(Long id);
 
     ActionScopeDTO getActionScopeByCode(String code);
 
@@ -43,5 +38,5 @@ public interface ActionScopeDAO {
 
     List<ActionScopeDTO> listActionScopeDTO();
 
-    int updateActionScopeById(DSLContext dslContext, ActionScopeDTO actionScopeDTO);
+    List<ActionScopeDTO> getActionScopeByIds(List<Long> scopeIdList);
 }

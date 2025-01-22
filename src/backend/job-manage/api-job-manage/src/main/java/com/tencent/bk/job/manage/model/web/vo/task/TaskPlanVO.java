@@ -26,6 +26,8 @@ package com.tencent.bk.job.manage.model.web.vo.task;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.common.util.check.IlegalCharChecker;
 import com.tencent.bk.job.common.util.check.MaxLengthChecker;
@@ -64,11 +66,16 @@ public class TaskPlanVO {
     private Long id;
 
     /**
-     * 业务 ID
+     * 资源范围类型
      */
-    @ApiModelProperty(value = "业务 ID")
-    private Long appId;
+    @ApiModelProperty(value = "资源范围类型", allowableValues = "biz-业务,biz_set-业务集")
+    private String scopeType;
 
+    /**
+     * 资源范围ID
+     */
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
     /**
      * 模版 ID
      */
@@ -181,7 +188,8 @@ public class TaskPlanVO {
     @ApiModelProperty(value = "是否有删除权限")
     private Boolean canDelete;
 
-    public boolean validateForImport() {
+    public void validateForImport() throws InvalidParamException {
+        JobContextUtil.setAllowMigration(true);
         // 模板名称检查
         try {
             StringCheckHelper stringCheckHelper = new StringCheckHelper(new TrimChecker(), new NotEmptyChecker(),
@@ -189,41 +197,26 @@ public class TaskPlanVO {
             this.setName(stringCheckHelper.checkAndGetResult(this.getName()));
         } catch (StringCheckException e) {
             log.warn("Template name is invalid:", e);
-            return false;
+            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
         boolean isCreate = false;
         if (CollectionUtils.isNotEmpty(stepList)) {
             for (TaskStepVO step : stepList) {
-                if (!step.validate(isCreate)) {
-                    JobContextUtil.addDebugMessage("Validate step failed!");
-                    return false;
-                }
-                try {
-                    StringCheckHelper stepCheckHelper = new StringCheckHelper(new TrimChecker(), new NotEmptyChecker(),
-                        new IlegalCharChecker(), new MaxLengthChecker(60));
-                    step.setName(stepCheckHelper.checkAndGetResult(step.getName()));
-                } catch (StringCheckException e) {
-                    log.warn("Step name is invalid:", e);
-                    return false;
-                }
+                step.validate(isCreate);
             }
         }
         if (CollectionUtils.isNotEmpty(variableList)) {
             Set<String> variableNameList = new HashSet<>();
             for (TaskVariableVO variable : variableList) {
-                if (!variable.validate(isCreate)) {
-                    JobContextUtil.addDebugMessage("Validate variable failed!");
-                    return false;
-                }
+                variable.validate(isCreate);
                 if (variableNameList.contains(variable.getName())) {
-                    JobContextUtil.addDebugMessage("Variable name duplicated!");
-                    return false;
+                    log.warn("Variable name duplicated! name: {}", variable.getName());
+                    throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
                 }
                 if (variable.getDelete() != null && variable.getDelete() != 1) {
                     variableNameList.add(variable.getName());
                 }
             }
         }
-        return true;
     }
 }

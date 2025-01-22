@@ -24,7 +24,6 @@
 
 package com.tencent.bk.job.upgrader.iam;
 
-import com.tencent.bk.job.common.iam.config.EsbConfiguration;
 import com.tencent.bk.job.common.iam.util.BusinessAuthHelper;
 import com.tencent.bk.sdk.iam.config.IamConfiguration;
 import com.tencent.bk.sdk.iam.constants.SystemId;
@@ -69,10 +68,6 @@ public class JobIamHelper {
         return new IamConfiguration(SystemId.JOB, appCode, appSecret, iamBaseUrl);
     }
 
-    public EsbConfiguration esbConfiguration() {
-        return new EsbConfiguration(esbUrl, false);
-    }
-
     public HttpClientService httpClientService() {
         return new DefaultHttpClientServiceImpl(iamConfiguration());
     }
@@ -86,10 +81,10 @@ public class JobIamHelper {
     }
 
     public AuthHelper authHelper() {
-        return new AuthHelper(tokenService(), policyService(), iamConfiguration());
+        return new AuthHelper(tokenService(), policyService(), null, iamConfiguration());
     }
 
     public BusinessAuthHelper businessAuthHelper() {
-        return new BusinessAuthHelper(tokenService(), policyService(), iamConfiguration());
+        return new BusinessAuthHelper(tokenService(), policyService(), null, iamConfiguration());
     }
 }

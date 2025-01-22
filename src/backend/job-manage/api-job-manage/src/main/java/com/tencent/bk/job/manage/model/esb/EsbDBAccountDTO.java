@@ -25,10 +25,13 @@
 package com.tencent.bk.job.manage.model.esb;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeDTO;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 @Data
-public class EsbDBAccountDTO {
+@EqualsAndHashCode(callSuper = true)
+public class EsbDBAccountDTO extends EsbAppScopeDTO {
 
     @JsonProperty("db_account_id")
     private Long id;
@@ -39,9 +42,6 @@ public class EsbDBAccountDTO {
 
     @JsonProperty("db_alias")
     private String alias;
-
-    @JsonProperty("bk_biz_id")
-    private Long appId;
 
     @JsonProperty("create_time")
     private String createTime;

@@ -24,50 +24,67 @@
 
 package com.tencent.bk.job.execute.api.esb.v3;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbResp;
+import com.tencent.bk.job.common.esb.util.EsbDTOAppScopeMappingHelper;
 import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.exception.NotFoundException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
+import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.ValidateResult;
-import com.tencent.bk.job.execute.api.esb.v2.impl.JobQueryCommonProcessor;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
 import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
-import com.tencent.bk.job.execute.model.GseTaskIpLogDTO;
+import com.tencent.bk.job.execute.engine.model.ExecuteObject;
+import com.tencent.bk.job.execute.model.ExecuteObjectTask;
 import com.tencent.bk.job.execute.model.StepInstanceBaseDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.esb.v3.EsbJobInstanceStatusV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.request.EsbGetJobInstanceStatusV3Request;
-import com.tencent.bk.job.execute.service.GseTaskLogService;
+import com.tencent.bk.job.execute.service.FileExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.ScriptExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceService;
 import com.tencent.bk.job.execute.service.TaskInstanceService;
+import com.tencent.bk.job.logsvr.consts.FileTaskModeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @Slf4j
-public class EsbGetJobInstanceStatusV3ResourceImpl
-    extends JobQueryCommonProcessor
-    implements EsbGetJobInstanceStatusV3Resource {
+public class EsbGetJobInstanceStatusV3ResourceImpl implements EsbGetJobInstanceStatusV3Resource {
 
     private final TaskInstanceService taskInstanceService;
-    private final GseTaskLogService gseTaskLogService;
-    private final MessageI18nService i18nService;
+    private final ScriptExecuteObjectTaskService scriptExecuteObjectTaskService;
+    private final FileExecuteObjectTaskService fileExecuteObjectTaskService;
+    private final AppScopeMappingService appScopeMappingService;
+    private final StepInstanceService stepInstanceService;
 
-    public EsbGetJobInstanceStatusV3ResourceImpl(MessageI18nService i18nService, GseTaskLogService gseTaskLogService,
-                                                 TaskInstanceService taskInstanceService) {
-        this.i18nService = i18nService;
-        this.gseTaskLogService = gseTaskLogService;
+    public EsbGetJobInstanceStatusV3ResourceImpl(TaskInstanceService taskInstanceService,
+                                                 ScriptExecuteObjectTaskService scriptExecuteObjectTaskService,
+                                                 FileExecuteObjectTaskService fileExecuteObjectTaskService,
+                                                 AppScopeMappingService appScopeMappingService,
+                                                 StepInstanceService stepInstanceService) {
         this.taskInstanceService = taskInstanceService;
+        this.scriptExecuteObjectTaskService = scriptExecuteObjectTaskService;
+        this.fileExecuteObjectTaskService = fileExecuteObjectTaskService;
+        this.appScopeMappingService = appScopeMappingService;
+        this.stepInstanceService = stepInstanceService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v3_get_job_instance_status"})
-    public EsbResp<EsbJobInstanceStatusV3DTO> getJobInstanceStatusUsingPost(EsbGetJobInstanceStatusV3Request request) {
+    @AuditEntry(actionId = ActionId.VIEW_HISTORY)
+    public EsbResp<EsbJobInstanceStatusV3DTO> getJobInstanceStatusUsingPost(
+        String username,
+        String appCode,
+        @AuditRequestBody EsbGetJobInstanceStatusV3Request request) {
         ValidateResult checkResult = checkRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Get job instance status request is illegal!");
@@ -76,12 +93,11 @@ public class EsbGetJobInstanceStatusV3ResourceImpl
 
         long taskInstanceId = request.getTaskInstanceId();
 
-        TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(request.getTaskInstanceId());
+        TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(
+            username, request.getAppResourceScope().getAppId(), request.getTaskInstanceId());
 
-        authViewTaskInstance(request.getUserName(), request.getAppId(), taskInstance);
-
-
-        List<StepInstanceBaseDTO> stepInstances = taskInstanceService.listStepInstanceByTaskInstanceId(taskInstanceId);
+        List<StepInstanceBaseDTO> stepInstances =
+            stepInstanceService.listBaseStepInstanceByTaskInstanceId(taskInstanceId);
         if (stepInstances == null || stepInstances.isEmpty()) {
             log.warn("Get job instance status by taskInstanceId:{}, stepInstanceList is empty!", taskInstanceId);
             throw new NotFoundException(ErrorCode.STEP_INSTANCE_NOT_EXIST);
@@ -95,10 +111,6 @@ public class EsbGetJobInstanceStatusV3ResourceImpl
     }
 
     private ValidateResult checkRequest(EsbGetJobInstanceStatusV3Request request) {
-        if (request.getAppId() == null || request.getAppId() < 1) {
-            log.warn("App is empty or illegal, appId={}", request.getAppId());
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "bk_biz_id");
-        }
         if (request.getTaskInstanceId() == null || request.getTaskInstanceId() < 1) {
             log.warn("TaskInstanceId is empty or illegal, taskInstanceId={}", request.getTaskInstanceId());
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "job_instance_id");
@@ -110,17 +122,16 @@ public class EsbGetJobInstanceStatusV3ResourceImpl
                                                                    List<StepInstanceBaseDTO> stepInstances,
                                                                    boolean isReturnIpResult) {
         EsbJobInstanceStatusV3DTO jobInstanceStatus = new EsbJobInstanceStatusV3DTO();
-        jobInstanceStatus.setFinished(!taskInstance.getStatus().equals(RunStatusEnum.BLANK.getValue())
-            && !taskInstance.getStatus().equals(RunStatusEnum.RUNNING.getValue()));
+        jobInstanceStatus.setFinished(RunStatusEnum.isFinishedStatus(taskInstance.getStatus()));
 
         EsbJobInstanceStatusV3DTO.JobInstance jobInstance = new EsbJobInstanceStatusV3DTO.JobInstance();
-        jobInstance.setAppId(taskInstance.getAppId());
+        EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(taskInstance.getAppId(), jobInstance);
         jobInstance.setId(taskInstance.getId());
         jobInstance.setName(taskInstance.getName());
         jobInstance.setCreateTime(taskInstance.getCreateTime());
         jobInstance.setStartTime(taskInstance.getStartTime());
         jobInstance.setEndTime(taskInstance.getEndTime());
-        jobInstance.setStatus(taskInstance.getStatus());
+        jobInstance.setStatus(taskInstance.getStatus().getValue());
         jobInstance.setTotalTime(taskInstance.getTotalTime());
         jobInstanceStatus.setJobInstance(jobInstance);
 
@@ -132,27 +143,42 @@ public class EsbGetJobInstanceStatusV3ResourceImpl
             stepInst.setCreateTime(stepInstance.getCreateTime());
             stepInst.setEndTime(stepInstance.getEndTime());
             stepInst.setStartTime(stepInstance.getStartTime());
-            stepInst.setType(stepInstance.getExecuteType());
+            stepInst.setType(stepInstance.getExecuteType().getValue());
             stepInst.setExecuteCount(stepInstance.getExecuteCount());
-            stepInst.setStatus(stepInstance.getStatus());
+            stepInst.setStatus(stepInstance.getStatus().getValue());
             stepInst.setTotalTime(stepInstance.getTotalTime());
 
             if (isReturnIpResult) {
                 List<EsbJobInstanceStatusV3DTO.IpResult> stepIpResults = new ArrayList<>();
-                List<GseTaskIpLogDTO> ipLogList = gseTaskLogService.getIpLog(stepInstance.getId(),
-                    stepInstance.getExecuteCount(), true);
-                if (CollectionUtils.isNotEmpty(ipLogList)) {
-                    for (GseTaskIpLogDTO ipLog : ipLogList) {
+                List<ExecuteObjectTask> executeObjectTaskList = null;
+                if (stepInstance.isScriptStep()) {
+                    executeObjectTaskList = scriptExecuteObjectTaskService.listTasks(stepInstance,
+                        stepInstance.getExecuteCount(), null);
+                } else if (stepInstance.isFileStep()) {
+                    executeObjectTaskList = fileExecuteObjectTaskService.listTasks(stepInstance,
+                        stepInstance.getExecuteCount(), null);
+                    if (CollectionUtils.isNotEmpty(executeObjectTaskList)) {
+                        // 如果是文件分发任务，只返回目标Agent结果
+                        executeObjectTaskList = executeObjectTaskList.stream()
+                            .filter(executeObjectTask ->
+                                executeObjectTask.getFileTaskMode() == FileTaskModeEnum.DOWNLOAD)
+                            .collect(Collectors.toList());
+                    }
+                }
+                if (CollectionUtils.isNotEmpty(executeObjectTaskList)) {
+                    for (ExecuteObjectTask executeObjectTask : executeObjectTaskList) {
+                        ExecuteObject executeObject = executeObjectTask.getExecuteObject();
                         EsbJobInstanceStatusV3DTO.IpResult stepIpResult = new EsbJobInstanceStatusV3DTO.IpResult();
-                        stepIpResult.setCloudAreaId(ipLog.getCloudAreaId());
-                        stepIpResult.setIp(ipLog.getIp());
-                        stepIpResult.setExitCode(ipLog.getExitCode());
-                        stepIpResult.setErrorCode(ipLog.getErrCode());
-                        stepIpResult.setStartTime(ipLog.getStartTime());
-                        stepIpResult.setEndTime(ipLog.getEndTime());
-                        stepIpResult.setTotalTime(ipLog.getTotalTime());
-                        stepIpResult.setTag(ipLog.getTag());
-                        stepIpResult.setStatus(ipLog.getStatus());
+                        stepIpResult.setHostId(executeObject.getHost().getHostId());
+                        stepIpResult.setCloudAreaId(executeObject.getHost().getBkCloudId());
+                        stepIpResult.setIp(executeObject.getHost().getIp());
+                        stepIpResult.setExitCode(executeObjectTask.getExitCode());
+                        stepIpResult.setErrorCode(executeObjectTask.getErrorCode());
+                        stepIpResult.setStartTime(executeObjectTask.getStartTime());
+                        stepIpResult.setEndTime(executeObjectTask.getEndTime());
+                        stepIpResult.setTotalTime(executeObjectTask.getTotalTime());
+                        stepIpResult.setTag(executeObjectTask.getTag());
+                        stepIpResult.setStatus(executeObjectTask.getStatus().getValue());
                         stepIpResults.add(stepIpResult);
                     }
                 }
@@ -166,17 +192,21 @@ public class EsbGetJobInstanceStatusV3ResourceImpl
     }
 
     @Override
+    @AuditEntry(actionId = ActionId.VIEW_HISTORY)
     public EsbResp<EsbJobInstanceStatusV3DTO> getJobInstanceStatus(String username,
                                                                    String appCode,
-                                                                   Long appId,
+                                                                   Long bizId,
+                                                                   String scopeType,
+                                                                   String scopeId,
                                                                    Long taskInstanceId,
                                                                    boolean returnIpResult) {
         EsbGetJobInstanceStatusV3Request request = new EsbGetJobInstanceStatusV3Request();
-        request.setUserName(username);
-        request.setAppCode(appCode);
-        request.setAppId(appId);
+        request.setBizId(bizId);
+        request.setScopeType(scopeType);
+        request.setScopeId(scopeId);
         request.setTaskInstanceId(taskInstanceId);
         request.setReturnIpResult(returnIpResult);
-        return getJobInstanceStatusUsingPost(request);
+        request.fillAppResourceScope(appScopeMappingService);
+        return getJobInstanceStatusUsingPost(username, appCode, request);
     }
 }

@@ -24,13 +24,15 @@
 
 package com.tencent.bk.job.execute.engine.variable;
 
-import com.tencent.bk.job.common.model.dto.IpDTO;
-import com.tencent.bk.job.execute.engine.consts.IpStatus;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 import com.tencent.bk.job.execute.engine.consts.JobBuildInVariables;
-import com.tencent.bk.job.execute.model.GseTaskIpLogDTO;
+import com.tencent.bk.job.execute.model.ExecuteObjectTask;
 import com.tencent.bk.job.execute.model.StepInstanceDTO;
-import com.tencent.bk.job.execute.service.GseTaskLogService;
-import com.tencent.bk.job.execute.service.TaskInstanceService;
+import com.tencent.bk.job.execute.service.FileExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.ScriptExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceService;
+import com.tencent.bk.job.logsvr.consts.FileTaskModeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskStepTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,21 +43,26 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.tencent.bk.job.common.util.function.LambdasUtil.not;
+
 /**
  * 任务前置步骤目标主机-变量解析器
  */
 @Service
 @Slf4j
 public class JobLastHostsVariableResolver implements VariableResolver {
-    private final TaskInstanceService taskInstanceService;
-    private final GseTaskLogService gseTaskLogService;
+    private final StepInstanceService stepInstanceService;
+    private final ScriptExecuteObjectTaskService scriptExecuteObjectTaskService;
+    private final FileExecuteObjectTaskService fileExecuteObjectTaskService;
     private final Set<String> BUILD_IN_VARIABLES = new HashSet<>();
 
     @Autowired
-    public JobLastHostsVariableResolver(TaskInstanceService taskInstanceService,
-                                        GseTaskLogService gseTaskLogService) {
-        this.taskInstanceService = taskInstanceService;
-        this.gseTaskLogService = gseTaskLogService;
+    public JobLastHostsVariableResolver(StepInstanceService stepInstanceService,
+                                        ScriptExecuteObjectTaskService scriptExecuteObjectTaskService,
+                                        FileExecuteObjectTaskService fileExecuteObjectTaskService) {
+        this.stepInstanceService = stepInstanceService;
+        this.scriptExecuteObjectTaskService = scriptExecuteObjectTaskService;
+        this.fileExecuteObjectTaskService = fileExecuteObjectTaskService;
         init();
     }
 
@@ -73,58 +80,60 @@ public class JobLastHostsVariableResolver implements VariableResolver {
     public String resolve(VariableResolveContext context, String variableName) {
         long taskInstanceId = context.getTaskInstanceId();
         long stepInstanceId = context.getStepInstanceId();
-        StepInstanceDTO preStepInstance = taskInstanceService.getPreExecutableStepInstance(taskInstanceId,
+        StepInstanceDTO preStepInstance = stepInstanceService.getPreExecutableStepInstance(taskInstanceId,
             stepInstanceId);
         if (preStepInstance == null) {
-            log.info("Resolve value from latest executable step instance, but no pre step exist! taskInstanceId: {}, stepInstanceId:{}",
+            log.info("Resolve value from latest executable step instance, but no pre step exist! taskInstanceId: {}, " +
+                    "stepInstanceId:{}",
                 taskInstanceId, stepInstanceId);
             return null;
         }
-        Set<IpDTO> hosts = null;
-        if (JobBuildInVariables.JOB_LAST_ALL.equals(variableName)) {
-            hosts = extractAllHosts(preStepInstance);
-        } else if (JobBuildInVariables.JOB_LAST_SUCCESS.equals(variableName)) {
-            List<GseTaskIpLogDTO> ipLogs = gseTaskLogService.getIpLog(preStepInstance.getId(),
-                preStepInstance.getExecuteCount(), true);
-            if (CollectionUtils.isNotEmpty(ipLogs)) {
-                hosts =
-                    ipLogs.stream().filter(ipLog -> (ipLog.getStatus() == IpStatus.SUCCESS.getValue()
-                        || ipLog.getStatus() == IpStatus.LAST_SUCCESS.getValue()))
-                        .map(ipLog -> new IpDTO(ipLog.getCloudAreaId(), ipLog.getIp())).collect(Collectors.toSet());
+        Set<HostDTO> hosts = null;
+        switch (variableName) {
+            case JobBuildInVariables.JOB_LAST_ALL:
+                hosts = preStepInstance.extractAllHosts();
+                break;
+            case JobBuildInVariables.JOB_LAST_SUCCESS: {
+                List<ExecuteObjectTask> executeObjectTasks = listAgentTasks(preStepInstance);
+                if (CollectionUtils.isNotEmpty(executeObjectTasks)) {
+                    hosts = executeObjectTasks.stream()
+                        .filter(ExecuteObjectTask::isSuccess)
+                        .map(task -> task.getExecuteObject().getHost())
+                        .collect(Collectors.toSet());
+                }
+                break;
             }
-        } else if (JobBuildInVariables.JOB_LAST_FAIL.equals(variableName)) {
-            List<GseTaskIpLogDTO> ipLogs = gseTaskLogService.getIpLog(preStepInstance.getId(),
-                preStepInstance.getExecuteCount(), true);
-            if (CollectionUtils.isNotEmpty(ipLogs)) {
-                hosts =
-                    ipLogs.stream().filter(ipLog -> (ipLog.getStatus() != IpStatus.SUCCESS.getValue()
-                        && ipLog.getStatus() != IpStatus.LAST_SUCCESS.getValue()))
-                        .map(ipLog -> new IpDTO(ipLog.getCloudAreaId(), ipLog.getIp())).collect(Collectors.toSet());
+            case JobBuildInVariables.JOB_LAST_FAIL: {
+                List<ExecuteObjectTask> executeObjectTasks = listAgentTasks(preStepInstance);
+                if (CollectionUtils.isNotEmpty(executeObjectTasks)) {
+                    hosts = executeObjectTasks.stream()
+                        .filter(not(ExecuteObjectTask::isSuccess))
+                        .map(task -> task.getExecuteObject().getHost())
+                        .collect(Collectors.toSet());
+                }
+                break;
             }
         }
+
         String value = VariableResolveUtils.formatHosts(hosts);
         log.info("Resolve value from latest executable step instance, variableName: {}, value: {}", variableName,
             value);
         return value;
     }
 
-
-    private Set<IpDTO> extractAllHosts(StepInstanceDTO stepInstance) {
-        Set<IpDTO> hosts = new HashSet<>();
-        if (CollectionUtils.isNotEmpty(stepInstance.getTargetServers().getIpList())) {
-            hosts.addAll(stepInstance.getTargetServers().getIpList());
+    private List<ExecuteObjectTask> listAgentTasks(StepInstanceDTO stepInstance) {
+        TaskStepTypeEnum stepType = stepInstance.getStepType();
+        List<ExecuteObjectTask> agentTasks = null;
+        if (stepType == TaskStepTypeEnum.SCRIPT) {
+            agentTasks = scriptExecuteObjectTaskService.listTasks(stepInstance, stepInstance.getExecuteCount(), null);
+        } else if (stepType == TaskStepTypeEnum.FILE) {
+            agentTasks = fileExecuteObjectTaskService.listTasks(stepInstance, stepInstance.getExecuteCount(), null);
+            if (CollectionUtils.isNotEmpty(agentTasks)) {
+                agentTasks = agentTasks.stream()
+                    .filter(agentTask -> agentTask.getFileTaskMode() == FileTaskModeEnum.DOWNLOAD)
+                    .collect(Collectors.toList());
+            }
         }
-        if (CollectionUtils.isNotEmpty(stepInstance.getTargetServers().getInvalidIpList())) {
-            hosts.addAll(stepInstance.getTargetServers().getInvalidIpList());
-        }
-        if (CollectionUtils.isNotEmpty(stepInstance.getFileSourceList())) {
-            stepInstance.getFileSourceList().forEach(fileSource -> {
-                if (fileSource.getServers() != null
-                    && CollectionUtils.isNotEmpty(fileSource.getServers().getIpList())) {
-                    hosts.addAll(fileSource.getServers().getIpList());
-                }
-            });
-        }
-        return hosts;
+        return agentTasks;
     }
 }

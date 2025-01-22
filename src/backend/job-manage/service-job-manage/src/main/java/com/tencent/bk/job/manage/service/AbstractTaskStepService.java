@@ -29,10 +29,11 @@ import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.InternalException;
 import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.exception.ServiceException;
+import com.tencent.bk.job.common.mysql.JobTransactional;
 import com.tencent.bk.job.common.util.json.JsonUtils;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskScriptSourceEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskScriptSourceEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskTypeEnum;
 import com.tencent.bk.job.manage.dao.ScriptDAO;
 import com.tencent.bk.job.manage.dao.TaskApprovalStepDAO;
 import com.tencent.bk.job.manage.dao.TaskFileInfoDAO;
@@ -49,7 +50,6 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -160,7 +160,7 @@ public abstract class AbstractTaskStepService {
      * @return 新增的步骤 ID
      * @throws ServiceException 新增步骤异常
      */
-    @Transactional(rollbackFor = ServiceException.class)
+    @JobTransactional(transactionManager = "jobManageTransactionManager")
     public long insertStep(TaskStepDTO taskStep) throws ServiceException {
         try {
             Long stepId = taskStepDAO.insertStep(taskStep);
@@ -240,7 +240,7 @@ public abstract class AbstractTaskStepService {
      * @return 是否更新成功
      * @throws ServiceException 更新异常
      */
-    @Transactional(rollbackFor = ServiceException.class)
+    @JobTransactional(transactionManager = "jobManageTransactionManager")
     public boolean updateStepById(TaskStepDTO taskStep) throws ServiceException {
         try {
             if (taskStepDAO.updateStepById(taskStep)) {
@@ -264,7 +264,7 @@ public abstract class AbstractTaskStepService {
                             if (taskFileStepDAO.updateFileStepById(taskStep.getFileStepInfo())) {
                                 List<TaskFileInfoDTO> originTaskFileInfo =
                                     taskFileInfoDAO.listFileInfoByStepId(taskStep.getFileStepInfo().getStepId());
-                                List<Long> originTaskFileInfoIds = originTaskFileInfo.parallelStream()
+                                List<Long> originTaskFileInfoIds = originTaskFileInfo.stream()
                                     .map(TaskFileInfoDTO::getId).collect(Collectors.toList());
                                 List<TaskFileInfoDTO> newFileInfo = new ArrayList<>();
                                 for (TaskFileInfoDTO fileInfo : taskStep.getFileStepInfo().getOriginFileList()) {
@@ -328,7 +328,7 @@ public abstract class AbstractTaskStepService {
      * @return 是否删除成功
      * @throws ServiceException 删除异常
      */
-    @Transactional(rollbackFor = ServiceException.class)
+    @JobTransactional(transactionManager = "jobManageTransactionManager")
     public boolean deleteStepById(Long parentId, Long id) throws ServiceException {
         try {
             TaskStepDTO taskStep = taskStepDAO.getStepById(parentId, id);
@@ -389,7 +389,7 @@ public abstract class AbstractTaskStepService {
                 uniqScriptVersionSet.add(taskScriptStepDTO.getScriptVersionId());
             });
         }
-        templateScriptVersionMap.put(0L, uniqScriptVersionSet.parallelStream().collect(Collectors.toList()));
+        templateScriptVersionMap.put(0L, new ArrayList<>(uniqScriptVersionSet));
         return templateScriptVersionMap;
     }
 

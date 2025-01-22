@@ -25,6 +25,7 @@
 package com.tencent.bk.job.manage.model.web.vo;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.tencent.bk.job.common.model.vo.HostInfoVO;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Getter;
@@ -34,18 +35,17 @@ import lombok.ToString;
 import java.util.List;
 import java.util.Set;
 
-/**
- * @date 2019/1/31
- */
 @Getter
 @Setter
 @ToString
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class CcTopologyNodeVO {
     private Long instanceId;
     private String instanceName;
     private String objectId;
     private String objectName;
-    private Boolean expanded = true;
+    // 当前层级节点数据是否使用懒加载，作业平台目前不涉及，取值一直为false即可
+    private Boolean lazy = false;
     private List<CcTopologyNodeVO> child;
 
     @ApiModelProperty("节点包含的 IP 列表")

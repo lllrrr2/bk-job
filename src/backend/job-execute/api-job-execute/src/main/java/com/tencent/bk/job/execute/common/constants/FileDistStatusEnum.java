@@ -25,12 +25,15 @@
 package com.tencent.bk.job.execute.common.constants;
 
 /**
- * 文件分发状态
+ * 单个文件分发对（源执行对象，源文件路径，目标执行对象，目标文件路径）的文件分发状态，体现在详情页文件分发日志中
  */
 public enum FileDistStatusEnum {
-    PULLING(0, "Pulling from third file source"), WAITING(1, "Waiting"), UPLOADING(2, "Uploading"), DOWNLOADING(3,
-        "Downloading"),
-    FINISHED(4, "Finished"), FAILED(5, "Failed");
+    PULLING(0, "Pulling from third file source"),
+    WAITING(1, "Waiting"),
+    UPLOADING(2, "Uploading"),
+    DOWNLOADING(3, "Downloading"),
+    FINISHED(4, "Finished"),
+    FAILED(5, "Failed");
 
     private final Integer value;
     private final String name;
@@ -42,14 +45,14 @@ public enum FileDistStatusEnum {
 
     public static FileDistStatusEnum getFileDistStatus(Integer status) {
         if (status == null) {
-            return null;
+            throw new IllegalArgumentException("Null FileDistStatusEnum constant");
         }
         for (FileDistStatusEnum fileDistStatus : values()) {
             if (fileDistStatus.getValue().equals(status)) {
                 return fileDistStatus;
             }
         }
-        return null;
+        throw new IllegalArgumentException("No FileDistStatusEnum constant: " + status);
     }
 
     public Integer getValue() {
@@ -58,5 +61,13 @@ public enum FileDistStatusEnum {
 
     public String getName() {
         return name;
+    }
+
+    public static boolean isFinishedStatus(FileDistStatusEnum status) {
+        return status == FINISHED || status == FAILED;
+    }
+
+    public static boolean isFinishedStatus(Integer statusValue) {
+        return statusValue.equals(FINISHED.value) || statusValue.equals(FAILED.value);
     }
 }

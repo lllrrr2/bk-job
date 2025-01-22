@@ -1,12 +1,13 @@
 spring:
-  application:
-    name: ${SPRING_APPLICATION_NAME:job-file-worker}
   profiles:
     active: prod
   servlet:
     multipart:
       max-file-size: 5GB
       max-request-size: 5GB
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
 
 management:
   endpoints:
@@ -50,3 +51,7 @@ server:
       charset: UTF-8
       enabled: true
       force: true
+
+job:
+  file-worker:
+    enabled-file-source-types: BLUEKING_ARTIFACTORY

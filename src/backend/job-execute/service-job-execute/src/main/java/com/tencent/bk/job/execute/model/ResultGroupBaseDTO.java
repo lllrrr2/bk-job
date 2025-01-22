@@ -24,23 +24,80 @@
 
 package com.tencent.bk.job.execute.model;
 
+import com.tencent.bk.job.execute.engine.consts.ExecuteObjectTaskStatusEnum;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.Objects;
 
 /**
- * 执行结果分组
+ * 执行对象任务执行结果分组
  */
 @Data
-public class ResultGroupBaseDTO {
+@NoArgsConstructor
+public class ResultGroupBaseDTO implements Comparable<ResultGroupBaseDTO> {
     /**
-     * 执行结果
+     * 任务状态
+     *
+     * @see ExecuteObjectTaskStatusEnum
      */
-    private Integer resultType;
+    private Integer status;
     /**
-     * 用户脚本输出的结果分类tag
+     * 用户脚本输出的自定义分组tag
      */
     private String tag;
     /**
-     * 分组下的Agent任务数
+     * 执行对象任务总数
      */
-    private int agentTaskCount;
+    private int total;
+
+    public ResultGroupBaseDTO(Integer status, String tag) {
+        this.status = status;
+        this.tag = tag;
+    }
+
+    public ResultGroupBaseDTO(ResultGroupBaseDTO baseResultGroup) {
+        this.status = baseResultGroup.getStatus();
+        this.tag = baseResultGroup.getTag();
+        this.total = baseResultGroup.getTotal();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ResultGroupBaseDTO that = (ResultGroupBaseDTO) o;
+        return status.equals(that.status) &&
+            tagEquals(tag, that.tag);
+    }
+
+    private boolean tagEquals(String thisTag, String thatTag) {
+        String tag1 = thisTag == null ? "" : thisTag;
+        String tag2 = thatTag == null ? "" : thatTag;
+        return tag1.equals(tag2);
+    }
+
+    @Override
+    public int hashCode() {
+        if (this.tag == null) {
+            return Objects.hash(status, "");
+        } else {
+            return Objects.hash(status, tag);
+        }
+    }
+
+    @Override
+    public int compareTo(ResultGroupBaseDTO that) {
+        int result = status.compareTo(that.status);
+        if (result != 0) {
+            return result;
+        }
+        String tag1 = this.tag == null ? "" : this.tag;
+        String tag2 = that.tag == null ? "" : that.tag;
+        return tag1.compareTo(tag2);
+    }
+
+    public String getGroupKey() {
+        return status + "_" + tag;
+    }
 }

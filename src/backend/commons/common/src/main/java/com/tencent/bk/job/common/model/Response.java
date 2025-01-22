@@ -39,7 +39,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 @ApiModel("服务调用通用返回结构")
@@ -59,7 +58,7 @@ public class Response<T> {
     @ApiModelProperty("错误信息")
     private String errorMsg;
 
-    @ApiModelProperty("请求成功返回的数据")
+    @ApiModelProperty("请求成功/失败返回的数据")
     private T data;
 
     @ApiModelProperty("请求 ID")
@@ -94,7 +93,8 @@ public class Response<T> {
     }
 
     public static <T> Response<T> buildAuthFailResp(AuthResultVO authResult) {
-        Response<T> resp = new Response<>(ErrorCode.PERMISSION_DENIED, null);
+        Response<T> resp = new Response<>(ErrorCode.PERMISSION_DENIED
+                                            , new String[]{JobContextUtil.getUsername()}, null);
         resp.authResult = authResult;
         return resp;
     }
@@ -116,13 +116,13 @@ public class Response<T> {
     }
 
     public static <T> Response<T> buildValidateFailResp(ErrorDetailDTO errorDetail) {
-        Response<T> resp = buildCommonFailResp(ErrorCode.ILLEGAL_PARAM);
-        if (errorDetail != null
-            && errorDetail.getBadRequestDetail() != null
-            && CollectionUtils.isNotEmpty(errorDetail.getBadRequestDetail().getFieldViolations())
-            && StringUtils.isNotBlank(errorDetail.getBadRequestDetail().getFieldViolations().get(0).getDescription())) {
-            // set validation detailed message instead of common error message
-            resp.setErrorMsg(errorDetail.getBadRequestDetail().getFieldViolations().get(0).getDescription());
+        Response<T> resp = buildCommonFailResp(ErrorCode.BAD_REQUEST);
+        if (errorDetail != null && errorDetail.getBadRequestDetail() != null) {
+            String errorMsg = errorDetail.getBadRequestDetail().findFirstFieldErrorDesc();
+            if (StringUtils.isNotBlank(errorMsg)) {
+                // set validation detailed message instead of common error message
+                resp.setErrorMsg(errorMsg);
+            }
         }
         resp.setErrorDetail(errorDetail);
         return resp;

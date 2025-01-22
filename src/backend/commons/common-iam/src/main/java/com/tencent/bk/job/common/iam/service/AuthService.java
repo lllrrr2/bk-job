@@ -26,7 +26,6 @@ package com.tencent.bk.job.common.iam.service;
 
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
-import com.tencent.bk.job.common.iam.dto.AppIdResult;
 import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.iam.model.AuthResult;
 import com.tencent.bk.job.common.iam.model.PermissionActionResource;
@@ -42,44 +41,33 @@ import java.util.List;
  */
 public interface AuthService {
 
-    void setResourceAppInfoQueryService(ResourceAppInfoQueryService resourceAppInfoQueryService);
-
     void setResourceNameQueryService(ResourceNameQueryService resourceNameQueryService);
 
     /**
      * 无关联资源、单个操作操作鉴权
      *
-     * @param returnApplyUrl 是否返回权限申请url
-     * @param username       用户名
-     * @param actionId       操作ID
+     * @param username 用户名
+     * @param actionId 操作ID
      * @return 鉴权结果
      */
-    AuthResult auth(boolean returnApplyUrl, String username, String actionId);
+    AuthResult auth(String username, String actionId);
 
     /**
      * 关联单个资源、单个操作鉴权
      *
-     * @param returnApplyUrl 是否返回权限申请url
-     * @param username       用户名
-     * @param actionId       操作ID
-     * @param resourceType   资源类型
-     * @param resourceId     资源ID
-     * @param pathInfo       资源路径
+     * @param username     用户名
+     * @param actionId     操作ID
+     * @param resourceType 资源类型
+     * @param resourceId   资源ID
+     * @param pathInfo     资源路径
      * @return 鉴权结果
      */
-    AuthResult auth(boolean returnApplyUrl, String username, String actionId, ResourceTypeEnum resourceType,
-                    String resourceId, PathInfoDTO pathInfo);
+    AuthResult auth(String username,
+                    String actionId,
+                    ResourceTypeEnum resourceType,
+                    String resourceId,
+                    PathInfoDTO pathInfo);
 
-    /**
-     * 业务集/全业务鉴权
-     *
-     * @param username       用户名
-     * @param resourceType   资源类型
-     * @param resourceId     资源ID
-     * @return 鉴权结果
-     */
-    boolean authSpecialAppByMaintainer(String username, ResourceTypeEnum resourceType,
-                                       String resourceId);
     /**
      * 多个操作鉴权
      *
@@ -103,41 +91,16 @@ public interface AuthService {
                            List<String> resourceIdList);
 
     /**
-     * 批量鉴权
-     *
-     * @param username       用户名
-     * @param actionId       操作ID
-     * @param appId          业务ID
-     * @param resourceType   资源类型
-     * @param resourceIdList 资源ID列表
-     * @return 有权限的资源ID列表
-     */
-    List<String> batchAuth(String username, String actionId, Long appId, ResourceTypeEnum resourceType,
-                           List<String> resourceIdList);
-
-    /**
-     * 批量鉴权
+     * 批量鉴权：用于Job自有非业务下资源（如公共脚本）的批量鉴权
      *
      * @param username  用户名
      * @param actionId  操作ID
-     * @param appId     业务ID
-     * @param resources 资源列表
+     * @param resources 资源
      * @return 鉴权结果
      */
-    AuthResult batchAuthResources(String username, String actionId, Long appId, List<PermissionResource> resources);
-
-    /**
-     * 批量鉴权
-     *
-     * @param username     用户名
-     * @param actionId     操作 ID
-     * @param appId        业务 ID
-     * @param resourceList 资源列表
-     * @return 有权限的资源 ID 列表
-     */
-    List<String> batchAuth(String username, String actionId, Long appId, List<PermissionResource> resourceList);
-
-    AppIdResult getAppIdList(String username, List<Long> allAppIdList);
+    AuthResult batchAuthResources(String username,
+                                  String actionId,
+                                  List<PermissionResource> resources);
 
     /**
      * 获取权限申请URL
@@ -180,8 +143,6 @@ public interface AuthService {
      * @return 第三方鉴权失败返回结果
      */
     <T> EsbResp<T> buildEsbAuthFailResp(PermissionDeniedException exception);
-
-    String getBusinessApplyUrl(Long appId);
 
     /**
      * 注册资源实例

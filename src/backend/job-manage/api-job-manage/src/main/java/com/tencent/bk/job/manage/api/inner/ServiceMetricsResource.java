@@ -26,29 +26,29 @@ package com.tencent.bk.job.manage.api.inner;
 
 import com.tencent.bk.job.common.annotation.InternalAPI;
 import com.tencent.bk.job.common.model.InternalResponse;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskScriptSourceEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskStepTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskScriptSourceEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskStepTypeEnum;
+import com.tentent.bk.job.common.api.feign.annotation.SmartFeignClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @Api(tags = {"job-manage:service:Metrics"})
-@RequestMapping("/service/metrics")
-@RestController
+@SmartFeignClient(value = "job-manage", contextId = "manageMetricsResource")
 @InternalAPI
 public interface ServiceMetricsResource {
 
     @ApiOperation(value = "接入业务总量", produces = "application/json")
-    @GetMapping("/apps/count")
+    @GetMapping("/service/metrics/apps/count")
     InternalResponse<Integer> countApps(
         @ApiParam("用户名，网关自动传入")
         @RequestHeader("username")
@@ -56,7 +56,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "作业模板量", produces = "application/json")
-    @GetMapping("/templates/count")
+    @GetMapping("/service/metrics/templates/count")
     InternalResponse<Integer> countTemplates(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -64,7 +64,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "执行方案量", produces = "application/json")
-    @GetMapping("/taskPlans/count")
+    @GetMapping("/service/metrics/taskPlans/count")
     InternalResponse<Integer> countTaskPlans(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -72,7 +72,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "作业模板的步骤量", produces = "application/json")
-    @GetMapping("/templates/step/count")
+    @GetMapping("/service/metrics/templates/step/count")
     InternalResponse<Integer> countTemplateSteps(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -89,7 +89,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "脚本总量", produces = "application/json")
-    @GetMapping("/script/count")
+    @GetMapping("/service/metrics/script/count")
     InternalResponse<Integer> countScripts(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -103,7 +103,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "被引用的脚本总量", produces = "application/json")
-    @GetMapping("/script/cited/count")
+    @GetMapping("/service/metrics/script/cited/count")
     InternalResponse<Integer> countCiteScripts(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -111,7 +111,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "引用脚本的步骤总量", produces = "application/json")
-    @GetMapping("/step/citeScript/count")
+    @GetMapping("/service/metrics/step/citeScript/count")
     InternalResponse<Integer> countCiteScriptSteps(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -119,7 +119,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "脚本版本总量", produces = "application/json")
-    @GetMapping("/scriptVersions/count")
+    @GetMapping("/service/metrics/scriptVersions/count")
     InternalResponse<Integer> countScriptVersions(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)
@@ -133,7 +133,7 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "账号总量", produces = "application/json")
-    @GetMapping("/accounts/count")
+    @GetMapping("/service/metrics/accounts/count")
     InternalResponse<Integer> countAccounts(
         @ApiParam("账号类型")
         @RequestParam(value = "accountType", required = false)
@@ -141,15 +141,19 @@ public interface ServiceMetricsResource {
     );
 
     @ApiOperation(value = "主机总量", produces = "application/json")
-    @GetMapping("/hosts/count")
+    @GetMapping("/service/metrics/hosts/count")
     InternalResponse<Long> countHostsByOsType(
         @ApiParam("系统类型")
         @RequestParam(value = "osType", required = false)
             String osType
     );
 
+    @ApiOperation(value = "主机的操作系统类型分布数据", produces = "application/json")
+    @GetMapping("/service/metrics/hosts/groupByOsType")
+    InternalResponse<Map<String, Integer>> groupHostByOsType();
+
     @ApiOperation(value = "某个标签在某业务下的被引数量", produces = "application/json")
-    @GetMapping("/tags/citedCount")
+    @GetMapping("/service/metrics/tags/citedCount")
     InternalResponse<Long> tagCitedCount(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)

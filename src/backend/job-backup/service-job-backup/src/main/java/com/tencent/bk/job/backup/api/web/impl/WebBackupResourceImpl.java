@@ -52,12 +52,14 @@ import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.exception.InternalException;
 import com.tencent.bk.job.common.model.Response;
+import com.tencent.bk.job.common.model.dto.AppResourceScope;
 import com.tencent.bk.job.common.redis.util.LockUtils;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -90,8 +92,10 @@ public class WebBackupResourceImpl implements WebBackupResource {
     private final BackupStorageConfig backupStorageConfig;
 
     @Autowired
-    public WebBackupResourceImpl(ImportJobService importJobService, ExportJobService exportJobService,
-                                 LogService logService, StorageService storageService,
+    public WebBackupResourceImpl(ImportJobService importJobService,
+                                 ExportJobService exportJobService,
+                                 LogService logService,
+                                 StorageService storageService,
                                  ArtifactoryClient artifactoryClient,
                                  ArtifactoryConfig artifactoryConfig,
                                  BackupStorageConfig backupStorageConfig) {
@@ -105,12 +109,16 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<ExportInfoVO> startExport(String username, Long appId, ExportRequest exportRequest) {
+    public Response<ExportInfoVO> startExport(String username,
+                                              AppResourceScope appResourceScope,
+                                              String scopeType,
+                                              String scopeId,
+                                              ExportRequest exportRequest) {
         if (!exportRequest.validate()) {
             return Response.buildCommonFailResp(ErrorCode.ILLEGAL_PARAM);
         }
         ExportJobInfoDTO exportJobInfoDTO = new ExportJobInfoDTO();
-        exportJobInfoDTO.setAppId(appId);
+        exportJobInfoDTO.setAppId(appResourceScope.getAppId());
         exportJobInfoDTO.setCreator(username);
         if (exportRequest.getPackageName().endsWith(Constant.JOB_EXPORT_FILE_SUFFIX)) {
             exportJobInfoDTO.setPackageName(exportRequest.getPackageName());
@@ -126,7 +134,7 @@ public class WebBackupResourceImpl implements WebBackupResource {
         } else {
             exportJobInfoDTO.setExpireTime(0L);
         }
-        exportJobInfoDTO.setTemplateInfo(exportRequest.getTemplateInfo().parallelStream()
+        exportJobInfoDTO.setTemplateInfo(exportRequest.getTemplateInfo().stream()
             .map(BackupTemplateInfoDTO::fromVO).collect(Collectors.toList()));
         String id = exportJobService.startExport(exportJobInfoDTO);
 
@@ -145,7 +153,12 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<ExportInfoVO> getExportInfo(String username, Long appId, String jobId) {
+    public Response<ExportInfoVO> getExportInfo(String username,
+                                                AppResourceScope appResourceScope,
+                                                String scopeType,
+                                                String scopeId,
+                                                String jobId) {
+        Long appId = appResourceScope.getAppId();
         ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appId, jobId);
         if (exportInfo != null) {
             List<LogEntityDTO> exportLog = logService.getExportLogById(appId, jobId);
@@ -156,7 +169,8 @@ public class WebBackupResourceImpl implements WebBackupResource {
         throw new InternalException("Not found", ErrorCode.INTERNAL_ERROR);
     }
 
-    private Pair<Long, StreamingResponseBody> getFileSizeAndStreamFromNFS(String fileName) throws FileNotFoundException {
+    private Pair<Long, StreamingResponseBody> getFileSizeAndStreamFromNFS(
+        String fileName) throws FileNotFoundException {
         File file = storageService.getFile(fileName);
         if (file.exists()) {
             StreamingResponseBody streamingResponseBody =
@@ -184,7 +198,7 @@ public class WebBackupResourceImpl implements WebBackupResource {
             throw new InternalException(ErrorCode.FAIL_TO_GET_NODE_INFO_FROM_ARTIFACTORY);
         }
         try {
-            Pair<InputStream, Long> pair = artifactoryClient.getFileInputStream(
+            Pair<InputStream, HttpRequestBase> pair = artifactoryClient.getFileInputStream(
                 artifactoryConfig.getArtifactoryJobProject(),
                 backupStorageConfig.getBackupRepo(),
                 fileName
@@ -200,10 +214,14 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public ResponseEntity<StreamingResponseBody> getExportFile(String username, Long appId, String jobId) {
-        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appId, jobId);
+    public ResponseEntity<StreamingResponseBody> getExportFile(String username,
+                                                               AppResourceScope appResourceScope,
+                                                               String scopeType,
+                                                               String scopeId,
+                                                               String jobId) {
+        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appResourceScope.getAppId(), jobId);
         if (exportInfo != null) {
-            if (BackupJobStatusEnum.SUCCESS.equals(exportInfo.getStatus())) {
+            if (BackupJobStatusEnum.ALL_SUCCESS.equals(exportInfo.getStatus())) {
                 Pair<Long, StreamingResponseBody> fileInfoPair;
                 switch (backupStorageConfig.getStorageBackend()) {
                     case JobConstants.FILE_STORAGE_BACKEND_ARTIFACTORY:
@@ -235,10 +253,14 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<Boolean> completeExport(String username, Long appId, String jobId) {
-        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appId, jobId);
+    public Response<Boolean> completeExport(String username,
+                                            AppResourceScope appResourceScope,
+                                            String scopeType,
+                                            String scopeId,
+                                            String jobId) {
+        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appResourceScope.getAppId(), jobId);
         if (exportInfo != null) {
-            if (BackupJobStatusEnum.SUCCESS.equals(exportInfo.getStatus())) {
+            if (BackupJobStatusEnum.ALL_SUCCESS.equals(exportInfo.getStatus())) {
                 exportInfo.setStatus(BackupJobStatusEnum.FINISHED);
                 exportInfo.setFileName(null);
                 return Response.buildSuccessResp(exportJobService.updateExportJob(exportInfo));
@@ -250,8 +272,12 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<Boolean> abortExport(String username, Long appId, String jobId) {
-        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appId, jobId);
+    public Response<Boolean> abortExport(String username,
+                                         AppResourceScope appResourceScope,
+                                         String scopeType,
+                                         String scopeId,
+                                         String jobId) {
+        ExportJobInfoDTO exportInfo = exportJobService.getExportInfo(appResourceScope.getAppId(), jobId);
         if (exportInfo != null) {
             exportInfo.setStatus(BackupJobStatusEnum.CANCEL);
             exportInfo.setFileName(null);
@@ -261,10 +287,15 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<ImportInfoVO> getImportFileInfo(String username, Long appId, MultipartFile uploadFile) {
+    public Response<ImportInfoVO> getImportFileInfo(String username,
+                                                    AppResourceScope appResourceScope,
+                                                    String scopeType,
+                                                    String scopeId,
+                                                    MultipartFile uploadFile) {
         if (uploadFile.isEmpty()) {
             throw new InternalException("No File", ErrorCode.INTERNAL_ERROR);
         }
+        Long appId = appResourceScope.getAppId();
         String originalFileName = uploadFile.getOriginalFilename();
         if (originalFileName != null && originalFileName.endsWith(Constant.JOB_EXPORT_FILE_SUFFIX)) {
             String id = UUID.randomUUID().toString();
@@ -308,8 +339,13 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<Boolean> checkPassword(String username, Long appId, String jobId,
+    public Response<Boolean> checkPassword(String username,
+                                           AppResourceScope appResourceScope,
+                                           String scopeType,
+                                           String scopeId,
+                                           String jobId,
                                            CheckPasswordRequest passwordRequest) {
+        Long appId = appResourceScope.getAppId();
         boolean lockResult =
             LockUtils.tryGetDistributedLock(getImportJobLockKey(appId, jobId), JobContextUtil.getRequestId(), 60_000L);
         if (lockResult) {
@@ -329,7 +365,11 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<Boolean> startImport(String username, Long appId, String jobId,
+    public Response<Boolean> startImport(String username,
+                                         AppResourceScope appResourceScope,
+                                         String scopeType,
+                                         String scopeId,
+                                         String jobId,
                                          ImportRequest importRequest) {
         if (!importRequest.validate()) {
             return Response.buildCommonFailResp(ErrorCode.ILLEGAL_PARAM);
@@ -337,7 +377,7 @@ public class WebBackupResourceImpl implements WebBackupResource {
         ImportJobInfoDTO importJobInfo = new ImportJobInfoDTO();
         importJobInfo.setId(jobId);
         importJobInfo.setCreator(username);
-        importJobInfo.setAppId(appId);
+        importJobInfo.setAppId(appResourceScope.getAppId());
         if (CollectionUtils.isNotEmpty(importRequest.getTemplateInfo())) {
             importJobInfo.setTemplateInfo(importRequest.getTemplateInfo().stream().map(BackupTemplateInfoDTO::fromVO)
                 .collect(Collectors.toList()));
@@ -350,7 +390,12 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<ImportInfoVO> getImportInfo(String username, Long appId, String jobId) {
+    public Response<ImportInfoVO> getImportInfo(String username,
+                                                AppResourceScope appResourceScope,
+                                                String scopeType,
+                                                String scopeId,
+                                                String jobId) {
+        Long appId = appResourceScope.getAppId();
         ImportJobInfoDTO importInfo = importJobService.getImportInfoById(appId, jobId);
         if (importInfo != null) {
             List<LogEntityDTO> importLog = logService.getImportLogById(appId, jobId);
@@ -362,17 +407,21 @@ public class WebBackupResourceImpl implements WebBackupResource {
     }
 
     @Override
-    public Response<BackupJobInfoVO> getCurrentJob(String username, Long appId) {
+    public Response<BackupJobInfoVO> getCurrentJob(String username,
+                                                   AppResourceScope appResourceScope,
+                                                   String scopeType,
+                                                   String scopeId) {
+        Long appId = appResourceScope.getAppId();
         List<ExportJobInfoDTO> exportJobInfoList = exportJobService.getCurrentJobByUser(username, appId);
         List<ImportJobInfoDTO> importJobInfoList = importJobService.getCurrentJobByUser(username, appId);
         BackupJobInfoVO backupJobInfo = new BackupJobInfoVO();
         if (CollectionUtils.isNotEmpty(exportJobInfoList)) {
             backupJobInfo.setExportJob(
-                exportJobInfoList.parallelStream().map(ExportJobInfoDTO::toVO).collect(Collectors.toList()));
+                exportJobInfoList.stream().map(ExportJobInfoDTO::toVO).collect(Collectors.toList()));
         }
         if (CollectionUtils.isNotEmpty(importJobInfoList)) {
             backupJobInfo.setImportJob(
-                importJobInfoList.parallelStream().map(ImportJobInfoDTO::toVO).collect(Collectors.toList()));
+                importJobInfoList.stream().map(ImportJobInfoDTO::toVO).collect(Collectors.toList()));
         }
         return Response.buildSuccessResp(backupJobInfo);
     }

@@ -24,15 +24,20 @@
 
 package com.tencent.bk.job.manage.model.dto;
 
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
+import com.tencent.bk.job.common.esb.util.EsbDTOAppScopeMappingHelper;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.model.esb.v3.response.EsbScriptV3DTO;
+import com.tencent.bk.job.manage.model.esb.v3.response.EsbScriptVersionDetailV3DTO;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
 import java.util.List;
 
+import static com.tencent.bk.job.common.constant.JobConstants.PUBLIC_APP_ID;
+
 /**
- * @date 2019/09/19
+ * 脚本
  */
 @Getter
 @Setter
@@ -116,4 +121,74 @@ public class ScriptDTO {
      * 脚本描述
      */
     private String description;
+
+    public EsbScriptV3DTO toEsbScriptV3DTO() {
+        EsbScriptV3DTO esbScript = new EsbScriptV3DTO();
+        esbScript.setId(id);
+
+        if (appId != null && !appId.equals(PUBLIC_APP_ID)) {
+            EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(appId, esbScript);
+        }
+
+        esbScript.setName(name);
+        esbScript.setType(type);
+        esbScript.setCreator(creator);
+        esbScript.setCreateTime(createTime);
+        esbScript.setLastModifyUser(lastModifyUser);
+        esbScript.setLastModifyTime(lastModifyTime);
+        esbScript.setOnlineScriptVersionId(scriptVersionId);
+        esbScript.setDescription(description);
+        return esbScript;
+    }
+
+    public EsbScriptVersionDetailV3DTO toEsbScriptVersionDetailV3DTO() {
+        EsbScriptVersionDetailV3DTO esbScriptVersion = new EsbScriptVersionDetailV3DTO();
+        esbScriptVersion.setId(scriptVersionId);
+        if (appId != null && !appId.equals(PUBLIC_APP_ID)) {
+            EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(appId, esbScriptVersion);
+        }
+
+        esbScriptVersion.setScriptId(id);
+        esbScriptVersion.setName(name);
+        esbScriptVersion.setVersion(version);
+        esbScriptVersion.setContent(content);
+        esbScriptVersion.setStatus(status);
+        esbScriptVersion.setVersionDesc(versionDesc);
+        esbScriptVersion.setCreator(creator);
+        esbScriptVersion.setCreateTime(createTime);
+        esbScriptVersion.setLastModifyUser(lastModifyUser);
+        esbScriptVersion.setLastModifyTime(lastModifyTime);
+        esbScriptVersion.setType(type);
+        esbScriptVersion.setDescription(description);
+        return esbScriptVersion;
+    }
+
+    public EsbScriptVersionDetailV3DTO toEsbCreateScriptV3DTO() {
+        EsbScriptVersionDetailV3DTO scriptDetail = new EsbScriptVersionDetailV3DTO();
+        scriptDetail.setId(scriptVersionId);
+        scriptDetail.setScriptId(id);
+        scriptDetail.setName(name);
+        scriptDetail.setType(type);
+        scriptDetail.setContent(content);
+        scriptDetail.setCreator(creator);
+        scriptDetail.setCreateTime(createTime);
+        scriptDetail.setLastModifyUser(lastModifyUser);
+        scriptDetail.setLastModifyTime(lastModifyTime);
+        scriptDetail.setVersion(version);
+        scriptDetail.setStatus(status);
+        scriptDetail.setDescription(description);
+        scriptDetail.setVersionDesc(versionDesc);
+        if (appId != null && !appId.equals(PUBLIC_APP_ID)) {
+            EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(appId, scriptDetail);
+        }
+        return scriptDetail;
+    }
+
+    public EsbScriptVersionDetailV3DTO toEsbManageScriptV3DTO() {
+        EsbScriptVersionDetailV3DTO result = new EsbScriptVersionDetailV3DTO();
+        result.setId(scriptVersionId);
+        result.setScriptId(id);
+        result.setStatus(status);
+        return result;
+    }
 }

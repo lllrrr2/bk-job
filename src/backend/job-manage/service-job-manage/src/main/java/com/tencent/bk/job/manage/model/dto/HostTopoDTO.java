@@ -25,10 +25,13 @@
 package com.tencent.bk.job.manage.model.dto;
 
 import com.tencent.bk.job.common.cc.model.result.HostRelationEventDetail;
+import com.tencent.bk.job.common.util.TimeUtil;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceHostTopoDTO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * 主机拓扑
@@ -43,20 +46,43 @@ public class HostTopoDTO {
      */
     private Long hostId;
     /**
-     * SetId
+     * 业务ID
      */
-    private Long appId;
+    private Long bizId;
     /**
-     * SetId
+     * 集群ID
      */
     private Long setId;
     /**
-     * ModuleId
+     * 模块ID
      */
     private Long moduleId;
+    /**
+     * CMDB中的数据最后修改时间
+     */
+    private Long lastTime;
 
     public static HostTopoDTO fromHostRelationEvent(HostRelationEventDetail eventDetail) {
-        return new HostTopoDTO(eventDetail.getHostId(), eventDetail.getAppId(), eventDetail.getSetId(),
-            eventDetail.getModuleId());
+        Long lastTimeMills = null;
+        if (StringUtils.isNotBlank(eventDetail.getLastTime())) {
+            lastTimeMills = TimeUtil.parseIsoZonedTimeToMillis(eventDetail.getLastTime());
+        }
+        return new HostTopoDTO(
+            eventDetail.getHostId(),
+            eventDetail.getBizId(),
+            eventDetail.getSetId(),
+            eventDetail.getModuleId(),
+            lastTimeMills
+        );
+    }
+
+    public ServiceHostTopoDTO toServiceHostTopoDTO() {
+        return new ServiceHostTopoDTO(
+            hostId,
+            bizId,
+            setId,
+            moduleId,
+            lastTime
+        );
     }
 }

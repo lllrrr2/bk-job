@@ -24,11 +24,13 @@
 
 package com.tencent.bk.job.manage.api.web;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
 import com.tencent.bk.job.common.annotation.WebAPI;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import com.tencent.bk.job.common.model.Response;
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.AccountNameRulesWithDefaultVO;
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.NotifyChannelWithIconVO;
-import com.tencent.bk.job.manage.model.web.vo.globalsetting.TitleFooterVO;
+import com.tencent.bk.job.manage.model.web.vo.globalsetting.PlatformInfoVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -89,27 +91,35 @@ public interface WebGlobalSettingsQueryResource {
         @ApiParam("用户名，网关自动传入")
         @RequestHeader("username")
             String username,
-        @ApiParam("业务Id")
-        @RequestParam(value = "appId", required = false)
-            Long appId
+        @ApiParam(value = "资源范围类型")
+        @RequestParam(value = "scopeType", required = false)
+            String scopeType,
+        @ApiParam(value = "资源范围ID")
+        @RequestParam(value = "scopeId", required = false)
+            String scopeId
     );
 
 
     @ApiOperation(value = "获取CMDB业务首页地址", produces = "application/json")
-    @GetMapping("/app/{appId}/cmdbAppIndexUrl")
+    @GetMapping("/scope/{scopeType}/{scopeId}/cmdbAppIndexUrl")
     Response<String> getCMDBAppIndexUrl(
         @ApiParam("用户名，网关自动传入")
         @RequestHeader("username")
             String username,
-        @ApiParam("业务Id")
-        @PathVariable("appId")
-            Long appId
+        @ApiParam(value = "资源范围类型", required = true)
+        @PathVariable(value = "scopeType")
+            String scopeType,
+        @ApiParam(value = "资源范围ID", required = true)
+        @PathVariable(value = "scopeId")
+            String scopeId
     );
 
 
-    @ApiOperation(value = "获取Title与Footer", produces = "application/json")
-    @GetMapping("/titleFooter")
-    Response<TitleFooterVO> getTitleFooter();
+    @CompatibleImplementation(name = "platform_info", deprecatedVersion = "3.11.x", type = CompatibleType.DEPLOY,
+        explain = "发布完成后可以删除")
+    @ApiOperation(value = "获取渲染后的平台设置", produces = "application/json")
+    @GetMapping("/platformInfo")
+    Response<PlatformInfoVO> getRenderedPlatformInfo();
 
 
     @ApiOperation(value = "获取文档中心根路径", produces = "application/json")

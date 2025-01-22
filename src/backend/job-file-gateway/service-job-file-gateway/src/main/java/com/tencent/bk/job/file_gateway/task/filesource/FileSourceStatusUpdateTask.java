@@ -27,9 +27,9 @@ package com.tencent.bk.job.file_gateway.task.filesource;
 import com.tencent.bk.job.file_gateway.consts.FileSourceStatusEnum;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileWorkerDTO;
-import com.tencent.bk.job.file_gateway.service.DispatchService;
 import com.tencent.bk.job.file_gateway.service.FileService;
 import com.tencent.bk.job.file_gateway.service.FileSourceService;
+import com.tencent.bk.job.file_gateway.service.dispatch.DispatchService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -53,7 +53,7 @@ public class FileSourceStatusUpdateTask {
     }
 
     public void run() {
-        List<FileSourceDTO> fileSourceDTOList = null;
+        List<FileSourceDTO> fileSourceDTOList;
         int start = 0;
         int pageSize = 20;
         do {
@@ -65,7 +65,9 @@ public class FileSourceStatusUpdateTask {
                 pageSize
             );
             for (FileSourceDTO fileSourceDTO : fileSourceDTOList) {
-                FileWorkerDTO fileWorkerDTO = dispatchService.findBestFileWorker(fileSourceDTO);
+                FileWorkerDTO fileWorkerDTO = dispatchService.findBestFileWorker(
+                    fileSourceDTO, "FileSourceStatusUpdateTask"
+                );
                 int status;
                 if (fileWorkerDTO == null) {
                     log.info(

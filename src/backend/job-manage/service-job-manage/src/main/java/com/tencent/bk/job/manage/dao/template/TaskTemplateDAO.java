@@ -27,8 +27,8 @@ package com.tencent.bk.job.manage.dao.template;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.manage.model.dto.task.TaskTemplateInfoDTO;
 import com.tencent.bk.job.manage.model.query.TaskTemplateQuery;
-import org.jooq.types.ULong;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -69,6 +69,14 @@ public interface TaskTemplateDAO {
      * @return 模版信息
      */
     TaskTemplateInfoDTO getTaskTemplateById(Long templateId);
+
+    /**
+     * 根据模版 IDs 批量查询模版数据
+     *
+     * @param templateIds 模版 ID
+     * @return 模版信息列表
+     */
+    List<TaskTemplateInfoDTO> listTaskTemplateBasicInfoByIds(List<Long> templateIds);
 
     /**
      * 查询已删除的模板信息
@@ -198,7 +206,21 @@ public interface TaskTemplateDAO {
      */
     boolean isExistAnyAppTemplate(Long appId);
 
-    void updateTemplateStatus(ULong templateId, int scriptStatus);
+    /**
+     * 更新作业模版引用的脚本的状态
+     *
+     * @param templateId        作业模版
+     * @param scriptStatusFlags 脚本更新状态
+     */
+    void updateTemplateScriptStatusFlags(Long templateId, int scriptStatusFlags);
+
+    /**
+     * 批量更新作业模版引用的脚本的状态
+     *
+     * @param templateIds       作业模版ID 列表
+     * @param scriptStatusFlags 脚本更新状态
+     */
+    void batchUpdateTemplateScriptStatus(Collection<Long> templateIds, int scriptStatusFlags);
 
     Integer countTemplates(Long appId);
 
@@ -209,7 +231,7 @@ public interface TaskTemplateDAO {
     /**
      * 获取模板标签(兼容老版本)
      *
-     * @return Map<TemplateId, List<TagId>>
+     * @return Map<TemplateId, List < TagId>>
      */
     Map<Long, List<Long>> listAllTemplateTagsCompatible();
 }

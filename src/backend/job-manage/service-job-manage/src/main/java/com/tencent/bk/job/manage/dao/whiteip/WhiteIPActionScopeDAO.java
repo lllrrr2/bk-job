@@ -25,20 +25,15 @@
 package com.tencent.bk.job.manage.dao.whiteip;
 
 import com.tencent.bk.job.manage.model.dto.whiteip.WhiteIPActionScopeDTO;
-import org.jooq.DSLContext;
 
 import java.util.List;
 
 public interface WhiteIPActionScopeDAO {
-    Long insertWhiteIPActionScope(DSLContext dslContext, WhiteIPActionScopeDTO whiteIPActionScopeDTO);
+    void insertWhiteIPActionScope(WhiteIPActionScopeDTO whiteIPActionScopeDTO);
 
-    int deleteWhiteIPActionScopeById(DSLContext dslContext, Long id);
+    int deleteWhiteIPActionScopeByRecordId(Long recordId);
 
-    int deleteWhiteIPActionScopeByRecordId(DSLContext dslContext, Long recordId);
+    List<WhiteIPActionScopeDTO> getWhiteIPActionScopeByRecordId(Long recordId);
 
-    WhiteIPActionScopeDTO getWhiteIPActionScopeById(DSLContext dslContext, Long id);
-
-    List<WhiteIPActionScopeDTO> getWhiteIPActionScopeByRecordId(DSLContext dslContext, Long recordId);
-
-    int updateWhiteIPActionScope(DSLContext dslContext, WhiteIPActionScopeDTO whiteIPActionScopeDTO);
+    List<WhiteIPActionScopeDTO> listWhiteIPActionScopeByRecordIds(List<Long> recordIdList);
 }

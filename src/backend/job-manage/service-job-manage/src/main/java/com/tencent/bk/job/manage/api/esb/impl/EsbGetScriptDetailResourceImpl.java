@@ -24,24 +24,30 @@
 
 package com.tencent.bk.job.manage.api.esb.impl;
 
+import com.tencent.bk.audit.annotations.ActionAuditRecord;
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditInstanceRecord;
+import com.tencent.bk.audit.context.ActionAuditContext;
+import com.tencent.bk.job.common.audit.constants.EventContentConstants;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbResp;
+import com.tencent.bk.job.common.esb.util.EsbDTOAppScopeMappingHelper;
 import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.exception.NotFoundException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.iam.constant.ActionId;
-import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
+import com.tencent.bk.job.common.iam.constant.ResourceTypeId;
+import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.iam.model.AuthResult;
-import com.tencent.bk.job.common.iam.service.AuthService;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.ValidateResult;
 import com.tencent.bk.job.common.util.date.DateUtils;
 import com.tencent.bk.job.manage.api.esb.EsbGetScriptDetailResource;
+import com.tencent.bk.job.manage.auth.ScriptAuthService;
 import com.tencent.bk.job.manage.model.dto.ScriptDTO;
 import com.tencent.bk.job.manage.model.esb.EsbScriptDTO;
 import com.tencent.bk.job.manage.model.esb.request.EsbGetScriptDetailRequest;
-import com.tencent.bk.job.manage.service.ScriptService;
+import com.tencent.bk.job.manage.service.ScriptManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,20 +57,28 @@ import java.time.temporal.ChronoUnit;
 @RestController
 @Slf4j
 public class EsbGetScriptDetailResourceImpl implements EsbGetScriptDetailResource {
-    private final ScriptService scriptService;
-    private final MessageI18nService i18nService;
-    private final AuthService authService;
+    private final ScriptManager scriptManager;
+    private final ScriptAuthService scriptAuthService;
 
-    public EsbGetScriptDetailResourceImpl(ScriptService scriptService, MessageI18nService i18nService,
-                                          AuthService authService) {
-        this.scriptService = scriptService;
-        this.i18nService = i18nService;
-        this.authService = authService;
+    public EsbGetScriptDetailResourceImpl(ScriptManager scriptManager,
+                                          ScriptAuthService scriptAuthService) {
+        this.scriptManager = scriptManager;
+        this.scriptAuthService = scriptAuthService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_get_script_detail"})
-    public EsbResp<EsbScriptDTO> getScriptDetail(EsbGetScriptDetailRequest request) {
+    @AuditEntry(actionId = ActionId.VIEW_SCRIPT)
+    @ActionAuditRecord(
+        actionId = ActionId.VIEW_SCRIPT,
+        instance = @AuditInstanceRecord(
+            resourceType = ResourceTypeId.SCRIPT
+        ),
+        content = EventContentConstants.VIEW_SCRIPT
+    )
+    public EsbResp<EsbScriptDTO> getScriptDetail(String username,
+                                                 String appCode,
+                                                 EsbGetScriptDetailRequest request) {
         ValidateResult checkResult = checkRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Get script detail, request is illegal!");
@@ -73,18 +87,23 @@ public class EsbGetScriptDetailResourceImpl implements EsbGetScriptDetailResourc
 
 
         Long appId = request.getAppId();
-        ScriptDTO scriptVersion = scriptService.getScriptVersion(request.getScriptVersionId());
+        ScriptDTO scriptVersion = scriptManager.getScriptVersion(request.getAppId(),
+            request.getScriptVersionId());
         if (scriptVersion == null) {
             log.warn("Cannot find scriptVersion by id {}", request.getScriptVersionId());
             throw new NotFoundException(ErrorCode.SCRIPT_VERSION_NOT_EXIST);
         }
         String scriptId = scriptVersion.getId();
+
+        // 审计
+        ActionAuditContext.current().setInstanceId(scriptId).setInstanceName(scriptVersion.getName());
+
         // 非公共脚本鉴权
         if (!scriptVersion.isPublicScript()) {
-            AuthResult authResult = authService.auth(true, request.getUserName(), ActionId.VIEW_SCRIPT,
-                ResourceTypeEnum.SCRIPT, scriptId, null);
+            AuthResult authResult =
+                scriptAuthService.authViewScript(username, request.getAppResourceScope(), scriptId, null);
             if (!authResult.isPass()) {
-                return authService.buildEsbAuthFailResp(authResult.getRequiredActionResources());
+                throw new PermissionDeniedException(authResult);
             }
         }
         if (!scriptVersion.isPublicScript()) {
@@ -110,7 +129,7 @@ public class EsbGetScriptDetailResourceImpl implements EsbGetScriptDetailResourc
         esbScript.setLastModifyUser(script.getLastModifyUser());
         esbScript.setCreateTime(DateUtils.formatUnixTimestamp(script.getCreateTime(), ChronoUnit.MILLIS, "yyyy-MM-dd " +
             "HH:mm:ss", ZoneId.of("UTC")));
-        esbScript.setAppId(script.getAppId());
+        EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(script.getAppId(), esbScript);
         esbScript.setPublicScript(script.isPublicScript());
         esbScript.setId(script.getScriptVersionId());
         esbScript.setCreator(script.getCreator());

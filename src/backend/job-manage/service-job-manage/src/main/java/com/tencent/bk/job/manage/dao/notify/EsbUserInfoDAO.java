@@ -25,26 +25,22 @@
 package com.tencent.bk.job.manage.dao.notify;
 
 import com.tencent.bk.job.manage.model.dto.notify.EsbUserInfoDTO;
-import org.jooq.DSLContext;
 
 import java.util.Collection;
 import java.util.List;
 
 public interface EsbUserInfoDAO {
-    int insertEsbUserInfo(DSLContext dslContext, EsbUserInfoDTO esbUserInfoDTO);
 
-    int deleteEsbUserInfoById(DSLContext dslContext, Long id);
+    int insertEsbUserInfo(EsbUserInfoDTO esbUserInfoDTO);
 
-    EsbUserInfoDTO getEsbUserInfoById(Long id);
+    int deleteEsbUserInfoById(Long id);
 
     List<EsbUserInfoDTO> listEsbUserInfo();
 
     List<EsbUserInfoDTO> listEsbUserInfo(String prefixStr, Long limit);
 
-    List<EsbUserInfoDTO> listEsbUserInfo(Collection<String> userNames, Long limit);
+    List<EsbUserInfoDTO> listEsbUserInfo(Collection<String> userNames);
 
-    int updateEsbUserInfoById(DSLContext dslContext, EsbUserInfoDTO esbUserInfoDTO);
-
-    boolean isUserExist(String username);
+    List<String> listExistUserName(Collection<String> userNames);
 
 }

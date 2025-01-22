@@ -24,45 +24,36 @@
 
 package com.tencent.bk.job.common.util;
 
-import java.util.ArrayList;
+import org.apache.commons.collections4.CollectionUtils;
+
+import java.util.Collection;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
- * 分批工具
+ * 分批处理工具类
  */
 public class BatchUtil {
-    /**
-     * 分批
-     *
-     * @param elements  用于分批的集合
-     * @param batchSize 每一批的最大数量
-     * @return 分批结果
-     */
-    public static <E> List<List<E>> buildBatchList(List<E> elements, int batchSize) {
-        List<List<E>> batchList = new ArrayList<>();
-        int total = elements.size();
-        if (total <= batchSize) {
-            batchList.add(elements);
-            return batchList;
-        }
 
-        int batch = total / batchSize;
-        int left = total % batchSize;
-        if (left > 0) {
-            batch += 1;
+    /**
+     * 分批执行工具
+     *
+     * @param targets   执行目标列表
+     * @param batchSize 每批次大小
+     * @param execution 执行函数
+     * @param <E>       执行目标
+     */
+    public static <E> void executeBatch(Collection<E> targets,
+                                        int batchSize,
+                                        Consumer<Collection<E>> execution) {
+        if (CollectionUtils.isEmpty(targets)) {
+            return;
         }
-        int startIndex = 0;
-        for (int i = 1; i <= batch; i++) {
-            List<E> subList;
-            if (i == batch && left > 0) {
-                subList = elements.subList(startIndex, startIndex + left);
-                startIndex += left;
-            } else {
-                subList = elements.subList(startIndex, startIndex + batchSize);
-                startIndex += batchSize;
-            }
-            batchList.add(subList);
+        if (targets.size() <= batchSize) {
+            execution.accept(targets);
+        } else {
+            List<List<E>> targetBatches = CollectionUtil.partitionCollection(targets, batchSize);
+            targetBatches.forEach(execution);
         }
-        return batchList;
     }
 }

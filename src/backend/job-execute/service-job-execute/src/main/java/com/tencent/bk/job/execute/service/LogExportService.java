@@ -24,15 +24,27 @@
 
 package com.tencent.bk.job.execute.service;
 
+import com.tencent.bk.job.common.constant.ExecuteObjectTypeEnum;
 import com.tencent.bk.job.execute.model.LogExportJobInfoDTO;
 
 /**
- * @since 19/1/2021 12:00
+ * 作业执行日志导出Service
  */
 public interface LogExportService {
 
-    LogExportJobInfoDTO packageLogFile(String username, Long appId, Long stepInstanceId, String ip, int executeCount,
-                                       String logFileDir, String logFileName, Boolean repackage);
+    LogExportJobInfoDTO packageLogFile(String username,
+                                       Long appId,
+                                       Long taskInstanceId,
+                                       Long stepInstanceId,
+                                       ExecuteObjectTypeEnum executeObjectType,
+                                       Long executeObjectResourceId,
+                                       int executeCount,
+                                       String logFileDir,
+                                       String logFileName,
+                                       Boolean repackage);
 
-    LogExportJobInfoDTO getExportInfo(Long appId, Long stepInstanceId, String ip);
+    LogExportJobInfoDTO getExportInfo(Long appId,
+                                      Long stepInstanceId,
+                                      ExecuteObjectTypeEnum executeObjectType,
+                                      Long executeObjectResourceId);
 }

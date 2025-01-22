@@ -29,9 +29,6 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
-/**
- * @since 3/10/2019 17:17
- */
 @Getter
 @AllArgsConstructor
 public enum TaskVariableTypeEnum {
@@ -75,7 +72,7 @@ public enum TaskVariableTypeEnum {
 
     private String mask;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static TaskVariableTypeEnum valOf(int type) {
         for (TaskVariableTypeEnum value : values()) {
             if (value.type == type) {

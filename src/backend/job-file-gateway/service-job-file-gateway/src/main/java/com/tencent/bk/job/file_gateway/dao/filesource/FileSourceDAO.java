@@ -24,48 +24,62 @@
 
 package com.tencent.bk.job.file_gateway.dao.filesource;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
+import com.tencent.bk.job.common.constant.CompatibleType;
+import com.tencent.bk.job.file_gateway.model.dto.FileSourceBasicInfoDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceDTO;
-import org.jooq.DSLContext;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface FileSourceDAO {
-    Integer insertFileSource(DSLContext dslContext, FileSourceDTO fileSourceDTO);
+    Integer insertFileSource(FileSourceDTO fileSourceDTO);
 
-    int updateFileSource(DSLContext dslContext, FileSourceDTO fileSourceDTO);
+    int updateFileSource(FileSourceDTO fileSourceDTO);
 
-    int updateFileSourceStatus(DSLContext dslContext, Integer fileSourceId, Integer status);
+    int updateFileSourceStatus(Integer fileSourceId, Integer status);
 
-    int deleteFileSourceById(DSLContext dslContext, Integer id);
+    int deleteFileSourceById(Integer id);
 
-    int enableFileSourceById(DSLContext dslContext, String username, Long appId, Integer id, Boolean enableFlag);
+    int enableFileSourceById(String username, Long appId, Integer id, Boolean enableFlag);
 
-    FileSourceDTO getFileSourceById(DSLContext dslContext, Integer id);
+    FileSourceDTO getFileSourceById(Integer id);
 
-    FileSourceDTO getFileSourceByCode(DSLContext dslContext, String code);
+    List<FileSourceBasicInfoDTO> listFileSourceByIds(Collection<Integer> ids);
 
-    Integer countAvailableLikeFileSource(DSLContext dslContext, Long appId, String credentialId, String alias);
+    @Deprecated
+    @CompatibleImplementation(name = "fileSourceId", deprecatedVersion = "3.9.x", type = CompatibleType.DEPLOY,
+        explain = "文件源标识仅在appId下唯一，发布完成后可删除")
+    FileSourceDTO getFileSourceByCode(String code);
 
-    Integer countFileSource(DSLContext dslContext, Long appId, String credentialId, String alias);
+    FileSourceDTO getFileSourceByCode(Long appId, String code);
 
-    Integer countWorkTableFileSource(DSLContext dslContext, Long appId, String credentialId, String alias);
+    Integer countAvailableLikeFileSource(Long appId, String credentialId, String alias);
 
-    Integer countWorkTableFileSource(DSLContext dslContext, List<Long> appIdList, List<Integer> idList);
+    Integer countFileSource(Long appId, String credentialId, String alias);
 
-    Boolean checkFileSourceExists(DSLContext dslContext, Long appId, String alias);
+    Integer countWorkTableFileSource(Long appId, String credentialId, String alias);
 
-    List<FileSourceDTO> listAvailableFileSource(DSLContext dslContext, Long appId, String credentialId, String alias,
+    Integer countWorkTableFileSource(List<Long> appIdList, List<Integer> idList);
+
+    Boolean checkFileSourceExists(Long appId, String alias);
+
+    List<FileSourceDTO> listAvailableFileSource(Long appId, String credentialId, String alias,
                                                 Integer start, Integer pageSize);
 
-    List<FileSourceDTO> listWorkTableFileSource(DSLContext dslContext, Long appId, String credentialId, String alias,
+    List<FileSourceDTO> listWorkTableFileSource(Long appId, String credentialId, String alias,
                                                 Integer start, Integer pageSize);
 
-    List<FileSourceDTO> listWorkTableFileSource(DSLContext dslContext, List<Long> appIdList, List<Integer> idList,
+    List<FileSourceDTO> listWorkTableFileSource(List<Long> appIdList, List<Integer> idList,
                                                 Integer start, Integer pageSize);
 
-    boolean existsCode(String code);
+    boolean existsCode(Long appId, String code);
+
+    boolean existsCodeExceptId(Long appId, String code, Integer exceptId);
 
     boolean existsFileSource(Long appId, Integer id);
+
+    boolean existsFileSourceUsingCredential(Long appId, String credentialId);
 
     Integer getFileSourceIdByCode(Long appId, String code);
 }

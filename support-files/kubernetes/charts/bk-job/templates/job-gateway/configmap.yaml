@@ -1,4 +1,4 @@
-{{- if .Values.gatewayConfig }}
+{{- if .Values.gatewayConfig.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,12 +14,33 @@ data:
   application.yaml: |-
     spring:
       cloud:
+        loadbalancer:
+          cache:
+            ttl: 20s
+        stream:
+          defaultBinder: jobCommon
+          binders:
+            jobCommon:
+              type: rabbit
+              environment:
+                spring:
+                  rabbitmq:
+                    host: {{ include "job.rabbitmq.host" . }}
+                    port: {{ include "job.rabbitmq.port" . }}
+                    username: {{ include "job.rabbitmq.username" . }}
+                    {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+                    password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+                    {{- else -}}
+                    password: ${rabbitmq-password}
+                    {{- end }}
+                    virtual-host: {{ include "job.rabbitmq.vhost" . }}
         gateway:
           discovery:
             locator:
               enabled: false
               lower-case-service-id: true
           routes:
+            {{- if eq .Values.deploy.mode "standard" }}
             - id: job-logout
               uri: lb://job-gateway
               predicates:
@@ -103,7 +124,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v2/job-manage/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v2/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -113,7 +134,7 @@ data:
               predicates:
                 - Path=/api/job/v3/job-manage/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v3/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -123,7 +144,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v2/job-crontab/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v2/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -133,7 +154,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v3/job-crontab/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v3/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -143,7 +164,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v2/job-execute/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v2/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -153,7 +174,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v3/job-execute/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v3/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -163,7 +184,7 @@ data:
               predicates:
                 - JobEsbV2Path=/api/job/v3/job-file-gateway/{api_name}
               filters:
-                - CheckEsbJwt
+                - CheckOpenApiJwt
                 - SetPath=/esb/api/v3/{api_name}
                 - RecordEsbAccessLog
                 - AddEsbLangHeader
@@ -215,11 +236,71 @@ data:
               filters:
                 - RecordIamAccessLog
                 - AddEsbLangHeader
+            {{- else if eq .Values.deploy.mode "lite" }}
+            - id: job-logout
+              uri: lb://job-gateway
+              predicates:
+                - Path= /logout
+              filters:
+                - Logout
+    
+            - id: job-web
+              uri: lb://job-assemble
+              predicates:
+                - Path= /job-manage/web/**,/job-crontab/web/**,/job-execute/web/**,/job-analysis/web/**,/job-backup/web/**,/job-logsvr/web/**,/job-file-gateway/web/**,/job-ticket/web/**
+              filters:
+                - Authorize
+                - CsrfCheck
+                - StripPrefix=1
+                - AddWebLangHeader
+    
+            - id: job-file-gateway-remote
+              uri: lb://job-assemble
+              predicates:
+                - Path= /job-file-gateway/remote/**
+              filters:
+                - AuthorizeRemote
+                - StripPrefix=1
+    
+            - id: job-esb
+              uri: lb://job-assemble
+              predicates:
+                - JobEsbV2Path=/api/job/v2/{module}/{api_name}
+              filters:
+                - CheckOpenApiJwt
+                - SetPath=/esb/api/v2/{api_name}
+                - RecordEsbAccessLog
+                - AddEsbLangHeader
+    
+            - id: job-esb-v3
+              uri: lb://job-assemble
+              predicates:
+                - Path=/api/job/v3/{module}/{api_name}
+              filters:
+                - CheckOpenApiJwt
+                - SetPath=/esb/api/v3/{api_name}
+                - RecordEsbAccessLog
+                - AddEsbLangHeader
+    
+            - id: job-iam
+              uri: lb://job-assemble
+              predicates:
+                - Path=/iam/api/v1/resources/**
+              filters:
+                - RecordIamAccessLog
+                - AddEsbLangHeader
+            {{- end }}      
     job:
       gateway:
         login-exemption:
           enabled: {{ .Values.gatewayConfig.loginExemption.enabled | default false }}
           default-user: {{ .Values.gatewayConfig.loginExemption.defaultUser | default "admin" }}
+      bkApiGateway:
+        enabled: {{ .Values.bkApiGatewayConfig.enabled | default false }}
+        gatewayName: {{ .Values.bkApiGatewayConfig.gatewayName | default "bk-job" }}
+        jwtPublicKey:
+          get:
+            failPolicy: {{ .Values.bkApiGatewayConfig.jwtPublicKey.failPolicy | default "retry" }}
     server:
       port: {{ .Values.gatewayConfig.containerPort.https }}
       http:
@@ -236,4 +317,4 @@ data:
     management:
       server:
         port: {{ .Values.gatewayConfig.containerPort.management }}
-{{- end}}
+{{- end }}

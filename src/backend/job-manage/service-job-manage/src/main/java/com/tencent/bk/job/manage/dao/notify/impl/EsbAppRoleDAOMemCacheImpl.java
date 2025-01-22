@@ -33,21 +33,15 @@ import com.tencent.bk.job.manage.dao.notify.EsbAppRoleDAO;
 import com.tencent.bk.job.manage.service.AppRoleService;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
-import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-/**
- * @Description
- * @Date 2020/1/2
- * @Version 1.0
- */
 @Slf4j
 @Repository
 public class EsbAppRoleDAOMemCacheImpl implements EsbAppRoleDAO {
@@ -55,11 +49,11 @@ public class EsbAppRoleDAOMemCacheImpl implements EsbAppRoleDAO {
     private static final Logger logger = LoggerFactory.getLogger(EsbAppRoleDAOMemCacheImpl.class);
     private final AppRoleService roleService;
 
-    private LoadingCache<String, List<AppRoleDTO>> esbAppRoleCache = CacheBuilder.newBuilder()
+    private final LoadingCache<String, List<AppRoleDTO>> esbAppRoleCache = CacheBuilder.newBuilder()
         .maximumSize(10).expireAfterWrite(10, TimeUnit.MINUTES).
             build(new CacheLoader<String, List<AppRoleDTO>>() {
                       @Override
-                      public List<AppRoleDTO> load(String lang) throws Exception {
+                      public List<AppRoleDTO> load(@NonNull String lang) {
                           logger.info("esbAppRoleCache lang=" + lang);
                           val result = roleService.listAppRoles(lang);
                           logger.info(String.format("result.size=%d", result.size()));
@@ -74,25 +68,7 @@ public class EsbAppRoleDAOMemCacheImpl implements EsbAppRoleDAO {
     }
 
     @Override
-    public AppRoleDTO getEsbAppRoleById(DSLContext dslContext, String id) {
-        List<AppRoleDTO> appRoleDTOList = null;
-        try {
-            String lang = JobContextUtil.getUserLang();
-            logger.info(String.format("Current Lang:%s", lang));
-            appRoleDTOList = esbAppRoleCache.get(lang);
-            for (AppRoleDTO appRoleDTO : appRoleDTOList) {
-                if (appRoleDTO.getId().equals(id)) {
-                    return appRoleDTO;
-                }
-            }
-        } catch (ExecutionException e) {
-            log.warn("fail to getEsbAppRoleById", e);
-        }
-        return null;
-    }
-
-    @Override
-    public List<AppRoleDTO> listEsbAppRole(DSLContext dslContext) {
+    public List<AppRoleDTO> listEsbAppRole() {
         try {
             String lang = JobContextUtil.getUserLang();
             logger.info(String.format("Current Lang:%s", lang));

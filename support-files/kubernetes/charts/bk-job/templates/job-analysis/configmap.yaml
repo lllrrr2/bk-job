@@ -1,4 +1,4 @@
-{{- if .Values.analysisConfig }}
+{{- if and (.Values.analysisConfig.enabled) (.Values.analysisConfig) (eq .Values.deploy.mode "standard") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,14 +13,69 @@ metadata:
 data:
   application.yaml: |-
     spring:
+      mvc:
+        async:
+          requestTimeout: 180s
       cloud:
-        refresh:
-          extra-refreshable: javax.sql.DataSource
+        loadbalancer:
+          cache:
+            ttl: 20s
+        stream:
+          function:
+            definition: handleAIChatOperationEvent
+          defaultBinder: jobCommon
+          binders:
+            jobCommon:
+              type: rabbit
+              environment:
+                spring:
+                  rabbitmq:
+                    host: {{ include "job.rabbitmq.host" . }}
+                    port: {{ include "job.rabbitmq.port" . }}
+                    username: {{ include "job.rabbitmq.username" . }}
+                    {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+                    password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+                    {{- else -}}
+                    password: ${rabbitmq-password}
+                    {{- end }}
+                    virtual-host: {{ include "job.rabbitmq.vhost" . }} 
+            jobAnalysis:
+              type: rabbit
+              environment:
+                spring:
+                  rabbitmq:
+                    host: {{ include "job.rabbitmq.host" . }}
+                    port: {{ include "job.rabbitmq.port" . }}
+                    username: {{ include "job.rabbitmq.username" . }}
+                    {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+                    password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+                    {{- else -}}
+                    password: ${rabbitmq-password}
+                    {{- end }}
+                    virtual-host: {{ include "job.rabbitmq.vhost" . }}
+          bindings:
+            handleAIChatOperationEvent-in-0:
+              destination: analysis.aiChatOperation.fanout
+              binder: jobAnalysis
+              consumer:
+                concurrency: 3
+            aiChatOperationFanout-out-0:
+              destination: analysis.aiChatOperation.fanout
+              binder: jobAnalysis
+          rabbit:
+            bindings:
+              handleAIChatOperationEvent-in-0:
+                consumer:
+                  maxConcurrency: 3
+                  exchangeType: fanout
+              aiChatOperationFanout-out-0:
+                producer:
+                  exchangeType: fanout
       datasource:
         job-analysis:
-          driver-class-name: com.mysql.cj.jdbc.Driver
+          driver-class-name: {{ include "job.jdbcMysqlDriverClass" . }}
           type: com.zaxxer.hikari.HikariDataSource
-          jdbc-url: jdbc:mysql://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_analysis?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull
+          jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_analysis{{ include "job.mariadb.connection.properties" . }}
           username: {{ include "job.mariadb.username" . }}
           {{ if .Values.externalMariaDB.existingPasswordSecret }}
           password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
@@ -47,11 +102,9 @@ data:
           max-file-size: 5GB
           max-request-size: 5GB
     feign:
-      client:
-        config:
-          default:
-            connectTimeout: 5000
-            readTimeout: 300000
+      {{- toYaml .Values.analysisConfig.feign | nindent 6 }}
     server:
       port: {{ .Values.analysisConfig.containerPort }}
-  {{- end}}
+    ai:
+      {{- toYaml .Values.analysisConfig.ai | nindent 6 }}
+{{- end }}

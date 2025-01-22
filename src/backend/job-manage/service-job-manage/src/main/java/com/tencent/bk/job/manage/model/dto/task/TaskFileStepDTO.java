@@ -25,10 +25,14 @@
 package com.tencent.bk.job.manage.model.dto.task;
 
 import com.tencent.bk.job.common.constant.DuplicateHandlerEnum;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.constant.NotExistPathHandlerEnum;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbAccountV3BasicDTO;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbFileDestinationV3DTO;
-import com.tencent.bk.job.manage.model.esb.v3.response.EsbFileStepV3DTO;
+import com.tencent.bk.job.common.esb.model.job.v3.resp.EsbFileStepV3DTO;
+import com.tencent.bk.job.common.exception.InvalidParamException;
+import com.tencent.bk.job.execute.common.constants.FileTransferModeEnum;
 import com.tencent.bk.job.manage.model.inner.ServiceAccountDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskFileStepDTO;
 import com.tencent.bk.job.manage.model.web.vo.task.TaskFileDestinationInfoVO;
@@ -92,8 +96,8 @@ public class TaskFileStepDTO {
         fileStepVO.setTimeout(fileStep.getTimeout());
         fileStepVO.setOriginSpeedLimit(fileStep.getOriginSpeedLimit());
         fileStepVO.setTargetSpeedLimit(fileStep.getTargetSpeedLimit());
-        fileStepVO.setTransferMode(TaskFileStepVO.getTransferMode(fileStep.getDuplicateHandler(),
-            fileStep.getNotExistPathHandler()));
+        fileStepVO.setTransferMode(toTransferMode(fileStep.getDuplicateHandler(),
+            fileStep.getNotExistPathHandler()).getValue());
         fileStepVO.setIgnoreError(fileStep.getIgnoreError() ? 1 : 0);
         return fileStepVO;
     }
@@ -113,11 +117,16 @@ public class TaskFileStepDTO {
             fileStep.setExecuteAccount(fileStepVO.getFileDestination().getAccount());
             fileStep.setDestinationHostList(TaskTargetDTO.fromVO(fileStepVO.getFileDestination().getServer()));
         }
-        fileStep.setTimeout(fileStepVO.getTimeout());
+        fileStep.setTimeout(fileStepVO.getTimeout() == null ?
+            (long) JobConstants.DEFAULT_JOB_TIMEOUT_SECONDS : fileStepVO.getTimeout());
         fileStep.setOriginSpeedLimit(fileStepVO.getOriginSpeedLimit());
         fileStep.setTargetSpeedLimit(fileStepVO.getTargetSpeedLimit());
-        fileStep.setDuplicateHandler(DuplicateHandlerEnum.valueOf(fileStepVO.getDuplicateHandler()));
-        fileStep.setNotExistPathHandler(NotExistPathHandlerEnum.valueOf(fileStepVO.getNotExistPathHandler()));
+        if (fileStepVO.getTransferMode() != null) {
+            fileStep.setDuplicateHandler(TaskFileStepDTO.toDuplicateHandler(
+                FileTransferModeEnum.getFileTransferModeEnum(fileStepVO.getTransferMode())));
+            fileStep.setNotExistPathHandler(TaskFileStepDTO.toNotExistPathHandler(
+                FileTransferModeEnum.getFileTransferModeEnum(fileStepVO.getTransferMode())));
+        }
         fileStep.setIgnoreError(fileStepVO.getIgnoreError() == 1);
         return fileStep;
     }
@@ -128,7 +137,7 @@ public class TaskFileStepDTO {
         }
         EsbFileStepV3DTO esbFileStep = new EsbFileStepV3DTO();
         if (CollectionUtils.isNotEmpty(fileStepInfo.getOriginFileList())) {
-            esbFileStep.setFileSourceList(fileStepInfo.getOriginFileList().parallelStream()
+            esbFileStep.setFileSourceList(fileStepInfo.getOriginFileList().stream()
                 .map(TaskFileInfoDTO::toEsbFileSourceV3).collect(Collectors.toList()));
         }
         EsbFileDestinationV3DTO esbFileDestination = new EsbFileDestinationV3DTO();
@@ -141,8 +150,8 @@ public class TaskFileStepDTO {
         esbFileStep.setTimeout(fileStepInfo.getTimeout());
         esbFileStep.setSourceSpeedLimit(fileStepInfo.getOriginSpeedLimit());
         esbFileStep.setDestinationSpeedLimit(fileStepInfo.getTargetSpeedLimit());
-        esbFileStep.setTransferMode(TaskFileStepVO.getTransferMode(fileStepInfo.getDuplicateHandler(),
-            fileStepInfo.getNotExistPathHandler()));
+        esbFileStep.setTransferMode(toTransferMode(fileStepInfo.getDuplicateHandler(),
+            fileStepInfo.getNotExistPathHandler()).getValue());
         return esbFileStep;
     }
 
@@ -152,7 +161,7 @@ public class TaskFileStepDTO {
         }
         ServiceTaskFileStepDTO serviceFileStep = new ServiceTaskFileStepDTO();
         if (CollectionUtils.isNotEmpty(fileStepInfo.getOriginFileList())) {
-            serviceFileStep.setOriginFileList(fileStepInfo.getOriginFileList().parallelStream()
+            serviceFileStep.setOriginFileList(fileStepInfo.getOriginFileList().stream()
                 .map(TaskFileInfoDTO::toServiceFileInfo).collect(Collectors.toList()));
         }
         serviceFileStep.setDestinationFileLocation(fileStepInfo.getDestinationFileLocation());
@@ -174,5 +183,54 @@ public class TaskFileStepDTO {
         serviceFileStep.setFileDuplicateHandle(fileStepInfo.getDuplicateHandler().getId());
         serviceFileStep.setNotExistPathHandler(fileStepInfo.getNotExistPathHandler().getValue());
         return serviceFileStep;
+    }
+
+    public static NotExistPathHandlerEnum toNotExistPathHandler(FileTransferModeEnum fileTransferMode) {
+        if (fileTransferMode == FileTransferModeEnum.STRICT) {
+            return NotExistPathHandlerEnum.STEP_FAIL;
+        } else {
+            return NotExistPathHandlerEnum.CREATE_DIR;
+        }
+    }
+
+    public static DuplicateHandlerEnum toDuplicateHandler(FileTransferModeEnum fileTransferMode) {
+        switch (fileTransferMode) {
+            case STRICT:
+            case FORCE:
+                return DuplicateHandlerEnum.OVERWRITE;
+            case SAFETY_IP_PREFIX:
+                return DuplicateHandlerEnum.GROUP_BY_IP;
+            case SAFETY_DATE_PREFIX:
+                return DuplicateHandlerEnum.GROUP_BY_DATE_AND_IP;
+            default:
+                throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
+        }
+    }
+
+    public static FileTransferModeEnum toTransferMode(DuplicateHandlerEnum duplicateHandlerEnum,
+                                                      NotExistPathHandlerEnum notExistPathHandlerEnum) {
+        if (duplicateHandlerEnum == null) {
+            // 默认覆盖
+            duplicateHandlerEnum = DuplicateHandlerEnum.OVERWRITE;
+        }
+        if (notExistPathHandlerEnum == null) {
+            // 默认直接创建
+            notExistPathHandlerEnum = NotExistPathHandlerEnum.CREATE_DIR;
+        }
+        if (DuplicateHandlerEnum.OVERWRITE == duplicateHandlerEnum
+            && NotExistPathHandlerEnum.STEP_FAIL == notExistPathHandlerEnum) {
+            return FileTransferModeEnum.STRICT;
+        } else if (DuplicateHandlerEnum.OVERWRITE == duplicateHandlerEnum
+            && NotExistPathHandlerEnum.CREATE_DIR == notExistPathHandlerEnum) {
+            return FileTransferModeEnum.FORCE;
+        } else if (DuplicateHandlerEnum.GROUP_BY_IP == duplicateHandlerEnum
+            && NotExistPathHandlerEnum.CREATE_DIR == notExistPathHandlerEnum) {
+            return FileTransferModeEnum.SAFETY_IP_PREFIX;
+        } else if (DuplicateHandlerEnum.GROUP_BY_DATE_AND_IP == duplicateHandlerEnum
+            && NotExistPathHandlerEnum.CREATE_DIR == notExistPathHandlerEnum) {
+            return FileTransferModeEnum.SAFETY_DATE_PREFIX;
+        } else {
+            return FileTransferModeEnum.STRICT;
+        }
     }
 }

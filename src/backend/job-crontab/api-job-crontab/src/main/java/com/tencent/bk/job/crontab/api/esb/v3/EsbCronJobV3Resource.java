@@ -28,11 +28,13 @@ import com.tencent.bk.job.common.annotation.EsbAPI;
 import com.tencent.bk.job.common.constant.JobCommonHeaders;
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbPageDataV3;
+import com.tencent.bk.job.crontab.model.esb.v3.request.EsbDeleteCronV3Request;
 import com.tencent.bk.job.crontab.model.esb.v3.request.EsbGetCronDetailV3Request;
 import com.tencent.bk.job.crontab.model.esb.v3.request.EsbGetCronListV3Request;
 import com.tencent.bk.job.crontab.model.esb.v3.request.EsbSaveCronV3Request;
 import com.tencent.bk.job.crontab.model.esb.v3.request.EsbUpdateCronStatusV3Request;
-import com.tencent.bk.job.crontab.model.esb.v3.response.EsbCronInfoV3Response;
+import com.tencent.bk.job.crontab.model.esb.v3.response.EsbCronInfoV3DTO;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,10 +52,12 @@ import org.springframework.web.bind.annotation.RestController;
 public interface EsbCronJobV3Resource {
 
     @GetMapping("/get_cron_list")
-    EsbResp<EsbPageDataV3<EsbCronInfoV3Response>> getCronList(
+    EsbResp<EsbPageDataV3<EsbCronInfoV3DTO>> getCronList(
         @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
         @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
-        @RequestParam(value = "bk_biz_id") Long appId,
+        @RequestParam(value = "bk_biz_id", required = false) Long bizId,
+        @RequestParam(value = "bk_scope_type", required = false) String scopeType,
+        @RequestParam(value = "bk_scope_id", required = false) String scopeId,
         @RequestParam(value = "id", required = false) Long id,
         @RequestParam(value = "creator", required = false) String creator,
         @RequestParam(value = "name", required = false) String name,
@@ -67,12 +71,12 @@ public interface EsbCronJobV3Resource {
         @RequestParam(value = "length", required = false) Integer length);
 
     @GetMapping("/get_cron_detail")
-    EsbResp<EsbCronInfoV3Response> getCronDetail(
-        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
-        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
-        @RequestParam(value = "bk_biz_id") Long appId,
-        @RequestParam(value = "id") Long id);
-
+    EsbResp<EsbCronInfoV3DTO> getCronDetail(@RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+                                            @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+                                            @RequestParam(value = "bk_biz_id", required = false) Long bizId,
+                                            @RequestParam(value = "bk_scope_type", required = false) String scopeType,
+                                            @RequestParam(value = "bk_scope_id", required = false) String scopeId,
+                                            @RequestParam(value = "id") Long id);
 
     /**
      * 获取定时任务列表
@@ -81,8 +85,13 @@ public interface EsbCronJobV3Resource {
      * @return 定时任务列表
      */
     @PostMapping("/get_cron_list")
-    EsbResp<EsbPageDataV3<EsbCronInfoV3Response>> getCronListUsingPost(
-        @RequestBody EsbGetCronListV3Request request);
+    EsbResp<EsbPageDataV3<EsbCronInfoV3DTO>> getCronListUsingPost(
+        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+        @RequestBody
+        @Validated
+            EsbGetCronListV3Request request
+    );
 
     /**
      * 获取定时任务详情
@@ -91,8 +100,13 @@ public interface EsbCronJobV3Resource {
      * @return 定时任务详情
      */
     @PostMapping("/get_cron_detail")
-    EsbResp<EsbCronInfoV3Response> getCronDetailUsingPost(
-        @RequestBody EsbGetCronDetailV3Request request);
+    EsbResp<EsbCronInfoV3DTO> getCronDetailUsingPost(
+        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+        @RequestBody
+        @Validated
+            EsbGetCronDetailV3Request request
+    );
 
     /**
      * 更新定时任务状态
@@ -101,8 +115,13 @@ public interface EsbCronJobV3Resource {
      * @return 定时任务详情
      */
     @PostMapping(value = "/update_cron_status")
-    EsbResp<EsbCronInfoV3Response> updateCronStatus(
-        @RequestBody EsbUpdateCronStatusV3Request request);
+    EsbResp<EsbCronInfoV3DTO> updateCronStatus(
+        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+        @RequestBody
+        @Validated
+            EsbUpdateCronStatusV3Request request
+    );
 
     /**
      * 更新定时任务详情
@@ -111,6 +130,23 @@ public interface EsbCronJobV3Resource {
      * @return 定时任务详情
      */
     @PostMapping(value = "/save_cron")
-    EsbResp<EsbCronInfoV3Response> saveCron(
-        @RequestBody EsbSaveCronV3Request request);
+    EsbResp<EsbCronInfoV3DTO> saveCron(
+        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+        @RequestBody
+        @Validated
+            EsbSaveCronV3Request request
+    );
+
+    /**
+     * 删除定时任务
+     */
+    @PostMapping(value = "/delete_cron")
+    EsbResp deleteCron(
+        @RequestHeader(value = JobCommonHeaders.USERNAME) String username,
+        @RequestHeader(value = JobCommonHeaders.APP_CODE) String appCode,
+        @RequestBody
+        @Validated
+            EsbDeleteCronV3Request request
+    );
 }

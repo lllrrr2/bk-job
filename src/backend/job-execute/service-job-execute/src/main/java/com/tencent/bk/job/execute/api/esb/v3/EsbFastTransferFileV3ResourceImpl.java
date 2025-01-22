@@ -24,6 +24,8 @@
 
 package com.tencent.bk.job.execute.api.esb.v3;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.constant.NotExistPathHandlerEnum;
@@ -36,35 +38,41 @@ import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.exception.NotFoundException;
 import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
+import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.InternalResponse;
 import com.tencent.bk.job.common.model.ValidateResult;
+import com.tencent.bk.job.common.util.DataSizeConverter;
+import com.tencent.bk.job.common.util.FilePathValidateUtil;
 import com.tencent.bk.job.common.util.date.DateUtils;
-import com.tencent.bk.job.execute.client.FileSourceResourceClient;
+import com.tencent.bk.job.common.web.metrics.CustomTimed;
 import com.tencent.bk.job.execute.common.constants.FileTransferModeEnum;
 import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
 import com.tencent.bk.job.execute.common.constants.StepExecuteTypeEnum;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
 import com.tencent.bk.job.execute.common.constants.TaskTypeEnum;
+import com.tencent.bk.job.execute.metrics.ExecuteMetricsConstants;
+import com.tencent.bk.job.execute.model.FastTaskDTO;
 import com.tencent.bk.job.execute.model.FileDetailDTO;
 import com.tencent.bk.job.execute.model.FileSourceDTO;
 import com.tencent.bk.job.execute.model.StepInstanceDTO;
+import com.tencent.bk.job.execute.model.StepRollingConfigDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.esb.v3.EsbJobExecuteV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.request.EsbFastTransferFileV3Request;
 import com.tencent.bk.job.execute.service.ArtifactoryLocalFileService;
 import com.tencent.bk.job.execute.service.TaskExecuteService;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
+import com.tencent.bk.job.file_gateway.api.inner.ServiceFileSourceResource;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @RestController
 @Slf4j
@@ -73,27 +81,34 @@ public class EsbFastTransferFileV3ResourceImpl
     implements EsbFastTransferFileV3Resource {
     private final TaskExecuteService taskExecuteService;
 
-    private final FileSourceResourceClient fileSourceService;
+    private final ServiceFileSourceResource fileSourceResource;
 
     private final MessageI18nService i18nService;
 
     private final ArtifactoryLocalFileService artifactoryLocalFileService;
 
-
     @Autowired
     public EsbFastTransferFileV3ResourceImpl(TaskExecuteService taskExecuteService,
-                                             FileSourceResourceClient fileSourceService,
+                                             ServiceFileSourceResource fileSourceResource,
                                              MessageI18nService i18nService,
                                              ArtifactoryLocalFileService artifactoryLocalFileService) {
         this.taskExecuteService = taskExecuteService;
-        this.fileSourceService = fileSourceService;
+        this.fileSourceResource = fileSourceResource;
         this.i18nService = i18nService;
         this.artifactoryLocalFileService = artifactoryLocalFileService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v3_fast_transfer_file"})
-    public EsbResp<EsbJobExecuteV3DTO> fastTransferFile(EsbFastTransferFileV3Request request) {
+    @CustomTimed(metricName = ExecuteMetricsConstants.NAME_JOB_TASK_START,
+        extraTags = {
+            ExecuteMetricsConstants.TAG_KEY_START_MODE, ExecuteMetricsConstants.TAG_VALUE_START_MODE_API,
+            ExecuteMetricsConstants.TAG_KEY_TASK_TYPE, ExecuteMetricsConstants.TAG_VALUE_TASK_TYPE_FAST_FILE
+        })
+    @AuditEntry(actionId = ActionId.QUICK_TRANSFER_FILE)
+    public EsbResp<EsbJobExecuteV3DTO> fastTransferFile(String username,
+                                                        String appCode,
+                                                        @AuditRequestBody EsbFastTransferFileV3Request request) {
         ValidateResult checkResult = checkFastTransferFileRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Fast transfer file request is illegal!");
@@ -104,13 +119,22 @@ public class EsbFastTransferFileV3ResourceImpl
             request.setName(generateDefaultFastTaskName());
         }
 
-        TaskInstanceDTO taskInstance = buildFastFileTaskInstance(request);
-        StepInstanceDTO stepInstance = buildFastFileStepInstance(request);
-        long taskInstanceId = taskExecuteService.createTaskInstanceFast(taskInstance, stepInstance);
-        taskExecuteService.startTask(taskInstanceId);
+        TaskInstanceDTO taskInstance = buildFastFileTaskInstance(username, appCode, request);
+        StepInstanceDTO stepInstance = buildFastFileStepInstance(username, request);
+        StepRollingConfigDTO rollingConfig = null;
+        if (request.getRollingConfig() != null) {
+            rollingConfig = StepRollingConfigDTO.fromEsbRollingConfig(request.getRollingConfig());
+        }
+        TaskInstanceDTO executeTaskInstance = taskExecuteService.executeFastTask(
+            FastTaskDTO.builder()
+                .taskInstance(taskInstance)
+                .stepInstance(stepInstance)
+                .rollingConfig(rollingConfig)
+                .build()
+        );
 
         EsbJobExecuteV3DTO jobExecuteInfo = new EsbJobExecuteV3DTO();
-        jobExecuteInfo.setTaskInstanceId(taskInstanceId);
+        jobExecuteInfo.setTaskInstanceId(executeTaskInstance.getId());
         jobExecuteInfo.setStepInstanceId(stepInstance.getId());
         jobExecuteInfo.setTaskName(stepInstance.getName());
         return EsbResp.buildSuccessResp(jobExecuteInfo);
@@ -119,8 +143,8 @@ public class EsbFastTransferFileV3ResourceImpl
     private ValidateResult checkFileSource(EsbFileSourceV3DTO fileSource) {
         Integer fileType = fileSource.getFileType();
         // fileType是后加的字段，为null则默认为服务器文件不校验
-        if (fileType != null && TaskFileTypeEnum.valueOf(fileType) == null) {
-            return ValidateResult.fail(ErrorCode.MISSING_PARAM_WITH_PARAM_NAME, "file_source.file_type");
+        if (fileType != null && !TaskFileTypeEnum.isValid(fileType)) {
+            return ValidateResult.fail(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME, "file_source.file_type");
         }
         List<String> files = fileSource.getFiles();
         if (files == null || files.isEmpty()) {
@@ -130,7 +154,7 @@ public class EsbFastTransferFileV3ResourceImpl
         for (String file : files) {
             if ((fileType == null
                 || TaskFileTypeEnum.SERVER.getType() == fileType)
-                && !validateFileSystemPath(file)) {
+                && !FilePathValidateUtil.validateFileSystemAbsolutePath(file)) {
                 log.warn("Invalid path:{}", file);
                 return ValidateResult.fail(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME, "file_source.file_list");
             }
@@ -164,11 +188,7 @@ public class EsbFastTransferFileV3ResourceImpl
     }
 
     private ValidateResult checkFastTransferFileRequest(EsbFastTransferFileV3Request request) {
-        if (request.getAppId() == null || request.getAppId() < 1) {
-            log.warn("Fast transfer file, appId invalid!appId is empty or invalid!");
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "bk_biz_id");
-        }
-        if (!validateFileSystemPath(request.getTargetPath())) {
+        if (!FilePathValidateUtil.validateFileSystemAbsolutePath(request.getTargetPath())) {
             log.warn("Fast transfer file, target path is invalid!path={}", request.getTargetPath());
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "file_target_path");
         }
@@ -195,48 +215,24 @@ public class EsbFastTransferFileV3ResourceImpl
         return ValidateResult.pass();
     }
 
-    private boolean validateFileSystemPath(String path) {
-        if (StringUtils.isBlank(path)) {
-            return false;
-        }
-        if (path.indexOf(' ') != -1) {
-            return false;
-        }
-        Pattern p1 = Pattern.compile("(//|\\\\)+");
-        Matcher m1 = p1.matcher(path);
-        if (m1.matches()) {
-            return false;
-        }
-
-        Pattern p2 = Pattern.compile("^[a-zA-Z]:(/|\\\\).*");//windows
-        Matcher m2 = p2.matcher(path);
-
-        if (!m2.matches()) { //非windows
-            if (path.charAt(0) == '/') {
-                return !path.contains("\\\\");
-            } else {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private TaskInstanceDTO buildFastFileTaskInstance(EsbFastTransferFileV3Request request) {
+    private TaskInstanceDTO buildFastFileTaskInstance(String username,
+                                                      String appCode,
+                                                      EsbFastTransferFileV3Request request) {
         TaskInstanceDTO taskInstance = new TaskInstanceDTO();
         taskInstance.setType(TaskTypeEnum.FILE.getValue());
         taskInstance.setName(request.getName());
-        taskInstance.setTaskId(-1L);
+        taskInstance.setPlanId(-1L);
         taskInstance.setCronTaskId(-1L);
         taskInstance.setTaskTemplateId(-1L);
         taskInstance.setAppId(request.getAppId());
-        taskInstance.setStatus(RunStatusEnum.BLANK.getValue());
+        taskInstance.setStatus(RunStatusEnum.BLANK);
         taskInstance.setStartupMode(TaskStartupModeEnum.API.getValue());
-        taskInstance.setOperator(request.getUserName());
+        taskInstance.setOperator(username);
         taskInstance.setCreateTime(DateUtils.currentTimeMillis());
-        taskInstance.setCurrentStepId(0L);
+        taskInstance.setCurrentStepInstanceId(0L);
         taskInstance.setDebugTask(false);
         taskInstance.setCallbackUrl(request.getCallbackUrl());
-        taskInstance.setAppCode(request.getAppCode());
+        taskInstance.setAppCode(appCode);
         return taskInstance;
     }
 
@@ -245,28 +241,29 @@ public class EsbFastTransferFileV3ResourceImpl
             + DateUtils.formatLocalDateTime(LocalDateTime.now(), "yyyyMMddHHmmssSSS");
     }
 
-    private StepInstanceDTO buildFastFileStepInstance(EsbFastTransferFileV3Request request) {
+    private StepInstanceDTO buildFastFileStepInstance(String username,
+                                                      EsbFastTransferFileV3Request request) {
         StepInstanceDTO stepInstance = new StepInstanceDTO();
         stepInstance.setName(request.getName());
         stepInstance.setAccountId(request.getAccountId());
         stepInstance.setAccountAlias(request.getAccountAlias());
         stepInstance.setStepId(-1L);
-        stepInstance.setExecuteType(StepExecuteTypeEnum.SEND_FILE.getValue());
+        stepInstance.setExecuteType(StepExecuteTypeEnum.SEND_FILE);
         stepInstance.setFileTargetPath(request.getTargetPath());
         stepInstance.setFileTargetName(request.getTargetName());
-        stepInstance.setFileSourceList(convertFileSource(request.getFileSources()));
+        stepInstance.setFileSourceList(convertFileSource(request.getAppId(), request.getFileSources()));
         stepInstance.setAppId(request.getAppId());
-        stepInstance.setTargetServers(convertToServersDTO(request.getTargetServer()));
-        stepInstance.setOperator(request.getUserName());
-        stepInstance.setStatus(RunStatusEnum.BLANK.getValue());
+        stepInstance.setTargetExecuteObjects(convertToServersDTO(request.getTargetServer()));
+        stepInstance.setOperator(username);
+        stepInstance.setStatus(RunStatusEnum.BLANK);
         stepInstance.setCreateTime(DateUtils.currentTimeMillis());
         stepInstance.setTimeout(request.getTimeout() == null ?
             JobConstants.DEFAULT_JOB_TIMEOUT_SECONDS : request.getTimeout());
         if (request.getUploadSpeedLimit() != null && request.getUploadSpeedLimit() > 0) {
-            stepInstance.setFileUploadSpeedLimit(request.getUploadSpeedLimit() << 10);
+            stepInstance.setFileUploadSpeedLimit(DataSizeConverter.convertMBToKB(request.getUploadSpeedLimit()));
         }
         if (request.getDownloadSpeedLimit() != null && request.getDownloadSpeedLimit() > 0) {
-            stepInstance.setFileDownloadSpeedLimit(request.getDownloadSpeedLimit() << 10);
+            stepInstance.setFileDownloadSpeedLimit(DataSizeConverter.convertMBToKB(request.getDownloadSpeedLimit()));
         }
         FileTransferModeEnum transferMode = FileTransferModeEnum.getFileTransferModeEnum(request.getTransferMode());
         if (transferMode == null) {
@@ -280,7 +277,7 @@ public class EsbFastTransferFileV3ResourceImpl
         return stepInstance;
     }
 
-    private List<FileSourceDTO> convertFileSource(List<EsbFileSourceV3DTO> fileSources) throws ServiceException {
+    private List<FileSourceDTO> convertFileSource(Long appId, List<EsbFileSourceV3DTO> fileSources) throws ServiceException {
         if (fileSources == null) {
             return null;
         }
@@ -321,7 +318,7 @@ public class EsbFastTransferFileV3ResourceImpl
                 fileSourceDTO.setFileSourceId(fileSource.getFileSourceId());
             } else if (StringUtils.isNotBlank(fileSourceCode)) {
                 try {
-                    InternalResponse<Integer> resp = fileSourceService.getFileSourceIdByCode(fileSourceCode);
+                    InternalResponse<Integer> resp = fileSourceResource.getFileSourceIdByCode(appId, fileSourceCode);
                     if (resp != null && resp.isSuccess()) {
                         if (resp.getData() != null) {
                             fileSourceDTO.setFileSourceId(resp.getData());
@@ -335,7 +332,11 @@ public class EsbFastTransferFileV3ResourceImpl
                         throw new NotFoundException(ErrorCode.FILE_SOURCE_SERVICE_INVALID);
                     }
                 } catch (Exception e) {
-                    log.error("Fail to parse fileSourceCode to id:{}", fileSourceCode, e);
+                    String msg = MessageFormatter.format(
+                        "Fail to parse fileSourceCode to id:{}",
+                        fileSourceCode
+                    ).getMessage();
+                    log.error(msg, e);
                     throw new InternalException(ErrorCode.INTERNAL_ERROR);
                 }
             }

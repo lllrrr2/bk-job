@@ -24,34 +24,41 @@
 
 package com.tencent.bk.job.common.web.interceptor;
 
-import brave.Tracer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.tencent.bk.job.common.annotation.JobInterceptor;
+import com.tencent.bk.job.common.constant.HttpRequestSourceEnum;
+import com.tencent.bk.job.common.constant.InterceptorOrder;
 import com.tencent.bk.job.common.constant.JobCommonHeaders;
 import com.tencent.bk.job.common.i18n.locale.LocaleUtils;
 import com.tencent.bk.job.common.util.JobContextUtil;
+import com.tencent.bk.job.common.util.RequestUtil;
 import com.tencent.bk.job.common.util.json.JsonUtils;
 import com.tencent.bk.job.common.web.model.RepeatableReadWriteHttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpStatus;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.sleuth.Span;
+import org.springframework.cloud.sleuth.Tracer;
 import org.springframework.http.HttpMethod;
-import org.springframework.stereotype.Component;
+import org.springframework.lang.NonNull;
+import org.springframework.web.servlet.AsyncHandlerInterceptor;
 import org.springframework.web.servlet.ModelAndView;
-import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * @since 6/11/2019 10:46
+ * Job通用拦截器
  */
 @Slf4j
-@Component
-public class JobCommonInterceptor extends HandlerInterceptorAdapter {
-    private static final Pattern APP_ID_PATTERN = Pattern.compile("/app/(\\d+)");
+@JobInterceptor(order = InterceptorOrder.Init.HIGHEST, pathPatterns = "/**")
+public class JobCommonInterceptor implements AsyncHandlerInterceptor {
+
     private final Tracer tracer;
+    private Tracer.SpanInScope spanInScope = null;
 
     @Autowired
     public JobCommonInterceptor(Tracer tracer) {
@@ -59,55 +66,22 @@ public class JobCommonInterceptor extends HandlerInterceptorAdapter {
     }
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
-        throws Exception {
+    public boolean preHandle(@NonNull HttpServletRequest request,
+                             @NonNull HttpServletResponse response,
+                             @NonNull Object handler) {
         JobContextUtil.setStartTime();
+        JobContextUtil.setRequest(request);
+        JobContextUtil.setResponse(response);
 
-        String traceId = tracer.currentSpan().context().traceIdString();
-        JobContextUtil.setRequestId(traceId);
+        initSpanAndAddRequestId();
 
         if (!shouldFilter(request)) {
             return true;
         }
 
-        JobContextUtil.setRequest(request);
-        JobContextUtil.setResponse(response);
+        addUsername(request);
+        addLang(request);
 
-        // Web接口Header
-        String username = request.getHeader("username");
-        // ESB接口Header
-        // 网关从JWT中解析出的Username最高优先级
-        if (StringUtils.isBlank(username)) {
-            username = request.getHeader(JobCommonHeaders.USERNAME);
-            log.debug("username from gateway:{}", username);
-        }
-        // QueryString/Body中的Username次优先
-        if (StringUtils.isBlank(username)) {
-            username = parseUsernameFromQueryStringOrBody(request);
-            log.debug("username from query/body:{}", username);
-        }
-
-        if (StringUtils.isNotBlank(username)) {
-            JobContextUtil.setUsername(username);
-        }
-
-        String userLang = request.getHeader(LocaleUtils.COMMON_LANG_HEADER);
-
-        if (StringUtils.isNotBlank(userLang)) {
-            JobContextUtil.setUserLang(userLang);
-        } else {
-            JobContextUtil.setUserLang(LocaleUtils.LANG_ZH_CN);
-        }
-
-        Long appId = parseAppIdFromPath(request.getRequestURI());
-        log.debug("appId from path:{}", appId);
-        if (appId == null) {
-            appId = parseAppIdFromQueryStringOrBody(request);
-            log.debug("appId from query/body:{}", appId);
-        }
-        if (appId != null) {
-            JobContextUtil.setAppId(appId);
-        }
         return true;
     }
 
@@ -117,35 +91,56 @@ public class JobCommonInterceptor extends HandlerInterceptorAdapter {
         return uri.startsWith("/web/") || uri.startsWith("/service/") || uri.startsWith("/esb/");
     }
 
-    private Long parseAppIdFromPath(String requestURI) {
-        Matcher matcher = APP_ID_PATTERN.matcher(requestURI);
-        if (matcher.find()) {
-            String appIdStr = matcher.group(1);
-            Long appId = null;
-            try {
-                appId = Long.parseLong(appIdStr);
-            } catch (NumberFormatException e) {
-                log.error("Error while parse app id!|{}|{}", requestURI, appIdStr);
-            }
-            return appId;
+    private void initSpanAndAddRequestId() {
+        Span currentSpan = tracer.currentSpan();
+        if (currentSpan == null) {
+            currentSpan = tracer.nextSpan().start();
         }
-        return null;
+        spanInScope = tracer.withSpan(currentSpan);
+        String traceId = currentSpan.context().traceId();
+        JobContextUtil.setRequestId(traceId);
+    }
+
+    private void addUsername(HttpServletRequest request) {
+        HttpRequestSourceEnum requestSource = RequestUtil.parseHttpRequestSource(request);
+        if (requestSource == HttpRequestSourceEnum.UNKNOWN) {
+            return;
+        }
+
+        String username = null;
+        switch (requestSource) {
+            case WEB:
+                username = request.getHeader("username");
+                break;
+            case ESB:
+                // 网关从ESB JWT中解析出的Username最高优先级
+                username = request.getHeader(JobCommonHeaders.USERNAME);
+                log.debug("username from gateway:{}", username);
+                // QueryString/Body中的Username次优先
+                if (StringUtils.isBlank(username)) {
+                    username = parseUsernameFromQueryStringOrBody(request);
+                    log.debug("username from query/body:{}", username);
+                }
+                break;
+        }
+
+        if (StringUtils.isNotBlank(username)) {
+            JobContextUtil.setUsername(username);
+        }
+    }
+
+    private void addLang(HttpServletRequest request) {
+        String userLang = request.getHeader(LocaleUtils.COMMON_LANG_HEADER);
+
+        if (StringUtils.isNotBlank(userLang)) {
+            JobContextUtil.setUserLang(userLang);
+        } else {
+            JobContextUtil.setUserLang(LocaleUtils.LANG_ZH_CN);
+        }
     }
 
     private String parseUsernameFromQueryStringOrBody(HttpServletRequest request) {
         return parseValueFromQueryStringOrBody(request, "bk_username");
-    }
-
-    private Long parseAppIdFromQueryStringOrBody(HttpServletRequest request) {
-        String appIdStr = null;
-        try {
-            appIdStr = parseValueFromQueryStringOrBody(request, "bk_biz_id");
-            if (appIdStr == null) return null;
-            return Long.parseLong(appIdStr);
-        } catch (Exception e) {
-            log.warn("Fail to parse appId from {}", appIdStr, e);
-        }
-        return null;
     }
 
     private String parseValueFromQueryStringOrBody(HttpServletRequest request, String key) {
@@ -162,50 +157,77 @@ public class JobCommonInterceptor extends HandlerInterceptorAdapter {
                     if (jsonBody == null) {
                         return null;
                     }
-                    String value = jsonBody.get(key) == null ? null : jsonBody.get(key).asText();
-                    log.debug("parsed from POST/PUT: {}={}", key, value);
+                    JsonNode valueNode = jsonBody.get(key);
+                    String value = (valueNode == null || valueNode.isNull()) ? null : jsonBody.get(key).asText();
+                    log.debug("Parsed from POST/PUT: {}={}", key, value);
                     return value;
                 }
             } else if (request.getMethod().equals(HttpMethod.GET.name())) {
                 String value = request.getParameter(key);
-                log.debug("parsed from GET: {}={}", key, value);
+                log.debug("Parsed from GET: {}={}", key, value);
                 return value;
             }
         } catch (Exception e) {
-            log.warn("Fail to parse {} from request", key, e);
+            String msg = MessageFormatter.format(
+                "Fail to parse {} from request",
+                key
+            ).getMessage();
+            log.warn(msg, e);
         }
         return null;
     }
 
     @Override
-    public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+    public void postHandle(@NonNull HttpServletRequest request,
+                           @NonNull HttpServletResponse response,
+                           @NonNull Object handler,
                            ModelAndView modelAndView) {
         if (log.isDebugEnabled()) {
-            log.debug("Post handler|{}|{}|{}|{}|{}", JobContextUtil.getRequestId(), JobContextUtil.getAppId(),
+            log.debug("Post handler|{}|{}|{}|{}|{}", JobContextUtil.getRequestId(),
+                JobContextUtil.getAppResourceScope(),
                 JobContextUtil.getUsername(), System.currentTimeMillis() - JobContextUtil.getStartTime(),
                 request.getRequestURI());
         }
     }
 
     @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
-                                Object handler,
+    public void afterCompletion(@NonNull HttpServletRequest request,
+                                @NonNull HttpServletResponse response,
+                                @NonNull Object handler,
                                 Exception ex) {
-        int status = response.getStatus();
-        if (status >= 400) {
-            log.warn("status {} given by {}", status, handler);
+        try {
+            if (isClientOrServerError(response)) {
+                log.warn("status {} given by {}", response.getStatus(), handler);
+            }
+            if (ex != null) {
+                log.error(
+                    "After completion|{}|{}|{}|{}|{}|{}",
+                    JobContextUtil.getRequestId(),
+                    response.getStatus(),
+                    JobContextUtil.getUsername(),
+                    System.currentTimeMillis() - JobContextUtil.getStartTime(),
+                    request.getRequestURI(),
+                    ex.getMessage()
+                );
+            } else {
+                log.debug(
+                    "After completion|{}|{}|{}|{}|{}",
+                    JobContextUtil.getRequestId(),
+                    response.getStatus(),
+                    JobContextUtil.getUsername(),
+                    System.currentTimeMillis() - JobContextUtil.getStartTime(),
+                    request.getRequestURI()
+                );
+            }
+        } finally {
+            if (spanInScope != null) {
+                spanInScope.close();
+            }
+            JobContextUtil.unsetContext();
         }
-        if (ex != null) {
-            log.error("After completion|{}|{}|{}|{}|{}|{}", JobContextUtil.getRequestId(), response.getStatus(),
-                JobContextUtil.getAppId(),
-                JobContextUtil.getUsername(), System.currentTimeMillis() - JobContextUtil.getStartTime(),
-                request.getRequestURI(), ex);
-        } else {
-            log.debug("After completion|{}|{}|{}|{}|{}|{}", JobContextUtil.getRequestId(), response.getStatus(),
-                JobContextUtil.getAppId(),
-                JobContextUtil.getUsername(), System.currentTimeMillis() - JobContextUtil.getStartTime(),
-                request.getRequestURI());
-        }
-        JobContextUtil.unsetContext();
+    }
+
+    private boolean isClientOrServerError(HttpServletResponse response) {
+        return response.getStatus() >= HttpStatus.SC_BAD_REQUEST;
     }
 }

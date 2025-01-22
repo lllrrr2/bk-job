@@ -25,8 +25,10 @@
  * IN THE SOFTWARE.
 -->
 
-<template functional name="jb-breadcrumb-item">
-    <div class="jb-breadcrumb-item">
-        <slot />
-    </div>
+<template
+  functional
+  name="jb-breadcrumb-item">
+  <div class="jb-breadcrumb-item">
+    <slot />
+  </div>
 </template>

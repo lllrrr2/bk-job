@@ -25,10 +25,14 @@
 package com.tencent.bk.job.file_gateway.dao.filesource.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.tencent.bk.job.common.mysql.dao.BaseDAOImpl;
 import com.tencent.bk.job.common.util.json.JsonUtils;
 import com.tencent.bk.job.file_gateway.dao.filesource.FileSourceDAO;
 import com.tencent.bk.job.file_gateway.dao.filesource.FileSourceTypeDAO;
+import com.tencent.bk.job.file_gateway.model.dto.FileSourceBasicInfoDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceDTO;
+import com.tencent.bk.job.file_gateway.model.tables.FileSource;
+import com.tencent.bk.job.file_gateway.model.tables.FileSourceShare;
 import com.tencent.bk.job.file_gateway.util.JooqTypeUtil;
 import io.micrometer.core.instrument.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +43,6 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.conf.ParamType;
-import org.jooq.generated.tables.FileSource;
-import org.jooq.generated.tables.FileSourceShare;
 import org.jooq.impl.DSL;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -57,13 +59,13 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
 
     private static final FileSource defaultTable = FileSource.FILE_SOURCE;
     private static final FileSourceShare tableFileSourceShare = FileSourceShare.FILE_SOURCE_SHARE;
-    private final DSLContext defaultContext;
+    private final DSLContext dslContext;
     private final FileSourceTypeDAO fileSourceTypeDAO;
 
     @Autowired
-    public FileSourceDAOImpl(@Qualifier("job-file-gateway-dsl-context") DSLContext defaultContext,
+    public FileSourceDAOImpl(@Qualifier("job-file-gateway-dsl-context") DSLContext dslContext,
                              FileSourceTypeDAO fileSourceTypeDAO) {
-        this.defaultContext = defaultContext;
+        this.dslContext = dslContext;
         this.fileSourceTypeDAO = fileSourceTypeDAO;
     }
 
@@ -74,7 +76,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public Integer insertFileSource(DSLContext dslContext, FileSourceDTO fileSourceDTO) {
+    public Integer insertFileSource(FileSourceDTO fileSourceDTO) {
         setDefaultValue(fileSourceDTO);
         val insertFileSourceQuery = dslContext.insertInto(defaultTable,
             defaultTable.ID,
@@ -97,7 +99,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
             defaultTable.LAST_MODIFY_USER,
             defaultTable.LAST_MODIFY_TIME
         ).values(
-            (Integer) null,
+            null,
             fileSourceDTO.getAppId(),
             fileSourceDTO.getCode(),
             fileSourceDTO.getAlias(),
@@ -120,8 +122,10 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
 
         var sql = insertFileSourceQuery.getSQL(ParamType.INLINED);
         try {
-            Integer fileSourceId = insertFileSourceQuery.fetchOne().getId();
-            saveFileSourceShareInfo(dslContext, fileSourceId, fileSourceDTO);
+            val record = insertFileSourceQuery.fetchOne();
+            assert record != null;
+            Integer fileSourceId = record.getId();
+            saveFileSourceShareInfo(fileSourceId, fileSourceDTO);
             return fileSourceId;
         } catch (Exception e) {
             log.error(sql);
@@ -129,7 +133,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         }
     }
 
-    private List<Long> getSharedAppIdList(DSLContext dslContext, Long appId, Integer fileSourceId) {
+    private List<Long> getSharedAppIdList(Long appId, Integer fileSourceId) {
         val records = dslContext.select(tableFileSourceShare.APP_ID)
             .from(tableFileSourceShare)
             .where(tableFileSourceShare.FILE_SOURCE_ID.eq(fileSourceId))
@@ -138,7 +142,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         return records.map(record -> record.get(tableFileSourceShare.APP_ID));
     }
 
-    private void saveFileSourceShareInfo(DSLContext dslContext, Integer fileSourceId, FileSourceDTO fileSourceDTO) {
+    private void saveFileSourceShareInfo(Integer fileSourceId, FileSourceDTO fileSourceDTO) {
         String sql = null;
         try {
             List<Long> sharedAppIdList = fileSourceDTO.getSharedAppIdList();
@@ -178,6 +182,11 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
                     }
                     sql = insertFileSourceShareQuery.getSQL(ParamType.INLINED);
                     int[] results = batchQuery.execute();
+                    int affectedRowNum = 0;
+                    for (int result : results) {
+                        affectedRowNum += result;
+                    }
+                    log.info("{} file_source_share records inserted", affectedRowNum);
                 }
             }
         } catch (Exception e) {
@@ -187,28 +196,57 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public int updateFileSource(DSLContext dslContext, FileSourceDTO fileSourceDTO) {
-        val query = dslContext.update(defaultTable)
-            .set(defaultTable.APP_ID, fileSourceDTO.getAppId())
-            .set(defaultTable.CODE, fileSourceDTO.getCode())
-            .set(defaultTable.ALIAS, fileSourceDTO.getAlias())
-            .set(defaultTable.TYPE, fileSourceDTO.getFileSourceType().getCode())
-            .set(defaultTable.CUSTOM_INFO, JsonUtils.toJson(fileSourceDTO.getFileSourceInfoMap()))
-            .set(defaultTable.PUBLIC, fileSourceDTO.getPublicFlag())
-            .set(defaultTable.SHARE_TO_ALL_APP, fileSourceDTO.getShareToAllApp())
-            .set(defaultTable.CREDENTIAL_ID, fileSourceDTO.getCredentialId())
-            .set(defaultTable.FILE_PREFIX, fileSourceDTO.getFilePrefix())
-            .set(defaultTable.WORKER_SELECT_SCOPE, fileSourceDTO.getWorkerSelectScope())
-            .set(defaultTable.WORKER_SELECT_MODE, fileSourceDTO.getWorkerSelectMode())
-            .set(defaultTable.WORKER_ID, fileSourceDTO.getWorkerId())
-            .set(defaultTable.ENABLE, fileSourceDTO.getEnable())
-            .set(defaultTable.LAST_MODIFY_USER, fileSourceDTO.getLastModifyUser())
-            .set(defaultTable.LAST_MODIFY_TIME, System.currentTimeMillis())
-            .where(defaultTable.ID.eq(fileSourceDTO.getId()));
-        val sql = query.getSQL(ParamType.INLINED);
+    public int updateFileSource(FileSourceDTO fileSourceDTO) {
+        val query = dslContext.update(defaultTable);
+        var updateSetStep = query.set(defaultTable.APP_ID, fileSourceDTO.getAppId());
+        if (StringUtils.isNotBlank(fileSourceDTO.getCode())) {
+            updateSetStep = updateSetStep.set(defaultTable.CODE, fileSourceDTO.getCode());
+        }
+        if (StringUtils.isNotBlank(fileSourceDTO.getAlias())) {
+            updateSetStep = updateSetStep.set(defaultTable.ALIAS, fileSourceDTO.getAlias());
+        }
+        if (fileSourceDTO.getFileSourceType() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.TYPE, fileSourceDTO.getFileSourceType().getCode());
+        }
+        if (fileSourceDTO.getFileSourceInfoMap() != null) {
+            updateSetStep = updateSetStep.set(
+                defaultTable.CUSTOM_INFO,
+                JsonUtils.toJson(fileSourceDTO.getFileSourceInfoMap())
+            );
+        }
+        if (fileSourceDTO.getPublicFlag() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.PUBLIC, fileSourceDTO.getPublicFlag());
+        }
+        if (fileSourceDTO.getShareToAllApp() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.SHARE_TO_ALL_APP, fileSourceDTO.getShareToAllApp());
+        }
+        if (StringUtils.isNotBlank(fileSourceDTO.getCredentialId())) {
+            updateSetStep = updateSetStep.set(defaultTable.CREDENTIAL_ID, fileSourceDTO.getCredentialId());
+        }
+        if (fileSourceDTO.getFilePrefix() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.FILE_PREFIX, fileSourceDTO.getFilePrefix());
+        }
+        if (StringUtils.isNotBlank(fileSourceDTO.getWorkerSelectScope())) {
+            updateSetStep = updateSetStep.set(defaultTable.WORKER_SELECT_SCOPE, fileSourceDTO.getWorkerSelectScope());
+        }
+        if (StringUtils.isNotBlank(fileSourceDTO.getWorkerSelectMode())) {
+            updateSetStep = updateSetStep.set(defaultTable.WORKER_SELECT_MODE, fileSourceDTO.getWorkerSelectMode());
+        }
+        if (fileSourceDTO.getWorkerId() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.WORKER_ID, fileSourceDTO.getWorkerId());
+        }
+        if (fileSourceDTO.getEnable() != null) {
+            updateSetStep = updateSetStep.set(defaultTable.ENABLE, fileSourceDTO.getEnable());
+        }
+        if (StringUtils.isNotBlank(fileSourceDTO.getLastModifyUser())) {
+            updateSetStep = updateSetStep.set(defaultTable.LAST_MODIFY_USER, fileSourceDTO.getLastModifyUser());
+        }
+        updateSetStep = updateSetStep.set(defaultTable.LAST_MODIFY_TIME, System.currentTimeMillis());
+        val finalStep = updateSetStep.where(defaultTable.ID.eq(fileSourceDTO.getId()));
+        val sql = finalStep.getSQL(ParamType.INLINED);
         try {
-            saveFileSourceShareInfo(dslContext, fileSourceDTO.getId(), fileSourceDTO);
-            return query.execute();
+            saveFileSourceShareInfo(fileSourceDTO.getId(), fileSourceDTO);
+            return finalStep.execute();
         } catch (Exception e) {
             log.error(sql);
             throw e;
@@ -216,7 +254,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public int updateFileSourceStatus(DSLContext dslContext, Integer fileSourceId, Integer status) {
+    public int updateFileSourceStatus(Integer fileSourceId, Integer status) {
         val query = dslContext.update(defaultTable)
             .set(defaultTable.STATUS, JooqTypeUtil.convertToByte(status))
             .where(defaultTable.ID.eq(fileSourceId));
@@ -231,14 +269,14 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
 
 
     @Override
-    public int deleteFileSourceById(DSLContext dslContext, Integer id) {
+    public int deleteFileSourceById(Integer id) {
         return dslContext.deleteFrom(defaultTable).where(
             defaultTable.ID.eq(id)
         ).execute();
     }
 
     @Override
-    public int enableFileSourceById(DSLContext dslContext, String username, Long appId, Integer id,
+    public int enableFileSourceById(String username, Long appId, Integer id,
                                     Boolean enableFlag) {
         val query = dslContext.update(defaultTable)
             .set(defaultTable.ENABLE, enableFlag)
@@ -255,7 +293,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public FileSourceDTO getFileSourceById(DSLContext dslContext, Integer id) {
+    public FileSourceDTO getFileSourceById(Integer id) {
         val record = dslContext.selectFrom(defaultTable).where(
             defaultTable.ID.eq(id)
         ).fetchOne();
@@ -267,10 +305,31 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public FileSourceDTO getFileSourceByCode(DSLContext dslContext, String code) {
-        val record = dslContext.selectFrom(defaultTable).where(
-            defaultTable.CODE.eq(code)
-        ).fetchOne();
+    public List<FileSourceBasicInfoDTO> listFileSourceByIds(Collection<Integer> ids) {
+        val records = dslContext.selectFrom(defaultTable).where(
+            defaultTable.ID.in(ids)
+        ).fetch();
+        return records.map(this::convertRecordToBasicInfoDto);
+    }
+
+    @Override
+    public FileSourceDTO getFileSourceByCode(String code) {
+        val record = dslContext.selectFrom(defaultTable)
+            .where(defaultTable.CODE.eq(code))
+            .fetchOne();
+        if (record == null) {
+            return null;
+        } else {
+            return convertRecordToDto(record);
+        }
+    }
+
+    @Override
+    public FileSourceDTO getFileSourceByCode(Long appId, String code) {
+        val record = dslContext.selectFrom(defaultTable)
+            .where(defaultTable.CODE.eq(code))
+            .and(defaultTable.APP_ID.eq(appId))
+            .fetchOne();
         if (record == null) {
             return null;
         } else {
@@ -309,18 +368,18 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public Integer countFileSource(DSLContext dslContext, Long appId, String credentialId, String alias) {
+    public Integer countFileSource(Long appId, String credentialId, String alias) {
         Collection<Condition> conditions = genAvailableConditions(appId, credentialId, alias);
-        return countFileSourcesByConditions(dslContext, conditions);
+        return countFileSourcesByConditions(conditions);
     }
 
     @Override
-    public Integer countAvailableLikeFileSource(DSLContext dslContext, Long appId, String credentialId, String alias) {
+    public Integer countAvailableLikeFileSource(Long appId, String credentialId, String alias) {
         Collection<Condition> conditions = genAvailableLikeConditions(appId, credentialId, alias);
-        return countAvailableFileSourcesByConditions(dslContext, conditions);
+        return countAvailableFileSourcesByConditions(conditions);
     }
 
-    public Integer countFileSourcesByConditions(DSLContext dslContext, Collection<Condition> conditions) {
+    public Integer countFileSourcesByConditions(Collection<Condition> conditions) {
         val query = dslContext.select(
             DSL.count(defaultTable.ID)
         ).from(defaultTable)
@@ -328,7 +387,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         return query.fetchOne(0, Integer.class);
     }
 
-    public Integer countAvailableFileSourcesByConditions(DSLContext dslContext, Collection<Condition> conditions) {
+    public Integer countAvailableFileSourcesByConditions(Collection<Condition> conditions) {
         val query = dslContext.select(
             DSL.countDistinct(defaultTable.ID)
         ).from(defaultTable)
@@ -339,7 +398,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public Boolean checkFileSourceExists(DSLContext dslContext, Long appId, String alias) {
+    public Boolean checkFileSourceExists(Long appId, String alias) {
         List<Condition> conditions = new ArrayList<>();
         if (appId != null) {
             conditions.add(defaultTable.APP_ID.eq(appId));
@@ -347,22 +406,22 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         if (StringUtils.isNotBlank(alias)) {
             conditions.add(defaultTable.ALIAS.eq(alias));
         }
-        return countWorkTableFileSourcesByConditions(dslContext, conditions) > 0;
+        return countWorkTableFileSourcesByConditions(conditions) > 0;
     }
 
     @Override
-    public Integer countWorkTableFileSource(DSLContext dslContext, Long appId, String credentialId, String alias) {
+    public Integer countWorkTableFileSource(Long appId, String credentialId, String alias) {
         Collection<Condition> conditions = genWorkTableConditions(appId, credentialId, alias);
-        return countWorkTableFileSourcesByConditions(dslContext, conditions);
+        return countWorkTableFileSourcesByConditions(conditions);
     }
 
     @Override
-    public Integer countWorkTableFileSource(DSLContext dslContext, List<Long> appIdList, List<Integer> idList) {
+    public Integer countWorkTableFileSource(List<Long> appIdList, List<Integer> idList) {
         Collection<Condition> conditions = genWorkTableConditions(appIdList, idList);
-        return countWorkTableFileSourcesByConditions(dslContext, conditions);
+        return countWorkTableFileSourcesByConditions(conditions);
     }
 
-    public Integer countWorkTableFileSourcesByConditions(DSLContext dslContext, Collection<Condition> conditions) {
+    public Integer countWorkTableFileSourcesByConditions(Collection<Condition> conditions) {
         val query = dslContext.select(
             DSL.countDistinct(defaultTable.ID)
         ).from(defaultTable)
@@ -371,10 +430,10 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public List<FileSourceDTO> listAvailableFileSource(DSLContext dslContext, Long appId, String credentialId, String
+    public List<FileSourceDTO> listAvailableFileSource(Long appId, String credentialId, String
         alias, Integer start, Integer pageSize) {
         Collection<Condition> conditions = genAvailableLikeConditions(appId, credentialId, alias);
-        return listFileSourceByShareConditions(dslContext, conditions, start, pageSize);
+        return listFileSourceByShareConditions(conditions, start, pageSize);
     }
 
     private Collection<Condition> genWorkTableConditions(Long appId, String credentialId, String alias) {
@@ -403,29 +462,41 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
-    public List<FileSourceDTO> listWorkTableFileSource(DSLContext dslContext, Long appId, String credentialId,
+    public List<FileSourceDTO> listWorkTableFileSource(Long appId, String credentialId,
                                                        String alias, Integer start, Integer pageSize) {
         Collection<Condition> conditions = genWorkTableConditions(appId, credentialId, alias);
-        return listFileSourceByConditions(dslContext, conditions, start, pageSize);
+        return listFileSourceByConditions(conditions, start, pageSize);
     }
 
     @Override
-    public List<FileSourceDTO> listWorkTableFileSource(DSLContext dslContext, List<Long> appIdList,
+    public List<FileSourceDTO> listWorkTableFileSource(List<Long> appIdList,
                                                        List<Integer> idList, Integer start, Integer pageSize) {
         Collection<Condition> conditions = genWorkTableConditions(appIdList, idList);
-        return listFileSourceByConditions(dslContext, conditions, start, pageSize);
+        return listFileSourceByConditions(conditions, start, pageSize);
     }
 
     @Override
-    public boolean existsCode(String code) {
-        val query = defaultContext.selectZero().from(defaultTable)
-            .where(defaultTable.CODE.eq(code)).limit(1);
+    public boolean existsCode(Long appId, String code) {
+        val query = dslContext.selectZero().from(defaultTable)
+            .where(defaultTable.APP_ID.eq(appId))
+            .and(defaultTable.CODE.eq(code))
+            .limit(1);
+        return query.fetch().size() > 0;
+    }
+
+    @Override
+    public boolean existsCodeExceptId(Long appId, String code, Integer exceptId) {
+        val query = dslContext.selectZero().from(defaultTable)
+            .where(defaultTable.APP_ID.eq(appId))
+            .and(defaultTable.CODE.eq(code))
+            .and(defaultTable.ID.notEqual(exceptId))
+            .limit(1);
         return query.fetch().size() > 0;
     }
 
     @Override
     public boolean existsFileSource(Long appId, Integer id) {
-        val query = defaultContext.selectZero().from(defaultTable)
+        val query = dslContext.selectZero().from(defaultTable)
             .where(defaultTable.APP_ID.eq(appId))
             .and(defaultTable.ID.eq(id))
             .limit(1);
@@ -433,29 +504,30 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
     }
 
     @Override
+    public boolean existsFileSourceUsingCredential(Long appId, String credentialId) {
+        Collection<Condition> conditions = new ArrayList<>();
+        conditions.add(defaultTable.APP_ID.eq(appId));
+        conditions.add(defaultTable.CREDENTIAL_ID.eq(credentialId));
+        return dslContext.fetchExists(defaultTable, conditions);
+    }
+
+    @Override
     public Integer getFileSourceIdByCode(Long appId, String code) {
         List<Condition> conditions = new ArrayList<>();
-        if (appId != null) {
-            conditions.add(defaultTable.APP_ID.eq(appId));
-        }
-        if (code != null) {
-            conditions.add(defaultTable.CODE.eq(code));
-        }
-        val query = defaultContext.select(
+        conditions.add(defaultTable.APP_ID.eq(appId));
+        conditions.add(defaultTable.CODE.eq(code));
+        val query = dslContext.select(
             defaultTable.ID
         ).from(defaultTable)
             .where(conditions);
-        val result = query.fetch();
-        if (result.size() > 0) {
-            if (result.size() > 1) {
-                log.warn("{} records found when get id by code, use first one", result.size());
-            }
-            return result.get(0).get(defaultTable.ID);
+        val result = query.fetchOne();
+        if (result != null) {
+            return result.get(defaultTable.ID);
         }
         return null;
     }
 
-    private List<FileSourceDTO> listFileSourceByConditions(DSLContext dslContext, Collection<Condition> conditions,
+    private List<FileSourceDTO> listFileSourceByConditions(Collection<Condition> conditions,
                                                            Integer start, Integer pageSize) {
         val query = dslContext.select(
             defaultTable.ID,
@@ -485,8 +557,8 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         return listPage(query, start, pageSize, this::convertRecordToDto);
     }
 
-    private List<FileSourceDTO> listFileSourceByShareConditions(DSLContext dslContext,
-                                                                Collection<Condition> conditions, Integer start,
+    private List<FileSourceDTO> listFileSourceByShareConditions(Collection<Condition> conditions,
+                                                                Integer start,
                                                                 Integer pageSize) {
         val query = dslContext.select(
             defaultTable.ID,
@@ -529,7 +601,7 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
         fileSourceDTO.setStatus(JooqTypeUtil.convertToInt(record.get(defaultTable.STATUS)));
         fileSourceDTO.setFileSourceType(fileSourceTypeDAO.getByCode(record.get(defaultTable.TYPE)));
         fileSourceDTO.setPublicFlag(record.get(defaultTable.PUBLIC));
-        fileSourceDTO.setSharedAppIdList(getSharedAppIdList(defaultContext, appId, id));
+        fileSourceDTO.setSharedAppIdList(getSharedAppIdList(appId, id));
         fileSourceDTO.setShareToAllApp(record.get(defaultTable.SHARE_TO_ALL_APP));
         fileSourceDTO.setCredentialId(record.get(defaultTable.CREDENTIAL_ID));
         fileSourceDTO.setFilePrefix(record.get(defaultTable.FILE_PREFIX));
@@ -548,5 +620,14 @@ public class FileSourceDAOImpl extends BaseDAOImpl implements FileSourceDAO {
             }));
         }
         return fileSourceDTO;
+    }
+
+    private FileSourceBasicInfoDTO convertRecordToBasicInfoDto(Record record) {
+        FileSourceBasicInfoDTO fileSourceBasicInfoDTO = new FileSourceBasicInfoDTO();
+        fileSourceBasicInfoDTO.setId(record.get(defaultTable.ID));
+        fileSourceBasicInfoDTO.setAppId(record.get(defaultTable.APP_ID));
+        fileSourceBasicInfoDTO.setCode(record.get(defaultTable.CODE));
+        fileSourceBasicInfoDTO.setAlias(record.get(defaultTable.ALIAS));
+        return fileSourceBasicInfoDTO;
     }
 }

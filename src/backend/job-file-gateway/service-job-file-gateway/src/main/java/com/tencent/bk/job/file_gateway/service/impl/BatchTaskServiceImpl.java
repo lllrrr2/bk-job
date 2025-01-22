@@ -38,8 +38,8 @@ import com.tencent.bk.job.file_gateway.model.resp.inner.FileSourceTaskStatusDTO;
 import com.tencent.bk.job.file_gateway.model.resp.inner.TaskInfoDTO;
 import com.tencent.bk.job.file_gateway.service.BatchTaskService;
 import com.tencent.bk.job.file_gateway.service.FileSourceTaskService;
+import com.tencent.bk.job.file_gateway.service.RetryPolicyFileSourceTaskService;
 import lombok.extern.slf4j.Slf4j;
-import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -52,22 +52,25 @@ import java.util.stream.Collectors;
 public class BatchTaskServiceImpl implements BatchTaskService {
 
     private final FileSourceTaskService fileSourceTaskService;
+    private final RetryPolicyFileSourceTaskService retryPolicyFileSourceTaskService;
     private final FileSourceBatchTaskDAO fileSourceBatchTaskDAO;
-    private final DSLContext dslContext;
     private final FileSourceTaskDAO fileSourceTaskDAO;
 
     @Autowired
     public BatchTaskServiceImpl(FileSourceTaskService fileSourceTaskService,
-                                FileSourceBatchTaskDAO fileSourceBatchTaskDAO, DSLContext dslContext,
+                                RetryPolicyFileSourceTaskService retryPolicyFileSourceTaskService,
+                                FileSourceBatchTaskDAO fileSourceBatchTaskDAO,
                                 FileSourceTaskDAO fileSourceTaskDAO) {
         this.fileSourceTaskService = fileSourceTaskService;
+        this.retryPolicyFileSourceTaskService = retryPolicyFileSourceTaskService;
         this.fileSourceBatchTaskDAO = fileSourceBatchTaskDAO;
-        this.dslContext = dslContext;
         this.fileSourceTaskDAO = fileSourceTaskDAO;
     }
 
     @Override
-    public BatchTaskInfoDTO startFileSourceBatchDownloadTask(String username, Long appId, Long stepInstanceId,
+    public BatchTaskInfoDTO startFileSourceBatchDownloadTask(String username,
+                                                             Long appId,
+                                                             Long stepInstanceId,
                                                              Integer executeCount,
                                                              List<FileSourceTaskContent> fileSourceTaskList) {
         BatchTaskInfoDTO batchTaskInfoDTO = new BatchTaskInfoDTO();
@@ -78,13 +81,19 @@ public class BatchTaskServiceImpl implements BatchTaskService {
         fileSourceBatchTaskDTO.setStepInstanceId(stepInstanceId);
         fileSourceBatchTaskDTO.setExecuteCount(executeCount);
         fileSourceBatchTaskDTO.setStatus(TaskStatusEnum.INIT.getStatus());
-        String batchTaskId = fileSourceBatchTaskDAO.insertFileSourceBatchTask(dslContext, fileSourceBatchTaskDTO);
+        String batchTaskId = fileSourceBatchTaskDAO.insertFileSourceBatchTask(fileSourceBatchTaskDTO);
         batchTaskInfoDTO.setBatchTaskId(batchTaskId);
         List<TaskInfoDTO> taskInfoDTOList = new ArrayList<>();
         for (FileSourceTaskContent fileSourceTaskContent : fileSourceTaskList) {
-            TaskInfoDTO taskInfoDTO = fileSourceTaskService.startFileSourceDownloadTask(username, appId,
-                stepInstanceId, executeCount, batchTaskId, fileSourceTaskContent.getFileSourceId(),
-                fileSourceTaskContent.getFilePathList());
+            TaskInfoDTO taskInfoDTO = retryPolicyFileSourceTaskService.startFileSourceDownloadTask(
+                username,
+                appId,
+                stepInstanceId,
+                executeCount,
+                batchTaskId,
+                fileSourceTaskContent.getFileSourceId(),
+                fileSourceTaskContent.acquireUniqueFilePathList()
+            );
             taskInfoDTOList.add(taskInfoDTO);
         }
         batchTaskInfoDTO.setTaskInfoList(taskInfoDTOList);
@@ -95,7 +104,7 @@ public class BatchTaskServiceImpl implements BatchTaskService {
         List<String> fileSourceTaskIdList = new ArrayList<>();
         for (String batchTaskId : batchTaskIdList) {
             List<FileSourceTaskDTO> fileSourceTaskDTOList = fileSourceTaskDAO.listByBatchTaskId(batchTaskId);
-            fileSourceTaskIdList.addAll(fileSourceTaskDTOList.parallelStream()
+            fileSourceTaskIdList.addAll(fileSourceTaskDTOList.stream()
                 .map(FileSourceTaskDTO::getId).collect(Collectors.toList()));
         }
         return fileSourceTaskIdList;
@@ -111,8 +120,7 @@ public class BatchTaskServiceImpl implements BatchTaskService {
     public BatchTaskStatusDTO getBatchTaskStatusAndLogs(String batchTaskId, Long logStart, Long logLength) {
         BatchTaskStatusDTO batchTaskStatusDTO = new BatchTaskStatusDTO();
         batchTaskStatusDTO.setBatchTaskId(batchTaskId);
-        FileSourceBatchTaskDTO fileSourceBatchTaskDTO = fileSourceBatchTaskDAO.getFileSourceBatchTaskById(dslContext,
-            batchTaskId);
+        FileSourceBatchTaskDTO fileSourceBatchTaskDTO = fileSourceBatchTaskDAO.getBatchTaskById(batchTaskId);
         if (fileSourceBatchTaskDTO == null) {
             throw new InternalException(ErrorCode.INTERNAL_ERROR);
         }
@@ -126,11 +134,5 @@ public class BatchTaskServiceImpl implements BatchTaskService {
         }
         batchTaskStatusDTO.setFileSourceTaskStatusInfoList(fileSourceTaskStatusInfoList);
         return batchTaskStatusDTO;
-    }
-
-    @Override
-    public Integer clearBatchTaskFiles(List<String> batchTaskIdList) {
-        List<String> fileSourceTaskIdList = getFileSourceTaskIdListByBatch(batchTaskIdList);
-        return fileSourceTaskService.clearTaskFiles(fileSourceTaskIdList);
     }
 }

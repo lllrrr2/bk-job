@@ -24,23 +24,24 @@
 
 package com.tencent.bk.job.execute.api.esb.v3;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.TaskVariableTypeEnum;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
+import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.ValidateResult;
-import com.tencent.bk.job.execute.api.esb.v2.impl.JobQueryCommonProcessor;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
 import com.tencent.bk.job.execute.model.StepInstanceVariableValuesDTO;
-import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.esb.v3.EsbJobInstanceGlobalVarValueV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.EsbJobInstanceGlobalVarValueV3DTO.EsbStepInstanceGlobalVarValuesV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.EsbJobInstanceGlobalVarValueV3DTO.GlobalVarValueV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.request.EsbGetJobInstanceGlobalVarValueV3Request;
 import com.tencent.bk.job.execute.service.StepInstanceVariableValueService;
-import com.tencent.bk.job.execute.service.TaskInstanceService;
+import com.tencent.bk.job.execute.service.TaskInstanceAccessProcessor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,26 +52,29 @@ import java.util.List;
 @RestController
 @Slf4j
 public class EsbGetJobInstanceGlobalVarValueV3ResourceImpl
-    extends JobQueryCommonProcessor
     implements EsbGetJobInstanceGlobalVarValueV3Resource {
 
-    private final TaskInstanceService taskInstanceService;
-    private final MessageI18nService i18nService;
     private final StepInstanceVariableValueService stepInstanceVariableValueService;
+    private final TaskInstanceAccessProcessor taskInstanceAccessProcessor;
+    private final AppScopeMappingService appScopeMappingService;
 
-    public EsbGetJobInstanceGlobalVarValueV3ResourceImpl(MessageI18nService i18nService,
-                                                         TaskInstanceService taskInstanceService,
-                                                         StepInstanceVariableValueService stepInstanceVariableValueService) {
-        this.i18nService = i18nService;
-        this.taskInstanceService = taskInstanceService;
+
+    public EsbGetJobInstanceGlobalVarValueV3ResourceImpl(
+        StepInstanceVariableValueService stepInstanceVariableValueService,
+        TaskInstanceAccessProcessor taskInstanceAccessProcessor,
+        AppScopeMappingService appScopeMappingService) {
         this.stepInstanceVariableValueService = stepInstanceVariableValueService;
+        this.taskInstanceAccessProcessor = taskInstanceAccessProcessor;
+        this.appScopeMappingService = appScopeMappingService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v3_get_job_instance_var_value"})
+    @AuditEntry(actionId = ActionId.VIEW_HISTORY)
     public EsbResp<EsbJobInstanceGlobalVarValueV3DTO> getJobInstanceGlobalVarValueUsingPost(
-        EsbGetJobInstanceGlobalVarValueV3Request request) {
-
+        String username,
+        String appCode,
+        @AuditRequestBody EsbGetJobInstanceGlobalVarValueV3Request request) {
         ValidateResult checkResult = checkRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Get job instance global var value, request is illegal!");
@@ -78,8 +82,8 @@ public class EsbGetJobInstanceGlobalVarValueV3ResourceImpl
         }
 
         long taskInstanceId = request.getTaskInstanceId();
-        TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(taskInstanceId);
-        authViewTaskInstance(request.getUserName(), request.getAppId(), taskInstance);
+        taskInstanceAccessProcessor.processBeforeAccess(username,
+            request.getAppResourceScope().getAppId(), taskInstanceId);
 
         EsbJobInstanceGlobalVarValueV3DTO result = new EsbJobInstanceGlobalVarValueV3DTO();
         result.setTaskInstanceId(taskInstanceId);
@@ -112,10 +116,6 @@ public class EsbGetJobInstanceGlobalVarValueV3ResourceImpl
     }
 
     private ValidateResult checkRequest(EsbGetJobInstanceGlobalVarValueV3Request request) {
-        if (request.getAppId() == null || request.getAppId() < 1) {
-            log.warn("App is empty or illegal, appId={}", request.getAppId());
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "bk_biz_id");
-        }
         if (request.getTaskInstanceId() == null || request.getTaskInstanceId() < 1) {
             log.warn("TaskInstanceId is empty or illegal, taskInstanceId={}", request.getTaskInstanceId());
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "job_instance_id");
@@ -126,13 +126,16 @@ public class EsbGetJobInstanceGlobalVarValueV3ResourceImpl
     @Override
     public EsbResp<EsbJobInstanceGlobalVarValueV3DTO> getJobInstanceGlobalVarValue(String username,
                                                                                    String appCode,
-                                                                                   Long appId,
+                                                                                   Long bizId,
+                                                                                   String scopeType,
+                                                                                   String scopeId,
                                                                                    Long taskInstanceId) {
         EsbGetJobInstanceGlobalVarValueV3Request request = new EsbGetJobInstanceGlobalVarValueV3Request();
-        request.setUserName(username);
-        request.setAppCode(appCode);
-        request.setAppId(appId);
+        request.setBizId(bizId);
+        request.setScopeType(scopeType);
+        request.setScopeId(scopeId);
         request.setTaskInstanceId(taskInstanceId);
-        return getJobInstanceGlobalVarValueUsingPost(request);
+        request.fillAppResourceScope(appScopeMappingService);
+        return getJobInstanceGlobalVarValueUsingPost(username, appCode, request);
     }
 }

@@ -25,7 +25,7 @@
 package com.tencent.bk.job.manage.manager.script.check.checker;
 
 import com.google.common.collect.Lists;
-import com.tencent.bk.job.manage.common.consts.script.ScriptCheckErrorLevelEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptCheckErrorLevelEnum;
 import com.tencent.bk.job.manage.manager.script.check.ScriptCheckParam;
 import com.tencent.bk.job.manage.model.dto.ScriptCheckResultItemDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +35,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static com.tencent.bk.job.manage.manager.script.check.consts.ScriptCheckItemCode.*;
+import static com.tencent.bk.job.manage.manager.script.check.consts.ScriptCheckItemCode.DANGER_FOUND_ALL;
+import static com.tencent.bk.job.manage.manager.script.check.consts.ScriptCheckItemCode.DANGER_FOUND_BASE;
+import static com.tencent.bk.job.manage.manager.script.check.consts.ScriptCheckItemCode.DANGER_FOUND_WITH_NO_CONDITION;
 
 /**
  * 脚本对IO操作的高危检查
@@ -58,19 +60,27 @@ public class IOScriptChecker extends DefaultChecker {
 
     @Override
     public List<ScriptCheckResultItemDTO> call() {
-        StopWatch watch = new StopWatch();
+        StopWatch watch = new StopWatch("IOScriptChecker");
         ArrayList<ScriptCheckResultItemDTO> checkResults = Lists.newArrayList();
-        String[] lines = param.getLines();
-        watch.start("noParamToFindBase");
-        checkScriptLines(checkResults, lines, noParamToFindBase, DANGER_FOUND_ALL);
-        watch.stop();
-        watch.start("paramFindBase");
-        checkScriptLines(checkResults, lines, paramFindBase, DANGER_FOUND_BASE);
-        watch.stop();
-        watch.start("noParamToFind");
-        checkScriptLines(checkResults, lines, noParamToFind, DANGER_FOUND_WITH_NO_CONDITION);
-        watch.stop();
-        log.debug("watch={}", watch);
+        try {
+            String[] lines = param.getLines();
+            watch.start("noParamToFindBase");
+            checkScriptLines(checkResults, lines, noParamToFindBase, DANGER_FOUND_ALL);
+            watch.stop();
+            watch.start("paramFindBase");
+            checkScriptLines(checkResults, lines, paramFindBase, DANGER_FOUND_BASE);
+            watch.stop();
+            watch.start("noParamToFind");
+            checkScriptLines(checkResults, lines, noParamToFind, DANGER_FOUND_WITH_NO_CONDITION);
+            watch.stop();
+        } finally {
+            if (watch.isRunning()) {
+                watch.stop();
+            }
+            if (watch.getTotalTimeMillis() > 10) {
+                log.info("Check io script is slow, watch={}", watch.prettyPrint());
+            }
+        }
         return checkResults;
     }
 

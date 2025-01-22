@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.execute.engine.model;
 
+import com.tencent.bk.job.common.gse.v2.model.ExecuteObjectGseKey;
 import lombok.Data;
 
 /**
@@ -31,8 +32,14 @@ import lombok.Data;
  */
 @Data
 public class LogPullProgress {
-    private String ip;
-    private int mid;
+    /**
+     * 执行对象GSE KEY
+     */
+    private ExecuteObjectGseKey executeObjectGseKey;
+    /**
+     * 任务编号
+     */
+    private int atomicTaskId;
     /**
      * 日志偏移 - 字节
      */

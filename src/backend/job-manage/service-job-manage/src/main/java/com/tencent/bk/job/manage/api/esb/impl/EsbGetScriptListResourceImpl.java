@@ -29,8 +29,8 @@ import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbPageData;
 import com.tencent.bk.job.common.esb.model.EsbResp;
+import com.tencent.bk.job.common.esb.util.EsbDTOAppScopeMappingHelper;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
@@ -38,15 +38,15 @@ import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.common.model.ValidateResult;
 import com.tencent.bk.job.common.util.date.DateUtils;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import com.tencent.bk.job.manage.api.esb.EsbGetScriptListResource;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.auth.EsbAuthService;
 import com.tencent.bk.job.manage.model.dto.ScriptDTO;
 import com.tencent.bk.job.manage.model.esb.EsbScriptDTO;
 import com.tencent.bk.job.manage.model.esb.request.EsbGetScriptListRequest;
 import com.tencent.bk.job.manage.model.query.ScriptQuery;
 import com.tencent.bk.job.manage.service.ScriptService;
-import com.tencent.bk.job.manage.service.auth.EsbAuthService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -63,20 +63,20 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EsbGetScriptListResourceImpl implements EsbGetScriptListResource {
     private final ScriptService scriptService;
-    private final MessageI18nService i18nService;
     private final EsbAuthService authService;
 
-    public EsbGetScriptListResourceImpl(ScriptService scriptService, MessageI18nService i18nService,
+    public EsbGetScriptListResourceImpl(ScriptService scriptService,
                                         EsbAuthService authService) {
         this.scriptService = scriptService;
-        this.i18nService = i18nService;
         this.authService = authService;
     }
 
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_get_script_list"})
-    public EsbResp<EsbPageData<EsbScriptDTO>> getScriptList(EsbGetScriptListRequest request) {
+    public EsbResp<EsbPageData<EsbScriptDTO>> getScriptList(String username,
+                                                            String appCode,
+                                                            EsbGetScriptListRequest request) {
         ValidateResult checkResult = checkRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Get script list, request is illegal!");
@@ -104,8 +104,9 @@ public class EsbGetScriptListResourceImpl implements EsbGetScriptListResource {
         BaseSearchCondition baseSearchCondition = new BaseSearchCondition();
         baseSearchCondition.setStart(request.getStart());
         baseSearchCondition.setLength(request.getLength());
+        scriptQuery.setBaseSearchCondition(baseSearchCondition);
 
-        PageData<ScriptDTO> pageScripts = scriptService.listPageScriptVersion(scriptQuery, baseSearchCondition);
+        PageData<ScriptDTO> pageScripts = scriptService.listPageScriptVersion(scriptQuery);
         if (returnScriptContent) {
             List<ScriptDTO> scriptDTOList = pageScripts.getData();
             if (scriptDTOList == null) {
@@ -114,13 +115,13 @@ public class EsbGetScriptListResourceImpl implements EsbGetScriptListResource {
             // 鉴权
             Map<String, String> idNameMap = new HashMap<>();
             // 过滤掉公共脚本
-            List<String> resourceIds = scriptDTOList.parallelStream().filter(it -> !it.isPublicScript()).map(it -> {
+            List<String> resourceIds = scriptDTOList.stream().filter(it -> !it.isPublicScript()).map(it -> {
                 idNameMap.put(it.getId(), it.getName());
                 return it.getId();
             }).collect(Collectors.toList());
             if (!resourceIds.isEmpty()) {
-                EsbResp authFailResp = authService.batchAuthJobResources(request.getUserName(), ActionId.VIEW_SCRIPT,
-                    appId, ResourceTypeEnum.SCRIPT, resourceIds, idNameMap);
+                EsbResp authFailResp = authService.batchAuthJobResources(username, ActionId.VIEW_SCRIPT,
+                    request.getAppResourceScope(), ResourceTypeEnum.SCRIPT, resourceIds, idNameMap);
                 if (authFailResp != null) {
                     return authFailResp;
                 }
@@ -144,7 +145,7 @@ public class EsbGetScriptListResourceImpl implements EsbGetScriptListResource {
         List<EsbScriptDTO> esbScriptList = new ArrayList<>();
         for (ScriptDTO script : pageScripts.getData()) {
             EsbScriptDTO esbScript = new EsbScriptDTO();
-            esbScript.setAppId(script.getAppId());
+            EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(script.getAppId(), esbScript);
             esbScript.setId(script.getScriptVersionId());
             esbScript.setCreator(script.getCreator());
             esbScript.setCreateTime(DateUtils.formatUnixTimestamp(script.getCreateTime(), ChronoUnit.MILLIS, "yyyy-MM" +
@@ -183,7 +184,7 @@ public class EsbGetScriptListResourceImpl implements EsbGetScriptListResource {
         }
         // 如果script_type=0,表示查询所有类型
         if (request.getScriptType() != null && request.getScriptType() > 0
-            && ScriptTypeEnum.valueOf(request.getScriptType()) == null) {
+            && ScriptTypeEnum.valOf(request.getScriptType()) == null) {
             log.warn("ScriptType:{} is illegal!", request.getScriptType());
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "script_type");
         }

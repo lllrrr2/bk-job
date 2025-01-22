@@ -69,7 +69,8 @@ class StepInstanceVariableDAOImplIntegrationTest {
         variableValues.setGlobalParams(globalParams);
         List<HostVariableValuesDTO> hostParamValuesList = new ArrayList<>();
         HostVariableValuesDTO hostParamValues = new HostVariableValuesDTO();
-        hostParamValues.setIp("1.1.1.1");
+        hostParamValues.setHostId(1L);
+        hostParamValues.setCloudIpv4("0:1.1.1.1");
         List<VariableValueDTO> namespaceParamValues = new ArrayList<>();
         namespaceParamValues.add(new VariableValueDTO("param11", 2, "value11"));
         namespaceParamValues.add(new VariableValueDTO("param12", 2, "value12"));
@@ -80,7 +81,7 @@ class StepInstanceVariableDAOImplIntegrationTest {
         stepInstanceVariableDAO.saveVariableValues(variableValues);
 
         StepInstanceVariableValuesDTO actual = stepInstanceVariableDAO
-            .getStepVariableValues(200L, 1, VariableValueTypeEnum.OUTPUT);
+            .getStepVariableValues(100L, 200L, 1, VariableValueTypeEnum.OUTPUT);
 
         assertThat(actual.getStepInstanceId()).isEqualTo(200L);
         assertThat(actual.getExecuteCount()).isEqualTo(1);
@@ -91,27 +92,12 @@ class StepInstanceVariableDAOImplIntegrationTest {
         assertThat(actual.getGlobalParams()).extracting("value").containsOnly("value11", "value12");
 
         assertThat(actual.getNamespaceParams()).hasSize(1);
-        assertThat(actual.getNamespaceParams().get(0).getIp()).isEqualTo("1.1.1.1");
+        assertThat(actual.getNamespaceParams().get(0).getCloudIpv4()).isEqualTo("0:1.1.1.1");
+        assertThat(actual.getNamespaceParams().get(0).getHostId()).isEqualTo(1L);
         assertThat(actual.getNamespaceParams().get(0).getValues()).hasSize(2);
         assertThat(actual.getNamespaceParams().get(0).getValues()).extracting("name")
             .containsOnly("param11", "param12");
         assertThat(actual.getNamespaceParams().get(0).getValues()).extracting("value")
             .containsOnly("value11", "value12");
-    }
-
-    @Test
-    void testListSortedPreStepOutputVariableValues() {
-        List<StepInstanceVariableValuesDTO> stepInstanceVariableValuesList =
-            stepInstanceVariableDAO.listSortedPreStepOutputVariableValues(1L, 3L);
-        assertThat(stepInstanceVariableValuesList).hasSize(3);
-        assertThat(stepInstanceVariableValuesList.get(0).getTaskInstanceId()).isEqualTo(1L);
-        assertThat(stepInstanceVariableValuesList.get(0).getStepInstanceId()).isEqualTo(1L);
-        assertThat(stepInstanceVariableValuesList.get(0).getExecuteCount()).isEqualTo(0);
-        assertThat(stepInstanceVariableValuesList.get(1).getTaskInstanceId()).isEqualTo(1L);
-        assertThat(stepInstanceVariableValuesList.get(1).getStepInstanceId()).isEqualTo(2L);
-        assertThat(stepInstanceVariableValuesList.get(1).getExecuteCount()).isEqualTo(0);
-        assertThat(stepInstanceVariableValuesList.get(2).getTaskInstanceId()).isEqualTo(1L);
-        assertThat(stepInstanceVariableValuesList.get(2).getStepInstanceId()).isEqualTo(2L);
-        assertThat(stepInstanceVariableValuesList.get(2).getExecuteCount()).isEqualTo(1);
     }
 }

@@ -26,6 +26,7 @@ package com.tencent.bk.job.execute.api.web;
 
 import com.tencent.bk.job.common.annotation.WebAPI;
 import com.tencent.bk.job.common.model.Response;
+import com.tencent.bk.job.common.model.dto.AppResourceScope;
 import com.tencent.bk.job.execute.model.web.vo.LogExportJobInfoVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -33,11 +34,13 @@ import io.swagger.annotations.ApiParam;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import springfox.documentation.annotations.ApiIgnore;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -45,37 +48,70 @@ import javax.servlet.http.HttpServletResponse;
  * 作业执行日志API-前端调用
  */
 @Api(tags = {"job-execute:web:Task_Execution_Log"})
-@RequestMapping("/web/execution")
+@RequestMapping("/web/execution/scope/{scopeType}/{scopeId}")
 @RestController
 @WebAPI
 public interface WebTaskLogResource {
 
     @ApiOperation(value = "请求下载执行日志文件", produces = "application/json")
-    @GetMapping("/app/{appId}/step-execution-result/{stepInstanceId}/log-file")
+    @GetMapping("/taskInstance/{taskInstanceId}/stepInstance/{stepInstanceId}/requestDownloadLogFile")
     Response<LogExportJobInfoVO> requestDownloadLogFile(
         @ApiParam("用户名，网关自动传入")
-        @RequestHeader("username") String username,
-        @ApiParam(value = "业务ID", required = true, example = "1")
-        @PathVariable("appId") Long appId,
+        @RequestHeader("username")
+            String username,
+        @ApiIgnore
+        @RequestAttribute(value = "appResourceScope")
+            AppResourceScope appResourceScope,
+        @ApiParam(value = "资源范围类型", required = true)
+        @PathVariable(value = "scopeType")
+            String scopeType,
+        @ApiParam(value = "资源范围ID", required = true)
+        @PathVariable(value = "scopeId")
+            String scopeId,
+        @ApiParam(value = "作业实例 ID", name = "taskInstanceId", required = true)
+        @PathVariable("taskInstanceId")
+            Long taskInstanceId,
         @ApiParam(value = "步骤实例 ID", name = "stepInstanceId", required = true)
-        @PathVariable("stepInstanceId") Long stepInstanceId,
-        @ApiParam(value = "ip", name = "ip")
-        @RequestParam(value = "ip", required = false) String ip,
+        @PathVariable("stepInstanceId")
+            Long stepInstanceId,
+        @ApiParam(value = "执行对象类型", name = "executeObjectType")
+        @RequestParam(value = "executeObjectType", required = false)
+            Integer executeObjectType,
+        @ApiParam(value = "执行对象资源 ID", name = "executeObjectResourceId")
+        @RequestParam(value = "executeObjectResourceId", required = false)
+            Long executeObjectResourceId,
         @ApiParam(value = "重新打包", name = "repackage")
-        @RequestParam(value = "repackage", required = false) Boolean repackage
+        @RequestParam(value = "repackage", required = false)
+            Boolean repackage
     );
 
     @ApiOperation(value = "下载执行日志文件", produces = "application/json")
-    @GetMapping("/app/{appId}/step-execution-result/{stepInstanceId}/log-file/download")
+    @GetMapping("/taskInstance/{taskInstanceId}/stepInstance/{stepInstanceId}/downloadLogFile")
     ResponseEntity<StreamingResponseBody> downloadLogFile(
         HttpServletResponse response,
         @ApiParam("用户名，网关自动传入")
-        @RequestHeader("username") String username,
-        @ApiParam(value = "业务ID", required = true, example = "1")
-        @PathVariable("appId") Long appId,
+        @RequestHeader("username")
+            String username,
+        @ApiIgnore
+        @RequestAttribute(value = "appResourceScope")
+            AppResourceScope appResourceScope,
+        @ApiParam(value = "资源范围类型", required = true)
+        @PathVariable(value = "scopeType")
+            String scopeType,
+        @ApiParam(value = "资源范围ID", required = true)
+        @PathVariable(value = "scopeId")
+            String scopeId,
+        @ApiParam(value = "作业实例 ID", name = "taskInstanceId", required = true)
+        @PathVariable("taskInstanceId")
+            Long taskInstanceId,
         @ApiParam(value = "步骤实例 ID", name = "stepInstanceId", required = true)
-        @PathVariable("stepInstanceId") Long stepInstanceId,
-        @ApiParam(value = "ip", name = "ip")
-        @RequestParam(value = "ip", required = false) String ip
+        @PathVariable("stepInstanceId")
+            Long stepInstanceId,
+        @ApiParam(value = "执行对象类型", name = "executeObjectType")
+        @RequestParam(value = "executeObjectType", required = false)
+            Integer executeObjectType,
+        @ApiParam(value = "执行对象资源 ID", name = "executeObjectResourceId")
+        @RequestParam(value = "executeObjectResourceId", required = false)
+            Long executeObjectResourceId
     );
 }

@@ -30,9 +30,10 @@ dependencies {
     implementation 'org.springframework.cloud:spring-cloud-starter-bootstrap'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo'
+    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo.spring26x'
 }
 springBoot {
-    mainClassName = "com.tencent.bk.job.logsvr.JobLogBootApplication"
+    getMainClass().set("com.tencent.bk.job.logsvr.JobLogBootApplication")
     buildInfo()
 }
 task renameArtifacts(type: Copy) {
@@ -41,8 +42,7 @@ task renameArtifacts(type: Copy) {
     destinationDir file('build/libs/')
     rename "boot-job-logsvr-${version}.jar", "job-logsvr-${version}.jar"
 }
-renameArtifacts.dependsOn jar
-assemble.dependsOn renameArtifacts
+renameArtifacts.dependsOn assemble
 
 task copyToLatestJar(type: Copy) {
     group = "local"
@@ -53,3 +53,4 @@ task copyToLatestJar(type: Copy) {
 }
 copyToLatestJar.dependsOn assemble
 apply from: "$rootDir/task_job_package.gradle"
+copyToRelease.dependsOn renameArtifacts

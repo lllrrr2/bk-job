@@ -26,19 +26,22 @@ package com.tencent.bk.job.manage.dao.template.impl;
 
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.InternalException;
+import com.tencent.bk.job.common.mysql.util.JooqDataTypeUtil;
 import com.tencent.bk.job.common.util.json.JsonUtils;
 import com.tencent.bk.job.manage.common.util.DbRecordMapper;
 import com.tencent.bk.job.manage.dao.TaskFileInfoDAO;
 import com.tencent.bk.job.manage.model.dto.task.TaskFileInfoDTO;
+import com.tencent.bk.job.manage.model.dto.task.TaskTargetDTO;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStepFileList;
+import com.tencent.bk.job.manage.model.tables.records.TaskTemplateStepFileListRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.InsertValuesStep8;
 import org.jooq.Record9;
 import org.jooq.Result;
-import org.jooq.generated.tables.TaskTemplateStepFileList;
-import org.jooq.generated.tables.records.TaskTemplateStepFileListRecord;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -130,7 +133,7 @@ public class TaskTemplateFileInfoDAOImpl implements TaskFileInfoDAO {
                 JsonUtils.toJson(fileInfo.getFileLocation()),
                 DbRecordMapper.getJooqLongValue(fileInfo.getFileSize()),
                 fileInfo.getFileHash(),
-                fileInfo.getHost() == null ? null : fileInfo.getHost().toString(),
+                fileInfo.getHost() == null ? null : fileInfo.getHost().toJsonString(),
                 DbRecordMapper.getJooqLongValue(fileInfo.getHostAccount()),
                 fileInfo.getFileSourceId()
             )
@@ -155,7 +158,7 @@ public class TaskTemplateFileInfoDAOImpl implements TaskFileInfoDAO {
             JsonUtils.toJson(fileInfo.getFileLocation()),
             DbRecordMapper.getJooqLongValue(fileInfo.getFileSize()),
             fileInfo.getFileHash(),
-            fileInfo.getHost() == null ? null : fileInfo.getHost().toString(),
+            fileInfo.getHost() == null ? null : fileInfo.getHost().toJsonString(),
             DbRecordMapper.getJooqLongValue(fileInfo.getHostAccount()),
             fileInfo.getFileSourceId()
         ));
@@ -187,7 +190,7 @@ public class TaskTemplateFileInfoDAOImpl implements TaskFileInfoDAO {
             .set(TABLE.FILE_LOCATION, JsonUtils.toJson(fileInfo.getFileLocation()))
             .set(TABLE.FILE_SIZE, DbRecordMapper.getJooqLongValue(fileInfo.getFileSize()))
             .set(TABLE.FILE_HASH, fileInfo.getFileHash())
-            .set(TABLE.HOST, fileInfo.getHost() == null ? null : fileInfo.getHost().toString())
+            .set(TABLE.HOST, fileInfo.getHost() == null ? null : fileInfo.getHost().toJsonString())
             .set(TABLE.HOST_ACCOUNT, DbRecordMapper.getJooqLongValue(fileInfo.getHostAccount()))
             .set(TABLE.FILE_SOURCE_ID, fileInfo.getFileSourceId())
             .where(conditions)
@@ -219,11 +222,37 @@ public class TaskTemplateFileInfoDAOImpl implements TaskFileInfoDAO {
             return new ArrayList<>();
         }
 
-        List<ULong> uLongStepIdList = stepIdList.parallelStream().map(ULong::valueOf).collect(Collectors.toList());
+        List<ULong> uLongStepIdList = stepIdList.stream().map(ULong::valueOf).collect(Collectors.toList());
 
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TABLE.STEP_ID.in(uLongStepIdList));
         conditions.add(TABLE.FILE_TYPE.equal(UByte.valueOf(2)));
         return context.select(TABLE.FILE_LOCATION).from(TABLE).where(conditions).fetch(TABLE.FILE_LOCATION);
+    }
+
+    @Override
+    public Map<Long, TaskTargetDTO> listStepFileHosts() {
+        Result<?> result = context.select(TABLE.ID, TABLE.HOST).fetch();
+        Map<Long, TaskTargetDTO> stepTargets = new HashMap<>();
+        if (result.isNotEmpty()) {
+            result.forEach(record -> {
+                Long recordId = record.get(TABLE.ID).longValue();
+                TaskTargetDTO target = TaskTargetDTO.fromJsonString(record.get(TABLE.HOST));
+                stepTargets.put(recordId, target);
+            });
+        }
+        return stepTargets;
+    }
+
+    @Override
+    public boolean updateStepFileHosts(Long recordId, String value) {
+        if (StringUtils.isBlank(value)) {
+            return false;
+        }
+        int result = context.update(TABLE)
+            .set(TABLE.HOST, value)
+            .where(TABLE.ID.eq(JooqDataTypeUtil.buildULong(recordId)))
+            .execute();
+        return result == 1;
     }
 }

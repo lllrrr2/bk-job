@@ -40,75 +40,59 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Api(tags = {"job-execute:web:Permission"})
-@RequestMapping("/web/permission/")
+@RequestMapping("/web/permission/execute")
 @RestController
 @WebAPI
 public interface WebPermissionResource {
-    /**
-     * 获取权限申请URL
-     *
-     * @param username 用户名
-     * @param req      操作鉴权请求
-     * @return 权限申请URL
-     */
-    @ApiOperation(value = "获取权限申请URL", produces = "application/json")
-    @PostMapping("/apply-url")
-    Response<String> getApplyUrl(@ApiParam("用户名，网关自动传入")
-                                        @RequestHeader("username") String username,
-                                 @ApiParam("权限检查请求")
-                                        @RequestBody OperationPermissionReq req);
 
     /**
      * 检查操作权限
      *
      * @param username 用户名
      * @param req      操作鉴权请求
-     * @return
+     * @return 鉴权结果
      */
     @ApiOperation(value = "检查操作权限", produces = "application/json")
     @PostMapping("/check")
-    Response<AuthResultVO> checkOperationPermission(@ApiParam("用户名，网关自动传入")
-                                                           @RequestHeader("username") String username,
-                                                    @ApiParam("权限检查请求")
-                                                           @RequestBody OperationPermissionReq req);
+    Response<AuthResultVO> checkOperationPermission(
+        @ApiParam("用户名，网关自动传入")
+        @RequestHeader("username")
+            String username,
+        @ApiParam("权限检查请求")
+        @RequestBody OperationPermissionReq req
+    );
 
     /**
      * 检查操作权限
      *
      * @param username               用户名
-     * @param appId                  业务ID
+     * @param scopeType              资源范围类型
+     * @param scopeId                资源范围ID
      * @param operation              操作ID
      * @param resourceId             资源ID
      * @param returnPermissionDetail 是否返回详细的权限信息
-     * @return
+     * @return 鉴权结果
      */
     @ApiOperation(value = "检查操作权限", produces = "application/json")
     @GetMapping("/check")
-    Response<AuthResultVO> checkOperationPermission(@ApiParam("用户名，网关自动传入")
-                                                           @RequestHeader("username")
-                                                               String username,
-                                                    @ApiParam(value = "业务ID", required = false)
-                                                           @RequestParam(value = "appId", required = false)
-                                                               Long appId,
-                                                    @ApiParam("操作ID,取值为: [script/create,script/view," +
-                                                               "script/edit,script/delete,script/execute," +
-                                                               "script/clone],[job_template/create,job_template/view," +
-                                                               "job_template/edit,job_template/delete," +
-                                                               "job_template/clone,job_template/debug]," +
-                                                               "[job_plan/create,job_plan/view,job_plan/edit," +
-                                                               "job_plan/delete,job_plan/execute,job_plan/sync]," +
-                                                               "[account/create,account/view,account/edit," +
-                                                               "account/delete],[public_script/create," +
-                                                               "public_script/view,public_script/edit," +
-                                                               "public_script/delete,public_script/execute]," +
-                                                               "[whitelist/create,whitelist/view,whitelist/edit," +
-                                                               "whitelist/delete],[tag/create,tag/edit,tag/delete]")
-                                                           @RequestParam(value = "operation")
-                                                               String operation,
-                                                    @ApiParam(value = "资源ID,比如作业ID,定时任务ID;对于部分不需要资源ID的操作(新建),不需要传参")
-                                                           @RequestParam(value = "resourceId", required = false)
-                                                               String resourceId,
-                                                    @ApiParam(value = "是否返回详细的权限信息(依赖的权限，申请URL)。默认为false")
-                                                           @RequestParam(value = "returnPermissionDetail", required = false)
-                                                               Boolean returnPermissionDetail);
+    Response<AuthResultVO> checkOperationPermission(
+        @ApiParam("用户名，网关自动传入")
+        @RequestHeader("username")
+            String username,
+        @ApiParam(value = "资源范围类型", required = true)
+        @RequestParam(value = "scopeType")
+            String scopeType,
+        @ApiParam(value = "资源范围ID", required = true)
+        @RequestParam(value = "scopeId")
+            String scopeId,
+        @ApiParam("操作ID,取值为: [task_instance/view,task_instance/redo]")
+        @RequestParam(value = "operation")
+            String operation,
+        @ApiParam(value = "资源ID,比如作业ID,定时任务ID;对于部分不需要资源ID的操作(新建),不需要传参")
+        @RequestParam(value = "resourceId", required = false)
+            String resourceId,
+        @ApiParam(value = "是否返回详细的权限信息(依赖的权限，申请URL)。默认为false")
+        @RequestParam(value = "returnPermissionDetail", required = false)
+            Boolean returnPermissionDetail
+    );
 }

@@ -26,13 +26,13 @@ package com.tencent.bk.job.common.artifactory.sdk;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.tencent.bk.job.common.artifactory.constants.ArtifactoryInterfaceConsts;
+import com.tencent.bk.job.common.artifactory.constants.MetricsConstants;
 import com.tencent.bk.job.common.artifactory.model.dto.ArtifactoryResp;
 import com.tencent.bk.job.common.artifactory.model.dto.NodeDTO;
 import com.tencent.bk.job.common.artifactory.model.dto.PageData;
 import com.tencent.bk.job.common.artifactory.model.dto.ProjectDTO;
 import com.tencent.bk.job.common.artifactory.model.dto.RepoDTO;
 import com.tencent.bk.job.common.artifactory.model.dto.TempUrlInfo;
-import com.tencent.bk.job.common.artifactory.model.dto.UserDetail;
 import com.tencent.bk.job.common.artifactory.model.req.ArtifactoryReq;
 import com.tencent.bk.job.common.artifactory.model.req.CheckRepoExistReq;
 import com.tencent.bk.job.common.artifactory.model.req.CreateProjectReq;
@@ -45,22 +45,28 @@ import com.tencent.bk.job.common.artifactory.model.req.DownloadGenericFileReq;
 import com.tencent.bk.job.common.artifactory.model.req.ListNodePageReq;
 import com.tencent.bk.job.common.artifactory.model.req.ListProjectReq;
 import com.tencent.bk.job.common.artifactory.model.req.ListRepoPageReq;
+import com.tencent.bk.job.common.artifactory.model.req.PageLimit;
 import com.tencent.bk.job.common.artifactory.model.req.QueryNodeDetailReq;
+import com.tencent.bk.job.common.artifactory.model.req.Rule;
+import com.tencent.bk.job.common.artifactory.model.req.SearchNodePageReq;
+import com.tencent.bk.job.common.artifactory.model.req.Sort;
 import com.tencent.bk.job.common.artifactory.model.req.UploadGenericFileReq;
-import com.tencent.bk.job.common.artifactory.model.req.UserDetailReq;
 import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.constant.HttpMethodEnum;
+import com.tencent.bk.job.common.exception.HttpStatusException;
 import com.tencent.bk.job.common.exception.InternalException;
 import com.tencent.bk.job.common.exception.NotImplementedException;
 import com.tencent.bk.job.common.exception.ServiceException;
-import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.util.Base64Util;
-import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.common.util.StringUtil;
-import com.tencent.bk.job.common.util.http.ExtHttpHelper;
+import com.tencent.bk.job.common.util.http.HttpHelper;
 import com.tencent.bk.job.common.util.http.HttpHelperFactory;
+import com.tencent.bk.job.common.util.http.HttpMetricUtil;
+import com.tencent.bk.job.common.util.http.HttpRequest;
 import com.tencent.bk.job.common.util.json.JsonUtils;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -70,19 +76,22 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.FileEntity;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.message.BasicHeader;
+import org.slf4j.helpers.MessageFormatter;
+import org.springframework.web.util.UriUtils;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 
 @Slf4j
 public class ArtifactoryClient {
@@ -91,6 +100,7 @@ public class ArtifactoryClient {
     public static final String URL_LIST_PROJECT = "/repository/api/project/list";
     public static final String URL_LIST_REPO_PAGE = "/repository/api/repo/page/{projectId}/{pageNumber}/{pageSize}";
     public static final String URL_LIST_NODE_PAGE = "/repository/api/node/page/{projectId}/{repoName}/{fullPath}";
+    public static final String URL_NODE_SEARCH = "/repository/api/node/search";
     public static final String URL_DELETE_REPO = "/repository/api/repo/delete/{projectId}/{repoName}";
     public static final String URL_DELETE_NODE = "/repository/api/node/delete/{projectId}/{repoName}/{fullPath}";
     public static final String URL_DOWNLOAD_GENERIC_FILE = "/generic/{project}/{repo}/{path}";
@@ -98,18 +108,18 @@ public class ArtifactoryClient {
     public static final String URL_QUERY_NODE_DETAIL = "/repository/api/node/detail/{projectId}/{repoName}/{fullPath}";
     public static final String URL_CREATE_TEMP_ACCESS_URL = "/generic/temporary/url/create";
     public static final String URL_CREATE_USER_TO_PROJECT = "/auth/api/user/create/project";
-    public static final String URL_USER_DETAIL = "/auth/api/user/detail/{userId}";
     public static final String URL_CREATE_PROJECT = "/repository/api/project/create";
     public static final String URL_CREATE_REPO = "/repository/api/repo/create";
     public static final String URL_CHECK_REPO_EXIST = "/repository/api/repo/exist/{projectId}/{repoName}";
 
+    @Getter
     private final String baseUrl;
     private final String username;
     private final String password;
     private final MeterRegistry meterRegistry;
 
-    ExtHttpHelper httpHelper = HttpHelperFactory.getDefaultHttpHelper();
-    ExtHttpHelper longHttpHelper = HttpHelperFactory.getLongRetryableHttpHelper();
+    private final HttpHelper httpHelper = HttpHelperFactory.getDefaultHttpHelper();
+    private final HttpHelper longHttpHelper = HttpHelperFactory.getLongRetryableHttpHelper();
 
     public ArtifactoryClient(String baseUrl, String username, String password, MeterRegistry meterRegistry) {
         this.baseUrl = StringUtil.removeSuffix(baseUrl, "/");
@@ -129,11 +139,7 @@ public class ArtifactoryClient {
         }
         String[] pathArr = path.split("/");
         for (int i = 0; i < pathArr.length; i++) {
-            try {
-                pathArr[i] = URLEncoder.encode(pathArr[i], "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                log.warn("Fail to encode {}", pathArr[i]);
-            }
+            pathArr[i] = UriUtils.encodePath(pathArr[i], "UTF-8");
         }
         path = String.join("/", pathArr);
         return baseUrl + "/" + StringUtil.removePrefix(path, "/") + queryParamStr;
@@ -172,28 +178,30 @@ public class ArtifactoryClient {
         return headerList.toArray(headers);
     }
 
-    private String doHttpGet(String url, ArtifactoryReq reqBody, ExtHttpHelper httpHelper) throws IOException {
-        if (null == reqBody) {
-            return httpHelper.get(url, getJsonHeaders());
-        } else {
-            return httpHelper.get(url + reqBody.toUrlParams(), getJsonHeaders());
-        }
+    private String doHttpGet(String url, ArtifactoryReq reqBody, HttpHelper httpHelper) {
+        return httpHelper.requestForSuccessResp(
+            HttpRequest.builder(HttpMethodEnum.GET, reqBody == null ? url : url + reqBody.toUrlParams())
+                .setHeaders(getJsonHeaders())
+                .build())
+            .getEntity();
     }
 
-    private String doHttpPost(String url, ArtifactoryReq reqBody, ExtHttpHelper httpHelper) throws Exception {
-        if (null == reqBody) {
-            return httpHelper.post(url, "{}", getJsonHeaders());
-        } else {
-            return httpHelper.post(url, JsonUtils.toJson(reqBody), getJsonHeaders());
-        }
+    private String doHttpPost(String url, ArtifactoryReq reqBody, HttpHelper httpHelper) {
+        return httpHelper.requestForSuccessResp(
+            HttpRequest.builder(HttpMethodEnum.POST, url)
+                .setStringEntity(reqBody == null ? "{}" : JsonUtils.toJson(reqBody))
+                .setHeaders(getJsonHeaders())
+                .build())
+            .getEntity();
     }
 
-    private String doHttpDelete(String url, ArtifactoryReq reqBody, ExtHttpHelper httpHelper) throws Exception {
-        if (null == reqBody) {
-            return httpHelper.delete(url, "{}", getJsonHeaders());
-        } else {
-            return httpHelper.delete(url + reqBody.toUrlParams(), JsonUtils.toJson(reqBody), getJsonHeaders());
-        }
+    private String doHttpDelete(String url, ArtifactoryReq reqBody, HttpHelper httpHelper) {
+        return httpHelper.requestForSuccessResp(
+            HttpRequest.builder(HttpMethodEnum.DELETE, reqBody == null ? url : url + reqBody.toUrlParams())
+                .setStringEntity(reqBody == null ? "{}" : JsonUtils.toJson(reqBody))
+                .setHeaders(getJsonHeaders())
+                .build())
+            .getEntity();
     }
 
     @SuppressWarnings("unchecked")
@@ -205,8 +213,13 @@ public class ArtifactoryClient {
         String respStr
     ) {
         if (result == null) {
-            log.error("fail:artifactoryResp is null after parse|method={}|url={}|reqStr={}|respStr={}", method,
-                url, reqStr, respStr);
+            log.error(
+                "fail:artifactoryResp is null after parse|method={}|url={}|reqStr={}|respStr={}",
+                method,
+                url,
+                getSimplifiedStrForLog(reqStr),
+                getSimplifiedStrForLog(respStr)
+            );
             throw new InternalException("artifactoryResp is null after parse", ErrorCode.ARTIFACTORY_API_DATA_ERROR);
         }
         if (result instanceof ArtifactoryResp) {
@@ -219,7 +232,10 @@ public class ArtifactoryClient {
                     artifactoryResp.getTraceId(),
                     artifactoryResp.getCode(),
                     artifactoryResp.getMessage(),
-                    method, url, reqStr, respStr
+                    method,
+                    url,
+                    getSimplifiedStrForLog(reqStr),
+                    getSimplifiedStrForLog(respStr)
                 );
             }
         }
@@ -230,21 +246,21 @@ public class ArtifactoryClient {
         String urlTemplate,
         ArtifactoryReq reqBody,
         TypeReference<R> typeReference,
-        ExtHttpHelper httpHelper
+        HttpHelper httpHelper
     ) throws ServiceException {
         // URL模板变量替换
         String url = StringUtil.replacePathVariables(urlTemplate, reqBody);
         url = getCompleteUrl(url);
         String reqStr = "{}";
         if (reqBody != null) {
-            reqStr = JsonUtils.toJsonWithoutSkippedFields(reqBody);
+            reqStr = JsonUtils.toJson(reqBody);
         }
-        String respStr = null;
+        String respStr;
         long start = System.nanoTime();
-        String status = "none";
+        AtomicReference<String> statusRef = new AtomicReference<>(MetricsConstants.TAG_VALUE_NONE);
         try {
-            JobContextUtil.setHttpMetricName(CommonMetricNames.BKREPO_API_HTTP);
-            JobContextUtil.addHttpMetricTag(Tag.of("api_name", urlTemplate));
+            HttpMetricUtil.setHttpMetricName(MetricsConstants.METRICS_NAME_BKREPO_API_HTTP);
+            HttpMetricUtil.addTagForCurrentMetric(Tag.of(MetricsConstants.TAG_KEY_API_NAME, urlTemplate));
             switch (method) {
                 case HttpGet.METHOD_NAME:
                     respStr = doHttpGet(url, reqBody, httpHelper);
@@ -262,26 +278,42 @@ public class ArtifactoryClient {
                 log.error("fail:response is blank|method={}|url={}|reqStr={}", method, url, reqStr);
                 throw new InternalException("response is blank", ErrorCode.ARTIFACTORY_API_DATA_ERROR);
             } else {
-                log.info("success|method={}|url={}|reqStr={}|respStr={}", method, url, reqStr, respStr);
+                log.info(
+                    "success|method={}|url={}|reqStr={}|respStr={}",
+                    method,
+                    url,
+                    getSimplifiedStrForLog(reqStr),
+                    getSimplifiedStrForLog(respStr)
+                );
             }
             R result = JsonUtils.fromJson(respStr, typeReference);
-            try {
-                checkResult(result, method, url, reqStr, respStr);
-            } catch (Exception e) {
-                status = "error";
-                throw e;
-            }
-            status = "ok";
+            checkResult(result, method, url, reqStr, respStr);
+            statusRef.set(MetricsConstants.TAG_VALUE_OK);
             return result;
         } catch (Exception e) {
-            log.error("Fail to request ARTIFACTORY data|method={}|url={}|reqStr={}", method, url, reqStr, e);
-            status = "error";
-            throw new InternalException("Fail to request ARTIFACTORY data", ErrorCode.ARTIFACTORY_API_DATA_ERROR);
+            String msg = MessageFormatter.arrayFormat(
+                "Fail to request ARTIFACTORY data|method={}|url={}|reqStr={}",
+                new String[]{
+                    method,
+                    url,
+                    reqStr
+                }
+            ).getMessage();
+            log.error(msg, e);
+            statusRef.set(MetricsConstants.TAG_VALUE_ERROR);
+
+            // 特殊处理文件 NotFound 导致的 HttpStatusException
+            return convertException(statusRef, e);
+
         } finally {
-            JobContextUtil.clearHttpMetricTags();
+            HttpMetricUtil.clearHttpMetric();
             long end = System.nanoTime();
             if (null != meterRegistry) {
-                meterRegistry.timer(CommonMetricNames.BKREPO_API, "api_name", urlTemplate, "status", status)
+                meterRegistry.timer(
+                        MetricsConstants.METRICS_NAME_BKREPO_API,
+                        MetricsConstants.TAG_KEY_API_NAME, urlTemplate,
+                        MetricsConstants.TAG_KEY_STATUS, statusRef.get()
+                    )
                     .record(end - start, TimeUnit.NANOSECONDS);
             }
         }
@@ -331,6 +363,69 @@ public class ArtifactoryClient {
         return resp.getData();
     }
 
+    private SearchNodePageReq buildSearchNodePageReq(String projectId,
+                                                     String repoName,
+                                                     String fullPath,
+                                                     String nameKey,
+                                                     int pageNumber,
+                                                     int pageSize) {
+        SearchNodePageReq req = new SearchNodePageReq();
+        req.setPage(new PageLimit(pageNumber, pageSize));
+        req.setSort(new Sort());
+        List<Rule> innerRules = new ArrayList<>();
+        // 项目ID
+        Rule projectIdRule = new Rule();
+        projectIdRule.setField("projectId");
+        projectIdRule.setOperation(Rule.RULE_OPERATION_EQ);
+        projectIdRule.setValue(projectId);
+        innerRules.add(projectIdRule);
+        // 仓库名称
+        Rule repoNameRule = new Rule();
+        repoNameRule.setField("repoName");
+        repoNameRule.setOperation(Rule.RULE_OPERATION_EQ);
+        repoNameRule.setValue(repoName);
+        innerRules.add(repoNameRule);
+        // 节点路径
+        if (fullPath != null) {
+            Rule fullPathRule = new Rule();
+            fullPathRule.setField("fullPath");
+            fullPathRule.setOperation(Rule.RULE_OPERATION_PREFIX);
+            if (fullPath.endsWith("/")) {
+                fullPathRule.setValue(fullPath);
+            } else {
+                fullPathRule.setValue(fullPath + "/");
+            }
+            innerRules.add(fullPathRule);
+        }
+        // 文件名称
+        if (nameKey != null) {
+            Rule nameRule = new Rule();
+            nameRule.setField("name");
+            nameRule.setOperation(Rule.RULE_OPERATION_MATCH);
+            nameRule.setValue("*" + nameKey + "*");
+            innerRules.add(nameRule);
+        }
+        // 外层条件
+        Rule outerRule = new Rule();
+        outerRule.setRelation(Rule.RULE_RELATION_AND);
+        outerRule.setRules(innerRules);
+        req.setRule(outerRule);
+        return req;
+    }
+
+    public PageData<NodeDTO> searchNode(String projectId,
+                                        String repoName,
+                                        String fullPath,
+                                        String nameKey,
+                                        int pageNumber,
+                                        int pageSize) {
+        SearchNodePageReq req = buildSearchNodePageReq(projectId, repoName, fullPath, nameKey, pageNumber, pageSize);
+        ArtifactoryResp<PageData<NodeDTO>> resp = getArtifactoryRespByReq(HttpPost.METHOD_NAME, URL_NODE_SEARCH,
+            req, new TypeReference<ArtifactoryResp<PageData<NodeDTO>>>() {
+            }, httpHelper);
+        return resp.getData();
+    }
+
     public NodeDTO queryNodeDetail(String projectId, String repoName, String fullPath) {
         QueryNodeDetailReq req = new QueryNodeDetailReq();
         req.setProjectId(projectId);
@@ -345,11 +440,12 @@ public class ArtifactoryClient {
         return resp.getData();
     }
 
-    public Boolean deleteProject(String projectId) {
+    public boolean deleteProject(String projectId) {
+        log.info("deleteProject:{}", projectId);
         throw new NotImplementedException("Not support feature", ErrorCode.NOT_SUPPORT_FEATURE);
     }
 
-    public Boolean deleteRepo(String projectId, String repoName, Boolean forced) {
+    public boolean deleteRepo(String projectId, String repoName, Boolean forced) {
         DeleteRepoReq req = new DeleteRepoReq();
         req.setProjectId(projectId);
         req.setRepoName(repoName);
@@ -360,7 +456,7 @@ public class ArtifactoryClient {
         return resp.getCode() == 0;
     }
 
-    public Boolean deleteNode(String projectId, String repoName, String fullPath) {
+    public boolean deleteNode(String projectId, String repoName, String fullPath) {
         DeleteNodeReq req = new DeleteNodeReq();
         req.setProjectId(projectId);
         req.setRepoName(repoName);
@@ -376,7 +472,8 @@ public class ArtifactoryClient {
         filePath = StringUtil.removePrefixAndSuffix(filePath, "/");
         String[] pathArr = filePath.split("/");
         if (pathArr.length < 2) {
-            throw new InternalException("path must contain projectId and repoName", ErrorCode.ARTIFACTORY_API_DATA_ERROR);
+            throw new InternalException("path must contain projectId and repoName",
+                ErrorCode.ARTIFACTORY_API_DATA_ERROR);
         }
         String projectId = pathArr[0];
         String repoName = pathArr[1];
@@ -391,6 +488,7 @@ public class ArtifactoryClient {
     public NodeDTO getFileNode(String filePath) {
         List<String> pathList = parsePath(filePath);
         NodeDTO nodeDTO = queryNodeDetail(pathList.get(0), pathList.get(1), pathList.get(2));
+
         if (null == nodeDTO) {
             throw new InternalException(
                 "can not find node by filePath",
@@ -401,12 +499,13 @@ public class ArtifactoryClient {
         return nodeDTO;
     }
 
-    public Pair<InputStream, Long> getFileInputStream(String filePath) throws ServiceException {
+    public Pair<InputStream, HttpRequestBase> getFileInputStream(String filePath) throws ServiceException {
         List<String> pathList = parsePath(filePath);
         return getFileInputStream(pathList.get(0), pathList.get(1), pathList.get(2));
     }
 
-    public Pair<InputStream, Long> getFileInputStream(String projectId, String repoName, String filePath) throws ServiceException {
+    public Pair<InputStream, HttpRequestBase> getFileInputStream(String projectId, String repoName,
+                                                                 String filePath) throws ServiceException {
         DownloadGenericFileReq req = new DownloadGenericFileReq();
         req.setProject(projectId);
         req.setRepo(repoName);
@@ -415,19 +514,12 @@ public class ArtifactoryClient {
         url = getCompleteUrl(url);
         CloseableHttpResponse resp;
         try {
-            JobContextUtil.setHttpMetricName(CommonMetricNames.BKREPO_API_HTTP);
-            JobContextUtil.addHttpMetricTag(Tag.of("api_name", "download:" + URL_DOWNLOAD_GENERIC_FILE));
-            resp = longHttpHelper.getRawResp(false, url, getJsonHeaders());
-            Header contentLengthHeader = resp.getFirstHeader("Content-Length");
-            Long contentLength = null;
-            if (contentLengthHeader != null && StringUtils.isNotBlank(contentLengthHeader.getValue())) {
-                contentLength = Long.parseLong(contentLengthHeader.getValue());
-                log.debug("Content-Length from header:{}", contentLengthHeader.getValue());
-            } else {
-                log.debug("Content-Length from header is null or blank");
-            }
+            HttpMetricUtil.setHttpMetricName(MetricsConstants.METRICS_NAME_BKREPO_API_HTTP);
+            HttpMetricUtil.addTagForCurrentMetric(Tag.of("api_name", "download:" + URL_DOWNLOAD_GENERIC_FILE));
+            Pair<HttpRequestBase, CloseableHttpResponse> pair = longHttpHelper.getRawResp(false, url, getJsonHeaders());
+            resp = pair.getRight();
             if (resp.getStatusLine() != null && resp.getStatusLine().getStatusCode() == 200) {
-                return Pair.of(resp.getEntity().getContent(), contentLength);
+                return Pair.of(resp.getEntity().getContent(), pair.getLeft());
             } else {
                 log.info("resp.statusLine={},resp.entity={}", resp.getStatusLine(), resp.getEntity());
                 throw new InternalException(ErrorCode.FAIL_TO_REQUEST_THIRD_FILE_SOURCE_DOWNLOAD_GENERIC_FILE);
@@ -436,7 +528,7 @@ public class ArtifactoryClient {
             log.error("Fail to getFileInputStream", e);
             throw new InternalException(ErrorCode.FAIL_TO_REQUEST_THIRD_FILE_SOURCE_DOWNLOAD_GENERIC_FILE);
         } finally {
-            JobContextUtil.clearHttpMetricTags();
+            HttpMetricUtil.clearHttpMetric();
         }
     }
 
@@ -468,12 +560,20 @@ public class ArtifactoryClient {
         req.setPath(filePath);
         String url = StringUtil.replacePathVariables(URL_UPLOAD_GENERIC_FILE, req);
         url = getCompleteUrl(url);
-        String respStr = null;
+        String respStr;
         try {
-            JobContextUtil.setHttpMetricName(CommonMetricNames.BKREPO_API_HTTP);
-            JobContextUtil.addHttpMetricTag(Tag.of("api_name", "upload:" + URL_UPLOAD_GENERIC_FILE));
-            respStr = longHttpHelper.put(url, reqEntity, getUploadFileHeaders());
-            log.debug("respStr={}", respStr);
+            HttpMetricUtil.setHttpMetricName(MetricsConstants.METRICS_NAME_BKREPO_API_HTTP);
+            HttpMetricUtil.addTagForCurrentMetric(Tag.of("api_name", "upload:" + URL_UPLOAD_GENERIC_FILE));
+
+            respStr = longHttpHelper.requestForSuccessResp(
+                HttpRequest.builder(HttpMethodEnum.PUT, url)
+                    .setHttpEntity(reqEntity)
+                    .setHeaders(getUploadFileHeaders())
+                    .build())
+                .getEntity();
+            if (log.isDebugEnabled()) {
+                log.debug("respStr={}", getSimplifiedStrForLog(respStr));
+            }
             ArtifactoryResp<NodeDTO> resp = JsonUtils.fromJson(
                 respStr, new TypeReference<ArtifactoryResp<NodeDTO>>() {
                 }
@@ -489,7 +589,7 @@ public class ArtifactoryClient {
             throw new InternalException(ErrorCode.FAIL_TO_REQUEST_THIRD_FILE_SOURCE_DOWNLOAD_GENERIC_FILE,
                 new String[]{e.getMessage()});
         } finally {
-            JobContextUtil.clearHttpMetricTags();
+            HttpMetricUtil.clearHttpMetric();
         }
     }
 
@@ -506,18 +606,6 @@ public class ArtifactoryClient {
             URL_CREATE_TEMP_ACCESS_URL,
             req,
             new TypeReference<ArtifactoryResp<List<TempUrlInfo>>>() {
-            },
-            httpHelper
-        );
-        return resp.getData();
-    }
-
-    public UserDetail userDetail(UserDetailReq req) {
-        ArtifactoryResp<UserDetail> resp = getArtifactoryRespByReq(
-            HttpGet.METHOD_NAME,
-            URL_USER_DETAIL,
-            req,
-            new TypeReference<ArtifactoryResp<UserDetail>>() {
             },
             httpHelper
         );
@@ -575,5 +663,33 @@ public class ArtifactoryClient {
     }
 
     public void shutdown() {
+    }
+
+    private String getSimplifiedStrForLog(String rawStr) {
+        return StringUtil.substring(rawStr, 20000);
+    }
+
+    private <R> R convertException(AtomicReference<String> statusRef, Exception e) {
+        if (e instanceof HttpStatusException) {
+            String httpStatusExceptionRespStr = ((HttpStatusException) e).getRespBodyStr();
+            ArtifactoryResp<Object> artifactoryResp = JsonUtils.fromJson(httpStatusExceptionRespStr,
+                new TypeReference<ArtifactoryResp<Object>>() {
+                });
+            if (artifactoryResp != null
+                && artifactoryResp.getCode() == ArtifactoryInterfaceConsts.RESULT_CODE_NODE_NOT_FOUND) {
+                statusRef.set(MetricsConstants.TAG_VALUE_CLIENT_ERROR_NODE_NOT_FOUND);
+                throw new InternalException(
+                    artifactoryResp.getMessage(),
+                    ErrorCode.CAN_NOT_FIND_NODE_IN_ARTIFACTORY
+                );
+            } else {
+                throw new InternalException(
+                    "Fail to request ARTIFACTORY data",
+                    ErrorCode.ARTIFACTORY_API_DATA_ERROR
+                );
+            }
+        } else {
+            throw new InternalException("Fail to request ARTIFACTORY data", ErrorCode.ARTIFACTORY_API_DATA_ERROR);
+        }
     }
 }

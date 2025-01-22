@@ -27,16 +27,23 @@ package com.tencent.bk.job.manage.dao;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.manage.model.dto.CredentialDTO;
-import org.jooq.DSLContext;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceCredentialDisplayDTO;
+
+import java.util.Collection;
+import java.util.List;
 
 public interface CredentialDAO {
-    String insertCredential(DSLContext dslContext, CredentialDTO credentialDTO);
+    String insertCredential(CredentialDTO credentialDTO);
 
-    String updateCredentialById(DSLContext dslContext, CredentialDTO credentialDTO);
+    String updateCredentialById(CredentialDTO credentialDTO);
 
-    int deleteCredentialById(DSLContext dslContext, String id);
+    int deleteCredentialById(String id);
 
-    CredentialDTO getCredentialById(DSLContext dslContext, String id);
+    CredentialDTO getCredentialById(String id);
+
+    List<ServiceCredentialDisplayDTO> listCredentialDisplayInfoByIds(Collection<String> ids);
 
     PageData<CredentialDTO> listCredentials(CredentialDTO credentialQuery, BaseSearchCondition baseSearchCondition);
+
+    PageData<CredentialDTO> listCredentialBasicInfo(Long appId, BaseSearchCondition baseSearchCondition);
 }

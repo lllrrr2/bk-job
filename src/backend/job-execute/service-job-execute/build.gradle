@@ -31,10 +31,13 @@ dependencies {
     api project(":job-manage:api-job-manage")
     api project(":job-logsvr:api-job-logsvr")
     api project(':commons:gse-sdk')
+    api project(":commons:common-crypto")
+    api project(':commons:cmdb-sdk')
     api project(':commons:common-security')
     api project(':commons:common-redis')
-    api project(":commons:cmdb-sdk-ext")
     api project(":commons:artifactory-sdk")
+    api project(":commons:common-mysql")
+    api project(":commons:common-mysql-sharding")
     api("org.springframework.boot:spring-boot-starter-web")
     api("org.springframework.boot:spring-boot-starter-jdbc")
     api "org.springframework.boot:spring-boot-starter-jooq"
@@ -53,9 +56,9 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation "org.hibernate.validator:hibernate-validator"
     // https://mvnrepository.com/artifact/org.apache.curator/curator-framework
-    api(group: 'org.apache.curator', name: 'curator-framework', version: '5.1.0')
+    api(group: 'org.apache.curator', name: 'curator-framework')
     // https://mvnrepository.com/artifact/org.apache.curator/curator-recipes
-    api(group: 'org.apache.curator', name: 'curator-recipes', version: '5.1.0')
+    api(group: 'org.apache.curator', name: 'curator-recipes')
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.apache.commons:commons-lang3'

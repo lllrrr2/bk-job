@@ -24,38 +24,51 @@
 
 package com.tencent.bk.job.manage.api.iam.impl;
 
-import com.tencent.bk.job.common.iam.constant.ResourceId;
+import com.tencent.bk.audit.utils.json.JsonSchemaUtils;
+import com.tencent.bk.job.common.iam.constant.ResourceTypeId;
 import com.tencent.bk.job.common.iam.service.BaseIamCallbackService;
 import com.tencent.bk.job.common.iam.util.IamRespUtil;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
 import com.tencent.bk.job.manage.api.iam.IamTagCallbackResource;
 import com.tencent.bk.job.manage.model.dto.TagDTO;
+import com.tencent.bk.job.manage.model.esb.v3.response.EsbTagV3DTO;
+import com.tencent.bk.job.manage.service.ApplicationService;
 import com.tencent.bk.job.manage.service.TagService;
 import com.tencent.bk.sdk.iam.dto.PathInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.CallbackRequestDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.IamSearchCondition;
 import com.tencent.bk.sdk.iam.dto.callback.response.CallbackBaseResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.FetchInstanceInfoResponseDTO;
+import com.tencent.bk.sdk.iam.dto.callback.response.FetchResourceTypeSchemaResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.InstanceInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.ListInstanceResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.SearchInstanceResponseDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @RestController
 @Slf4j
 public class IamTagCallbackResourceImpl extends BaseIamCallbackService implements IamTagCallbackResource {
     private final TagService tagService;
+    private final ApplicationService applicationService;
 
     @Autowired
-    public IamTagCallbackResourceImpl(TagService tagService) {
+    public IamTagCallbackResourceImpl(TagService tagService,
+                                      ApplicationService applicationService) {
         this.tagService = tagService;
+        this.applicationService = applicationService;
     }
 
     private Pair<TagDTO, BaseSearchCondition> getBasicQueryCondition(CallbackRequestDTO callbackRequest) {
@@ -65,7 +78,8 @@ public class IamTagCallbackResourceImpl extends BaseIamCallbackService implement
         baseSearchCondition.setLength(searchCondition.getLength().intValue());
 
         TagDTO tagQuery = new TagDTO();
-        tagQuery.setAppId(searchCondition.getAppIdList().get(0));
+        Long appId = applicationService.getAppIdByScope(extractResourceScopeCondition(searchCondition));
+        tagQuery.setAppId(appId);
         return Pair.of(tagQuery, baseSearchCondition);
     }
 
@@ -100,35 +114,63 @@ public class IamTagCallbackResourceImpl extends BaseIamCallbackService implement
         return IamRespUtil.getListInstanceRespFromPageData(tagDTOPageData, this::convert);
     }
 
+    private InstanceInfoDTO buildInstance(TagDTO tagDTO,
+                                          Map<Long, ResourceScope> appIdScopeMap) {
+        Long appId = tagDTO.getAppId();
+        // 拓扑路径构建
+        List<PathInfoDTO> path = new ArrayList<>();
+        PathInfoDTO rootNode = getPathNodeByAppId(appId, appIdScopeMap);
+        PathInfoDTO tagNode = new PathInfoDTO();
+        tagNode.setType(ResourceTypeId.TAG);
+        tagNode.setId(tagDTO.getId().toString());
+        rootNode.setChild(tagNode);
+        path.add(rootNode);
+        // 实例组装
+        InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
+        instanceInfo.setId(tagDTO.getId().toString());
+        instanceInfo.setDisplayName(tagDTO.getName());
+        instanceInfo.setPath(path);
+        return instanceInfo;
+    }
+
     @Override
     protected CallbackBaseResponseDTO fetchInstanceResp(CallbackRequestDTO callbackRequest) {
         IamSearchCondition searchCondition = IamSearchCondition.fromReq(callbackRequest);
         List<Object> instanceAttributeInfoList = new ArrayList<>();
+        List<Long> tagIdList = new ArrayList<>();
         for (String instanceId : searchCondition.getIdList()) {
             try {
                 Long tagId = Long.parseLong(instanceId);
-                TagDTO tagDTO = tagService.getTagInfoById(tagId);
-                if (tagDTO == null) {
-                    return getNotFoundRespById(instanceId);
-                }
-                // 拓扑路径构建
-                List<PathInfoDTO> path = new ArrayList<>();
-                PathInfoDTO rootNode = new PathInfoDTO();
-                rootNode.setType(ResourceId.APP);
-                rootNode.setId(tagDTO.getAppId().toString());
-                PathInfoDTO tagNode = new PathInfoDTO();
-                tagNode.setType(ResourceId.TAG);
-                tagNode.setId(tagDTO.getId().toString());
-                rootNode.setChild(tagNode);
-                path.add(rootNode);
-                // 实例组装
-                InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
-                instanceInfo.setId(instanceId);
-                instanceInfo.setDisplayName(tagDTO.getName());
-                instanceInfo.setPath(path);
-                instanceAttributeInfoList.add(instanceInfo);
+                tagIdList.add(tagId);
             } catch (NumberFormatException e) {
-                log.error("Parse object id failed!|{}", instanceId, e);
+                String msg = MessageFormatter.format(
+                    "Parse tag id failed!|{}",
+                    instanceId
+                ).getMessage();
+                log.error(msg, e);
+            }
+        }
+        List<TagDTO> tagDTOList = tagService.listTagInfoByIds(tagIdList);
+        Map<Long, TagDTO> tagDTOMap = new HashMap<>(tagDTOList.size());
+        Set<Long> appIdSet = new HashSet<>();
+        for (TagDTO tagDTO : tagDTOList) {
+            tagDTOMap.put(tagDTO.getId(), tagDTO);
+            appIdSet.add(tagDTO.getAppId());
+        }
+        // Job app --> CMDB biz/businessSet转换
+        Map<Long, ResourceScope> appIdScopeMap = applicationService.getScopeByAppIds(appIdSet);
+        for (String id : searchCondition.getIdList()) {
+            Long tagId = Long.parseLong(id);
+            TagDTO tagDTO = tagDTOMap.get(tagId);
+            if (tagDTO == null) {
+                logNotExistId(id);
+                continue;
+            }
+            try {
+                InstanceInfoDTO instanceInfo = buildInstance(tagDTO, appIdScopeMap);
+                instanceAttributeInfoList.add(instanceInfo);
+            } catch (Exception e) {
+                logBuildInstanceFailure(tagDTO, e);
             }
         }
 
@@ -141,5 +183,13 @@ public class IamTagCallbackResourceImpl extends BaseIamCallbackService implement
     @Override
     public CallbackBaseResponseDTO callback(CallbackRequestDTO callbackRequest) {
         return baseCallback(callbackRequest);
+    }
+
+    @Override
+    protected FetchResourceTypeSchemaResponseDTO fetchResourceTypeSchemaResp(
+        CallbackRequestDTO callbackRequest) {
+        FetchResourceTypeSchemaResponseDTO resp = new FetchResourceTypeSchemaResponseDTO();
+        resp.setData(JsonSchemaUtils.generateJsonSchema(EsbTagV3DTO.class));
+        return resp;
     }
 }

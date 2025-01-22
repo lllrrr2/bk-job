@@ -24,10 +24,11 @@
 
 package com.tencent.bk.job.logsvr.model;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Collections;
 import java.util.List;
 
 @Data
@@ -42,25 +43,35 @@ public class ScriptLogQuery {
      */
     private Long stepInstanceId;
     /**
-     * 执行任务的主机ip
+     * 执行任务的主机ID列表
      */
-    private List<String> ips;
+    @Deprecated
+    @CompatibleImplementation(name = "execute_object", type = CompatibleType.HISTORY_DATA, deprecatedVersion = "3.9.x")
+    private List<Long> hostIds;
+    /**
+     * 执行对象实例 ID
+     */
+    private List<String> executeObjectIds;
     /**
      * 执行次数
      */
     private Integer executeCount;
+    /**
+     * 滚动执行批次
+     */
+    private Integer batch;
 
-    public ScriptLogQuery(String jobCreateDate, Long stepInstanceId, String ip, Integer executeCount) {
+    public ScriptLogQuery(String jobCreateDate,
+                          Long stepInstanceId,
+                          Integer executeCount,
+                          Integer batch,
+                          List<String> executeObjectIds,
+                          List<Long> hostIds) {
         this.jobCreateDate = jobCreateDate;
         this.stepInstanceId = stepInstanceId;
-        this.ips = Collections.singletonList(ip);
         this.executeCount = executeCount;
-    }
-
-    public ScriptLogQuery(String jobCreateDate, Long stepInstanceId, List<String> ips, Integer executeCount) {
-        this.jobCreateDate = jobCreateDate;
-        this.stepInstanceId = stepInstanceId;
-        this.ips = ips;
-        this.executeCount = executeCount;
+        this.batch = batch;
+        this.executeObjectIds = executeObjectIds;
+        this.hostIds = hostIds;
     }
 }

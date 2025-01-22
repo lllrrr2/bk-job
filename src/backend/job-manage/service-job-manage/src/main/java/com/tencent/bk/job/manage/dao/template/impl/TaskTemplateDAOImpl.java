@@ -26,11 +26,14 @@ package com.tencent.bk.job.manage.dao.template.impl;
 
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.mysql.util.JooqDataTypeUtil;
 import com.tencent.bk.job.common.util.TagUtils;
 import com.tencent.bk.job.manage.common.util.DbRecordMapper;
 import com.tencent.bk.job.manage.dao.template.TaskTemplateDAO;
 import com.tencent.bk.job.manage.model.dto.task.TaskTemplateInfoDTO;
 import com.tencent.bk.job.manage.model.query.TaskTemplateQuery;
+import com.tencent.bk.job.manage.model.tables.TaskTemplate;
+import com.tencent.bk.job.manage.model.tables.records.TaskTemplateRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -44,8 +47,6 @@ import org.jooq.Result;
 import org.jooq.SelectJoinStep;
 import org.jooq.TableField;
 import org.jooq.UpdateSetMoreStep;
-import org.jooq.generated.tables.TaskTemplate;
-import org.jooq.generated.tables.records.TaskTemplateRecord;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -122,7 +123,7 @@ public class TaskTemplateDAOImpl implements TaskTemplateDAO {
         int length = baseSearchCondition.getLengthOrDefault(10);
 
         SelectJoinStep<Record13<ULong, ULong, String, String, String, UByte, ULong, String, ULong, ULong, ULong,
-                    String, UByte>> selectJoinStep =
+            String, UByte>> selectJoinStep =
             context.select(TABLE.ID, TABLE.APP_ID, TABLE.NAME, TABLE.DESCRIPTION, TABLE.CREATOR, TABLE.STATUS,
                 TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
                 TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.SCRIPT_STATUS).from(TABLE);
@@ -200,6 +201,14 @@ public class TaskTemplateDAOImpl implements TaskTemplateDAO {
     }
 
     @Override
+    public List<TaskTemplateInfoDTO> listTaskTemplateBasicInfoByIds(List<Long> templateIds) {
+        List<Condition> conditions = new ArrayList<>();
+        conditions.add(TABLE.ID.in(templateIds));
+        conditions.add(TABLE.IS_DELETED.equal(UByte.valueOf(0)));
+        return listTaskTemplate(conditions);
+    }
+
+    @Override
     public TaskTemplateInfoDTO getDeletedTaskTemplateById(Long templateId) {
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TABLE.ID.equal(ULong.valueOf(templateId)));
@@ -210,15 +219,25 @@ public class TaskTemplateDAOImpl implements TaskTemplateDAO {
     private TaskTemplateInfoDTO getOneTaskTemplate(List<Condition> conditions) {
         Record13<ULong, ULong, String, String, String, UByte, ULong, String, ULong, ULong, ULong, String,
             UByte> record = context.select(TABLE.ID, TABLE.APP_ID, TABLE.NAME, TABLE.DESCRIPTION, TABLE.CREATOR,
-            TABLE.STATUS,
-            TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
-            TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.SCRIPT_STATUS)
+                TABLE.STATUS,
+                TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
+                TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.SCRIPT_STATUS)
             .from(TABLE).where(conditions).fetchOne();
         if (record != null) {
             return DbRecordMapper.convertRecordToTemplateInfo(record);
         } else {
             return null;
         }
+    }
+
+    private List<TaskTemplateInfoDTO> listTaskTemplate(List<Condition> conditions) {
+        Result<Record13<ULong, ULong, String, String, String, UByte, ULong, String, ULong, ULong, ULong, String,
+            UByte>> records = context.select(TABLE.ID, TABLE.APP_ID, TABLE.NAME, TABLE.DESCRIPTION, TABLE.CREATOR,
+                TABLE.STATUS,
+                TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
+                TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.SCRIPT_STATUS)
+            .from(TABLE).where(conditions).fetch();
+        return records.map(DbRecordMapper::convertRecordToTemplateInfo);
     }
 
     private long getPageTaskTemplateCount(List<Condition> conditions) {
@@ -518,9 +537,19 @@ public class TaskTemplateDAOImpl implements TaskTemplateDAO {
     }
 
     @Override
-    public void updateTemplateStatus(ULong templateId, int scriptStatus) {
-        context.update(TABLE).set(TABLE.SCRIPT_STATUS, UByte.valueOf(scriptStatus))
-            .where(TABLE.ID.equal(templateId)).execute();
+    public void updateTemplateScriptStatusFlags(Long templateId, int scriptStatusFlags) {
+        context.update(TABLE)
+            .set(TABLE.SCRIPT_STATUS, JooqDataTypeUtil.buildUByte(scriptStatusFlags))
+            .where(TABLE.ID.equal(ULong.valueOf(templateId)))
+            .execute();
+    }
+
+    @Override
+    public void batchUpdateTemplateScriptStatus(Collection<Long> templateIds, int scriptStatusFlags) {
+        context.update(TABLE)
+            .set(TABLE.SCRIPT_STATUS, JooqDataTypeUtil.buildUByte(scriptStatusFlags))
+            .where(TABLE.ID.in(templateIds))
+            .execute();
     }
 
     @Override

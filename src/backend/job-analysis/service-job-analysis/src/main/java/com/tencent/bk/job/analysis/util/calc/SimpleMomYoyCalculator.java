@@ -24,20 +24,27 @@
 
 package com.tencent.bk.job.analysis.util.calc;
 
-import com.tencent.bk.job.common.statistics.model.dto.StatisticsDTO;
+import com.tencent.bk.job.analysis.api.dto.StatisticsDTO;
 
 /**
  * 解析字段中直接存数字的统计数据
  */
 public class SimpleMomYoyCalculator extends AbstractMomYoyCalculator {
 
-    public SimpleMomYoyCalculator(StatisticsDTO statisticsDTO, StatisticsDTO momStatisticsDTO,
+    public SimpleMomYoyCalculator(StatisticsDTO statisticsDTO,
+                                  StatisticsDTO momStatisticsDTO,
                                   StatisticsDTO yoyStatisticsDTO) {
         super(statisticsDTO, momStatisticsDTO, yoyStatisticsDTO);
     }
 
-    Long getCountFromStatisticValue(String value) {
+    /**
+     * 从序列化的存储数据中解析出统计值数字
+     *
+     * @param serializedData 序列化的存储数据
+     * @return 统计值数字
+     */
+    protected Long getCountFromSerializedData(String serializedData) {
         // 解析统计量
-        return Long.parseLong(value);
+        return Long.parseLong(serializedData);
     }
 }

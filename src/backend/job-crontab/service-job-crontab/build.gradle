@@ -24,9 +24,11 @@
 
 apply plugin: 'io.spring.dependency-management'
 dependencies {
+    api project(":commons:common-crypto")
     api project(":commons:common-redis")
     api project(":commons:common-web")
     api project(':commons:common-security')
+    api project(':commons:common-mysql')
     api project(":job-execute:api-job-execute")
     api project(":job-manage:api-job-manage")
     api project(":job-crontab:api-job-crontab")
@@ -42,5 +44,5 @@ dependencies {
     implementation "ch.qos.logback:logback-core"
     implementation "ch.qos.logback:logback-classic"
     implementation "org.slf4j:slf4j-api"
-    implementation("com.cronutils:cron-utils:9.1.3")
+    implementation("com.cronutils:cron-utils")
 }

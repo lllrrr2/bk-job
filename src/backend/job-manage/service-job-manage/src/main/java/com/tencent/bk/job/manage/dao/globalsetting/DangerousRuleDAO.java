@@ -24,27 +24,32 @@
 
 package com.tencent.bk.job.manage.dao.globalsetting;
 
+import com.tencent.bk.job.manage.api.common.constants.EnableStatusEnum;
 import com.tencent.bk.job.manage.model.dto.globalsetting.DangerousRuleDTO;
-import org.jooq.DSLContext;
+import com.tencent.bk.job.manage.model.query.DangerousRuleQuery;
 
 import java.util.List;
 
 public interface DangerousRuleDAO {
-    Long insertDangerousRule(DSLContext dslContext, DangerousRuleDTO dangerousRuleDTO);
+    Long insertDangerousRule(DangerousRuleDTO dangerousRuleDTO);
 
-    int updateDangerousRule(DSLContext dslContext, DangerousRuleDTO dangerousRuleDTO);
+    int updateDangerousRule(DangerousRuleDTO dangerousRuleDTO);
 
-    int deleteDangerousRuleById(DSLContext dslContext, Long id);
+    int deleteDangerousRuleById(Long id);
 
-    DangerousRuleDTO getDangerousRuleById(DSLContext dslContext, Long id);
+    DangerousRuleDTO getDangerousRuleById(Long id);
 
-    DangerousRuleDTO getDangerousRuleByPriority(DSLContext dslContext, int priority);
+    DangerousRuleDTO getDangerousRuleByPriority(int priority);
 
-    List<DangerousRuleDTO> listDangerousRules(DSLContext dslContext);
+    List<DangerousRuleDTO> listDangerousRules();
 
-    List<DangerousRuleDTO> listDangerousRulesByScriptType(DSLContext dslContext, Integer scriptType);
+    List<DangerousRuleDTO> listDangerousRules(DangerousRuleDTO dangerousRuleQuery);
 
-    int getMaxPriority(DSLContext dslContext);
+    List<DangerousRuleDTO> listDangerousRules(DangerousRuleQuery query);
 
-    int getMinPriority(DSLContext dslContext);
+    int getMaxPriority();
+
+    int getMinPriority();
+
+    int updateDangerousRuleStatus(String userName, Long id, EnableStatusEnum status);
 }

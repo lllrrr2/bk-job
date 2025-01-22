@@ -27,11 +27,12 @@ package com.tencent.bk.job.file.worker.artifactory.service;
 import com.tencent.bk.job.common.artifactory.model.dto.NodeDTO;
 import com.tencent.bk.job.common.artifactory.sdk.ArtifactoryClient;
 import com.tencent.bk.job.common.exception.ServiceException;
-import com.tencent.bk.job.file.worker.cos.service.RemoteClient;
 import com.tencent.bk.job.file.worker.model.FileMetaData;
+import com.tencent.bk.job.file.worker.service.RemoteClient;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.http.client.methods.HttpRequestBase;
 
 import java.io.InputStream;
 
@@ -49,7 +50,7 @@ public class ArtifactoryRemoteClient extends ArtifactoryClient implements Remote
     }
 
     @Override
-    public Pair<InputStream, Long> getFileInputStream(String filePath) throws ServiceException {
+    public Pair<InputStream, HttpRequestBase> getFileInputStream(String filePath) throws ServiceException {
         return super.getFileInputStream(filePath);
     }
 

@@ -25,6 +25,8 @@
 package com.tencent.bk.job.execute.model.web.vo;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -32,13 +34,20 @@ import lombok.Data;
 @ApiModel("文件分发执行详情")
 @Data
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class FileDistributionDetailVO implements Comparable {
+@Deprecated
+@CompatibleImplementation(name = "execute_object", deprecatedVersion = "3.9.x", type = CompatibleType.DEPLOY,
+    explain = "使用 FileDistributionDetailV2VO 替换。发布完成后可以删除")
+public class FileDistributionDetailVO implements Comparable<FileDistributionDetailVO> {
     @ApiModelProperty(name = "taskId", value = "文件任务ID,用于检索单个文件分发的结果")
     private String taskId;
-    @ApiModelProperty(name = "destIp", value = "下载目标IP")
+    @ApiModelProperty(name = "destIp", value = "下载目标IPv4")
     private String destIp;
-    @ApiModelProperty(name = "srcIp", value = "上传源IP")
+    @ApiModelProperty(name = "destIpv6", value = "下载目标IPv6")
+    private String destIpv6;
+    @ApiModelProperty(name = "srcIp", value = "上传源IPv4")
     private String srcIp;
+    @ApiModelProperty(name = "srcIpv6", value = "上传源IPv6")
+    private String srcIpv6;
     @ApiModelProperty("文件名称")
     private String fileName;
     @ApiModelProperty("文件大小")
@@ -57,11 +66,10 @@ public class FileDistributionDetailVO implements Comparable {
     private String logContent;
 
     @Override
-    public int compareTo(Object o) {
-        if (o == null) {
+    public int compareTo(FileDistributionDetailVO other) {
+        if (other == null) {
             return 1;
         }
-        FileDistributionDetailVO other = (FileDistributionDetailVO) o;
         // 从文件源拉取文件的详情日志放在最前面
         if (this.status == 0 && other.status > 0) {
             return -1;
@@ -70,8 +78,10 @@ public class FileDistributionDetailVO implements Comparable {
         if (compareFileNameResult != 0) {
             return compareFileNameResult;
         }
-        return compareString(this.srcIp, other.getSrcIp());
+        return compareString(this.srcIp != null ? this.srcIp : this.srcIpv6,
+            other.getSrcIp() != null ? other.getSrcIp() : other.getSrcIpv6());
     }
+
 
     private int compareString(String a, String b) {
         if (a == null && b == null) {

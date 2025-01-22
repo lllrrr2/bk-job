@@ -26,8 +26,8 @@ package com.tencent.bk.job.manage.model.esb.v3.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tencent.bk.job.common.constant.ErrorCode;
-import com.tencent.bk.job.common.esb.model.EsbReq;
-import com.tencent.bk.job.common.model.ValidateResult;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeReq;
+import com.tencent.bk.job.common.exception.InvalidParamException;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
@@ -40,12 +40,7 @@ import lombok.extern.slf4j.Slf4j;
 @Data
 @Slf4j
 @EqualsAndHashCode(callSuper = true)
-public class EsbGetPlanDetailV3Request extends EsbReq {
-    /**
-     * 业务 ID
-     */
-    @JsonProperty("bk_biz_id")
-    private Long appId;
+public class EsbGetPlanDetailV3Request extends EsbAppScopeReq {
 
     /**
      * 执行方案 ID
@@ -53,15 +48,10 @@ public class EsbGetPlanDetailV3Request extends EsbReq {
     @JsonProperty("job_plan_id")
     private Long planId;
 
-    public ValidateResult validate() {
-        if (this.getAppId() == null || this.getAppId() <= 0) {
-            log.warn("AppId is empty or illegal!|{}", this.getAppId());
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "bk_biz_id");
-        }
+    public void validate() {
         if (this.getPlanId() == null || this.getPlanId() <= 0) {
             log.warn("Plan Id is empty or illegal!|{}", this.getPlanId());
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "job_plan_id");
+            throw new InvalidParamException(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "job_plan_id");
         }
-        return ValidateResult.pass();
     }
 }

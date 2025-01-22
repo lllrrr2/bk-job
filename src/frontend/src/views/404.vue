@@ -26,26 +26,72 @@
 -->
 
 <template>
-    <div class="exception-box">
-        <img src="/static/images/404.png" alt="">
-        <p>{{ $t('没找到页面！') }}</p>
+  <div class="exception-box">
+    <img
+      alt=""
+      src="/static/images/404.png">
+    <p>{{ $t('没找到页面！') }}</p>
+    <div>
+      <p v-if="$i18n.locale === 'en-US'">
+        The page you are trying to access does not exist, will redirect to
+        <router-link :to="{ name: 'home' }">
+          Homepage
+        </router-link>
+        in
+        <span style="font-weight: bold;">{{ timeout }}</span>
+        seconds.
+      </p>
+      <p v-else>
+        <span>你访问的页面不存在，将在</span>
+        <span style="font-weight: bold;">{{ timeout }}</span>
+        <span>秒后重定向到</span>
+        <router-link :to="{ name: 'home' }">
+          首页
+        </router-link>
+        <span>。</span>
+      </p>
     </div>
+  </div>
 </template>
-<style scoped lang="postcss">
-    .exception-box {
-        margin: auto;
-        text-align: center;
+<script setup>
+  import {
+    ref,
+  } from 'vue';
 
-        img {
-            width: 300px;
-            margin-top: 150px;
-        }
+  import { useRouter } from '@router';
 
-        p {
-            margin: 32px 0;
-            font-size: 20px;
-            font-weight: 400;
-            color: #979797;
-        }
+
+  const router = useRouter();
+  const timeout = ref(4);
+
+  const goHome = () => {
+    if (timeout.value === 1) {
+      router.replace({
+        name: 'home',
+      });
+      return;
     }
+    timeout.value = timeout.value - 1;
+    setTimeout(goHome, 1000);
+  };
+
+  goHome();
+</script>
+<style scoped lang="postcss">
+  .exception-box {
+    margin: auto;
+    text-align: center;
+
+    img {
+      width: 300px;
+      margin-top: 150px;
+    }
+
+    p {
+      margin: 32px 0;
+      font-size: 20px;
+      font-weight: 400;
+      color: #979797;
+    }
+  }
 </style>

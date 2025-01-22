@@ -41,10 +41,15 @@ public class FileWorkerVO {
     @ApiModelProperty("id")
     private Long id;
     /**
-     * 业务Id
+     * 资源范围类型
      */
-    @ApiModelProperty("业务Id")
-    private Long appId;
+    @ApiModelProperty(value = "资源范围类型", allowableValues = "biz-业务,biz_set-业务集")
+    private String scopeType;
+    /**
+     * 资源范围ID
+     */
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
     /**
      * 名称
      */
@@ -55,11 +60,6 @@ public class FileWorkerVO {
      */
     @ApiModelProperty("描述")
     private String description;
-    /**
-     * 密钥
-     */
-    @ApiModelProperty("密钥")
-    private String token;
     /**
      * 所在机器云区域Id
      */

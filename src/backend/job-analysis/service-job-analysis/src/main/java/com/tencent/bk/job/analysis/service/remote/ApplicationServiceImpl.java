@@ -24,14 +24,9 @@
 
 package com.tencent.bk.job.analysis.service.remote;
 
-import com.tencent.bk.job.analysis.client.ApplicationResourceClient;
 import com.tencent.bk.job.analysis.service.ApplicationService;
-import com.tencent.bk.job.manage.model.inner.ServiceApplicationDTO;
-import com.tencent.bk.job.manage.model.inner.ServiceHostStatusDTO;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByDynamicGroupReq;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByIpReq;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByNodeReq;
-import com.tencent.bk.job.manage.model.web.request.ipchooser.AppTopologyTreeNode;
+import com.tencent.bk.job.manage.api.inner.ServiceApplicationResource;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,18 +35,18 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 @Slf4j
-@Service
+@Service("jobAnalysisApplicationService")
 public class ApplicationServiceImpl implements ApplicationService {
-    private final ApplicationResourceClient applicationResourceClient;
+    private final ServiceApplicationResource applicationResource;
 
     @Autowired
-    public ApplicationServiceImpl(ApplicationResourceClient applicationResourceClient) {
-        this.applicationResourceClient = applicationResourceClient;
+    public ApplicationServiceImpl(ServiceApplicationResource applicationResource) {
+        this.applicationResource = applicationResource;
     }
 
     @Override
-    public List<ServiceApplicationDTO> listLocalDBApps(Integer appType) {
-        val result = applicationResourceClient.listLocalDBApps(appType);
+    public List<ServiceApplicationDTO> listLocalDBApps() {
+        val result = applicationResource.listApps(null);
         if (result == null) {
             throw new RuntimeException("Job-manage unavailable, please check");
         } else {
@@ -59,33 +54,4 @@ public class ApplicationServiceImpl implements ApplicationService {
         }
     }
 
-    @Override
-    public List<ServiceHostStatusDTO> getHostStatusByNode(
-        String username,
-        Long appId,
-        List<AppTopologyTreeNode> treeNodeList
-    ) {
-        return applicationResourceClient.getHostStatusByNode(appId, username,
-            new ServiceGetHostStatusByNodeReq(treeNodeList)).getData();
-    }
-
-    @Override
-    public List<ServiceHostStatusDTO> getHostStatusByDynamicGroup(
-        String username,
-        Long appId,
-        List<String> dynamicGroupIdList
-    ) {
-        return applicationResourceClient.getHostStatusByDynamicGroup(appId, username,
-            new ServiceGetHostStatusByDynamicGroupReq(dynamicGroupIdList)).getData();
-    }
-
-    @Override
-    public List<ServiceHostStatusDTO> getHostStatusByIp(
-        String username,
-        Long appId,
-        List<String> ipList
-    ) {
-        return applicationResourceClient.getHostStatusByIp(appId, username,
-            new ServiceGetHostStatusByIpReq(ipList)).getData();
-    }
 }

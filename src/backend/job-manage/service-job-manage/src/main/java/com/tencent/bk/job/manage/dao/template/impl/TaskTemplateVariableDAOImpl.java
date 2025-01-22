@@ -26,20 +26,22 @@ package com.tencent.bk.job.manage.dao.template.impl;
 
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.TaskVariableTypeEnum;
+import com.tencent.bk.job.common.crypto.scenario.CipherVariableCryptoService;
 import com.tencent.bk.job.common.exception.InternalException;
-import com.tencent.bk.job.manage.common.util.JooqDataTypeUtil;
+import com.tencent.bk.job.common.mysql.util.JooqDataTypeUtil;
 import com.tencent.bk.job.manage.dao.TaskVariableDAO;
 import com.tencent.bk.job.manage.model.dto.task.TaskVariableDTO;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateVariable;
+import com.tencent.bk.job.manage.model.tables.records.TaskTemplateVariableRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.InsertValuesStep7;
 import org.jooq.InsertValuesStep8;
+import org.jooq.Record;
 import org.jooq.Record8;
 import org.jooq.Result;
-import org.jooq.generated.tables.TaskTemplateVariable;
-import org.jooq.generated.tables.records.TaskTemplateVariableRecord;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +52,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * @since 3/10/2019 21:54
@@ -60,11 +63,14 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
 
     private static final TaskTemplateVariable TABLE = TaskTemplateVariable.TASK_TEMPLATE_VARIABLE;
 
-    private DSLContext context;
+    private final DSLContext context;
+    private final CipherVariableCryptoService cipherVariableCryptoService;
 
     @Autowired
-    public TaskTemplateVariableDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext context) {
+    public TaskTemplateVariableDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext context,
+                                       CipherVariableCryptoService cipherVariableCryptoService) {
         this.context = context;
+        this.cipherVariableCryptoService = cipherVariableCryptoService;
     }
 
     @Override
@@ -77,15 +83,22 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
             Record8<ULong, ULong, String, UByte, String, String, UByte,
                 UByte>> records =
             context
-                .select(TABLE.ID, TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.DEFAULT_VALUE,
-                    TABLE.DESCRIPTION, TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED)
-                .from(TABLE).where(conditions).fetch();
+                .select(
+                    TABLE.ID,
+                    TABLE.TEMPLATE_ID,
+                    TABLE.NAME,
+                    TABLE.TYPE,
+                    TABLE.DEFAULT_VALUE,
+                    TABLE.DESCRIPTION,
+                    TABLE.IS_CHANGEABLE,
+                    TABLE.IS_REQUIRED
+                ).from(TABLE).where(conditions).fetch();
 
         List<TaskVariableDTO> taskVariableList = new ArrayList<>();
 
         if (records.size() >= 1) {
             records.forEach(record -> taskVariableList
-                .add(convertRecordToTaskVariable(record)));
+                .add(extract(record)));
         }
         return taskVariableList;
     }
@@ -96,29 +109,42 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
         conditions.add(TABLE.ID.eq(ULong.valueOf(id)));
         conditions.add(TABLE.TEMPLATE_ID.eq(ULong.valueOf(parentId)));
         Record8<ULong, ULong, String, UByte, String, String, UByte, UByte> record =
-            context.select(TABLE.ID, TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.DEFAULT_VALUE, TABLE.DESCRIPTION,
-                TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED).from(TABLE).where(conditions).fetchOne();
+            context.select(
+                TABLE.ID,
+                TABLE.TEMPLATE_ID,
+                TABLE.NAME,
+                TABLE.TYPE,
+                TABLE.DEFAULT_VALUE,
+                TABLE.DESCRIPTION,
+                TABLE.IS_CHANGEABLE,
+                TABLE.IS_REQUIRED
+            ).from(TABLE).where(conditions).fetchOne();
         if (record != null) {
-            return convertRecordToTaskVariable(record);
+            return extract(record);
         } else {
             return null;
         }
     }
 
-    private TaskVariableDTO convertRecordToTaskVariable(
-        Record8<ULong, ULong, String, UByte, String, String, UByte, UByte> record) {
+    private TaskVariableDTO extract(Record record) {
         if (record == null) {
             return null;
         }
         TaskVariableDTO taskVariable = new TaskVariableDTO();
-        taskVariable.setId(((ULong) record.get(0)).longValue());
-        taskVariable.setTemplateId(((ULong) record.get(1)).longValue());
-        taskVariable.setName((String) record.get(2));
-        taskVariable.setType(TaskVariableTypeEnum.valOf(((UByte) record.get(3)).intValue()));
-        taskVariable.setDefaultValue((String) record.get(4));
-        taskVariable.setDescription((String) record.get(5));
-        taskVariable.setChangeable(((UByte) record.get(6)).intValue() == 1);
-        taskVariable.setRequired(((UByte) record.get(7)).intValue() == 1);
+        taskVariable.setId(Objects.requireNonNull(record.get(TABLE.ID)).longValue());
+        taskVariable.setTemplateId(Objects.requireNonNull(record.get(TABLE.TEMPLATE_ID)).longValue());
+        taskVariable.setName(record.get(TABLE.NAME));
+        taskVariable.setType(TaskVariableTypeEnum.valOf(Objects.requireNonNull(record.get(TABLE.TYPE)).intValue()));
+        String encryptedDefaultValue = record.get(TABLE.DEFAULT_VALUE);
+        // 密文变量解密
+        String defaultValue = cipherVariableCryptoService.decryptTaskVariableIfNeeded(
+            taskVariable.getType(),
+            encryptedDefaultValue
+        );
+        taskVariable.setDefaultValue(defaultValue);
+        taskVariable.setDescription(record.get(TABLE.DESCRIPTION));
+        taskVariable.setChangeable(Objects.requireNonNull(record.get(TABLE.IS_CHANGEABLE)).intValue() == 1);
+        taskVariable.setRequired(Objects.requireNonNull(record.get(TABLE.IS_REQUIRED)).intValue() == 1);
         return taskVariable;
     }
 
@@ -128,10 +154,18 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
         conditions.add(TABLE.NAME.eq(name));
         conditions.add(TABLE.TEMPLATE_ID.eq(ULong.valueOf(parentId)));
         Result<Record8<ULong, ULong, String, UByte, String, String, UByte, UByte>> records =
-            context.select(TABLE.ID, TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.DEFAULT_VALUE, TABLE.DESCRIPTION,
-                TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED).from(TABLE).where(conditions).fetch();
+            context.select(
+                TABLE.ID,
+                TABLE.TEMPLATE_ID,
+                TABLE.NAME,
+                TABLE.TYPE,
+                TABLE.DEFAULT_VALUE,
+                TABLE.DESCRIPTION,
+                TABLE.IS_CHANGEABLE,
+                TABLE.IS_REQUIRED
+            ).from(TABLE).where(conditions).fetch();
         if (records.size() > 0) {
-            return convertRecordToTaskVariable(records.get(0));
+            return extract(records.get(0));
         } else {
             return null;
         }
@@ -140,12 +174,23 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
     @Override
     public long insertVariable(TaskVariableDTO variable) {
         TaskTemplateVariableRecord record = context.insertInto(TABLE)
-            .columns(TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.DEFAULT_VALUE, TABLE.DESCRIPTION,
-                TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED)
-            .values(ULong.valueOf(variable.getTemplateId()), variable.getName(),
-                UByte.valueOf(variable.getType().getType()), variable.getDefaultValue(), variable.getDescription(),
-                getChangeable(variable.getChangeable()), getRequired(variable.getRequired()))
-            .returning(TABLE.ID).fetchOne();
+            .columns(
+                TABLE.TEMPLATE_ID,
+                TABLE.NAME,
+                TABLE.TYPE,
+                TABLE.DEFAULT_VALUE,
+                TABLE.DESCRIPTION,
+                TABLE.IS_CHANGEABLE,
+                TABLE.IS_REQUIRED
+            ).values(
+                ULong.valueOf(variable.getTemplateId()),
+                variable.getName(),
+                UByte.valueOf(variable.getType().getType()),
+                cipherVariableCryptoService.encryptTaskVariableIfNeeded(variable.getType(), variable.getDefaultValue()),
+                variable.getDescription(),
+                getChangeable(variable.getChangeable()),
+                getRequired(variable.getRequired())
+            ).returning(TABLE.ID).fetchOne();
         if (record != null) {
             return record.getId().longValue();
         } else {
@@ -159,12 +204,28 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
             return Collections.emptyList();
         }
         InsertValuesStep7<TaskTemplateVariableRecord, ULong, String, UByte, String, String, UByte, UByte> insertStep =
-            context.insertInto(TABLE).columns(TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.DEFAULT_VALUE,
-                TABLE.DESCRIPTION, TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED);
+            context.insertInto(TABLE)
+                .columns(
+                    TABLE.TEMPLATE_ID,
+                    TABLE.NAME,
+                    TABLE.TYPE,
+                    TABLE.DEFAULT_VALUE,
+                    TABLE.DESCRIPTION,
+                    TABLE.IS_CHANGEABLE,
+                    TABLE.IS_REQUIRED
+                );
 
-        variableList.forEach(variable -> insertStep.values(ULong.valueOf(variable.getTemplateId()), variable.getName(),
-            UByte.valueOf(variable.getType().getType()), variable.getDefaultValue(), variable.getDescription(),
-            getChangeable(variable.getChangeable()), getRequired(variable.getRequired())));
+        variableList.forEach(variable ->
+            insertStep.values(
+                ULong.valueOf(variable.getTemplateId()),
+                variable.getName(),
+                UByte.valueOf(variable.getType().getType()),
+                cipherVariableCryptoService.encryptTaskVariableIfNeeded(variable.getType(), variable.getDefaultValue()),
+                variable.getDescription(),
+                getChangeable(variable.getChangeable()),
+                getRequired(variable.getRequired())
+            )
+        );
 
         Result<TaskTemplateVariableRecord> result = insertStep.returning(TABLE.ID).fetch();
         List<Long> variableIdList = new ArrayList<>(variableList.size());
@@ -200,14 +261,23 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
         }
 
         if (variable.getType().isNeedMask() && variable.getDefaultValue().equals(variable.getType().getMask())) {
-            return 1 == context.update(TABLE).set(TABLE.NAME, variable.getName())
-                .set(TABLE.DESCRIPTION, variable.getDescription()).set(TABLE.IS_CHANGEABLE, isChangeable)
-                .set(TABLE.IS_REQUIRED, isRequired).where(conditions).limit(1).execute();
+            return 1 == context.update(TABLE)
+                .set(TABLE.NAME, variable.getName())
+                .set(TABLE.DESCRIPTION, variable.getDescription())
+                .set(TABLE.IS_CHANGEABLE, isChangeable)
+                .set(TABLE.IS_REQUIRED, isRequired)
+                .where(conditions).limit(1)
+                .execute();
         }
 
-        return 1 == context.update(TABLE).set(TABLE.NAME, variable.getName())
-            .set(TABLE.DESCRIPTION, variable.getDescription()).set(TABLE.DEFAULT_VALUE, variable.getDefaultValue())
-            .set(TABLE.IS_CHANGEABLE, isChangeable).set(TABLE.IS_REQUIRED, isRequired).where(conditions).limit(1)
+        return 1 == context.update(TABLE)
+            .set(TABLE.NAME, variable.getName())
+            .set(TABLE.DESCRIPTION, variable.getDescription())
+            .set(TABLE.DEFAULT_VALUE,
+                cipherVariableCryptoService.encryptTaskVariableIfNeeded(variable.getType(), variable.getDefaultValue()))
+            .set(TABLE.IS_CHANGEABLE, isChangeable)
+            .set(TABLE.IS_REQUIRED, isRequired)
+            .where(conditions).limit(1)
             .execute();
     }
 
@@ -220,15 +290,37 @@ public class TaskTemplateVariableDAOImpl implements TaskVariableDAO {
     }
 
     @Override
+    public int deleteVariableByParentId(long parentId) {
+        List<Condition> conditions = new ArrayList<>();
+        conditions.add(TABLE.TEMPLATE_ID.eq(ULong.valueOf(parentId)));
+        return context.deleteFrom(TABLE).where(conditions).execute();
+    }
+
+    @Override
     public boolean batchInsertVariableWithId(List<TaskVariableDTO> variableList) {
         InsertValuesStep8<TaskTemplateVariableRecord, ULong, ULong, String, UByte, String, String, UByte,
-            UByte> insertStep = context.insertInto(TABLE).columns(TABLE.ID, TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE,
-            TABLE.DEFAULT_VALUE, TABLE.DESCRIPTION, TABLE.IS_CHANGEABLE, TABLE.IS_REQUIRED);
+            UByte> insertStep = context.insertInto(TABLE).
+            columns(
+                TABLE.ID,
+                TABLE.TEMPLATE_ID,
+                TABLE.NAME,
+                TABLE.TYPE,
+                TABLE.DEFAULT_VALUE,
+                TABLE.DESCRIPTION,
+                TABLE.IS_CHANGEABLE,
+                TABLE.IS_REQUIRED
+            );
         for (TaskVariableDTO variable : variableList) {
-            insertStep = insertStep.values(JooqDataTypeUtil.buildULong(variable.getId()),
-                ULong.valueOf(variable.getTemplateId()), variable.getName(),
-                UByte.valueOf(variable.getType().getType()), variable.getDefaultValue(), variable.getDescription(),
-                getChangeable(variable.getChangeable()), getRequired(variable.getRequired()));
+            insertStep = insertStep.values(
+                JooqDataTypeUtil.buildULong(variable.getId()),
+                ULong.valueOf(variable.getTemplateId()),
+                variable.getName(),
+                UByte.valueOf(variable.getType().getType()),
+                cipherVariableCryptoService.encryptTaskVariableIfNeeded(variable.getType(), variable.getDefaultValue()),
+                variable.getDescription(),
+                getChangeable(variable.getChangeable()),
+                getRequired(variable.getRequired())
+            );
         }
         return insertStep.execute() > 0;
     }

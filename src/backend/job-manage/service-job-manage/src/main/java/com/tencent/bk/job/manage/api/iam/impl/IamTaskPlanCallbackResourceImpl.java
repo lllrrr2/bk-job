@@ -24,30 +24,41 @@
 
 package com.tencent.bk.job.manage.api.iam.impl;
 
-import com.tencent.bk.job.common.iam.constant.ResourceId;
+import com.tencent.bk.audit.utils.json.JsonSchemaUtils;
+import com.tencent.bk.job.common.iam.constant.ResourceTypeId;
 import com.tencent.bk.job.common.iam.service.BaseIamCallbackService;
 import com.tencent.bk.job.common.iam.util.IamRespUtil;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
 import com.tencent.bk.job.manage.api.iam.IamTaskPlanCallbackResource;
 import com.tencent.bk.job.manage.model.dto.TaskPlanQueryDTO;
+import com.tencent.bk.job.manage.model.dto.task.TaskPlanBasicInfoDTO;
 import com.tencent.bk.job.manage.model.dto.task.TaskPlanInfoDTO;
+import com.tencent.bk.job.manage.model.esb.v3.response.EsbPlanInfoV3DTO;
+import com.tencent.bk.job.manage.service.ApplicationService;
 import com.tencent.bk.job.manage.service.plan.TaskPlanService;
 import com.tencent.bk.sdk.iam.dto.PathInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.CallbackRequestDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.IamSearchCondition;
 import com.tencent.bk.sdk.iam.dto.callback.response.CallbackBaseResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.FetchInstanceInfoResponseDTO;
+import com.tencent.bk.sdk.iam.dto.callback.response.FetchResourceTypeSchemaResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.InstanceInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.ListInstanceResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.SearchInstanceResponseDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -55,10 +66,13 @@ public class IamTaskPlanCallbackResourceImpl extends BaseIamCallbackService
     implements IamTaskPlanCallbackResource {
 
     private final TaskPlanService planService;
+    private final ApplicationService applicationService;
 
     @Autowired
-    public IamTaskPlanCallbackResourceImpl(TaskPlanService planService) {
+    public IamTaskPlanCallbackResourceImpl(TaskPlanService planService,
+                                           ApplicationService applicationService) {
         this.planService = planService;
+        this.applicationService = applicationService;
     }
 
     private InstanceInfoDTO convert(TaskPlanInfoDTO planInfoDTO) {
@@ -107,41 +121,69 @@ public class IamTaskPlanCallbackResourceImpl extends BaseIamCallbackService
         return IamRespUtil.getSearchInstanceRespFromPageData(planDTOPageData, this::convert);
     }
 
+    private InstanceInfoDTO buildInstance(TaskPlanBasicInfoDTO planBasicInfoDTO,
+                                          Map<Long, ResourceScope> appIdScopeMap) {
+        Long appId = planBasicInfoDTO.getAppId();
+        // 拓扑路径构建
+        List<PathInfoDTO> path = new ArrayList<>();
+        PathInfoDTO rootNode = getPathNodeByAppId(appId, appIdScopeMap);
+        PathInfoDTO templateNode = new PathInfoDTO();
+        templateNode.setType(ResourceTypeId.TEMPLATE);
+        templateNode.setId(planBasicInfoDTO.getTemplateId().toString());
+        rootNode.setChild(templateNode);
+        PathInfoDTO planNode = new PathInfoDTO();
+        planNode.setType(ResourceTypeId.PLAN);
+        planNode.setId(planBasicInfoDTO.getId().toString());
+        templateNode.setChild(planNode);
+        path.add(rootNode);
+        // 实例组装
+        InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
+        instanceInfo.setId(planBasicInfoDTO.getId().toString());
+        instanceInfo.setDisplayName(planBasicInfoDTO.getName());
+        instanceInfo.setPath(path);
+        return instanceInfo;
+    }
+
     @Override
     protected CallbackBaseResponseDTO fetchInstanceResp(
         CallbackRequestDTO callbackRequest
     ) {
         IamSearchCondition searchCondition = IamSearchCondition.fromReq(callbackRequest);
         List<Object> instanceAttributeInfoList = new ArrayList<>();
+        List<Long> planIdList = new ArrayList<>();
         for (String instanceId : searchCondition.getIdList()) {
             try {
                 long id = Long.parseLong(instanceId);
-                TaskPlanInfoDTO planInfoDTO = planService.getTaskPlanById(id);
-                if (planInfoDTO == null) {
-                    return getNotFoundRespById(instanceId);
-                }
-                // 拓扑路径构建
-                List<PathInfoDTO> path = new ArrayList<>();
-                PathInfoDTO rootNode = new PathInfoDTO();
-                rootNode.setType(ResourceId.APP);
-                rootNode.setId(planInfoDTO.getAppId().toString());
-                PathInfoDTO templateNode = new PathInfoDTO();
-                templateNode.setType(ResourceId.TEMPLATE);
-                templateNode.setId(planInfoDTO.getTemplateId().toString());
-                rootNode.setChild(templateNode);
-                PathInfoDTO planNode = new PathInfoDTO();
-                planNode.setType(ResourceId.PLAN);
-                planNode.setId(planInfoDTO.getId().toString());
-                templateNode.setChild(planNode);
-                path.add(rootNode);
-                // 实例组装
-                InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
-                instanceInfo.setId(instanceId);
-                instanceInfo.setDisplayName(planInfoDTO.getName());
-                instanceInfo.setPath(path);
-                instanceAttributeInfoList.add(instanceInfo);
+                planIdList.add(id);
             } catch (NumberFormatException e) {
-                log.error("Parse object id failed!|{}", instanceId, e);
+                String msg = MessageFormatter.format(
+                    "Parse plan id failed!|{}",
+                    instanceId
+                ).getMessage();
+                log.error(msg, e);
+            }
+        }
+        List<TaskPlanBasicInfoDTO> planBasicInfoDTOList = planService.listTaskPlanByIds(planIdList);
+        Map<Long, TaskPlanBasicInfoDTO> planBasicInfoDTOMap = new HashMap<>(planBasicInfoDTOList.size());
+        Set<Long> appIdSet = new HashSet<>();
+        for (TaskPlanBasicInfoDTO taskPlanBasicInfoDTO : planBasicInfoDTOList) {
+            planBasicInfoDTOMap.put(taskPlanBasicInfoDTO.getId(), taskPlanBasicInfoDTO);
+            appIdSet.add(taskPlanBasicInfoDTO.getAppId());
+        }
+        // Job app --> CMDB biz/businessSet转换
+        Map<Long, ResourceScope> appIdScopeMap = applicationService.getScopeByAppIds(appIdSet);
+        for (String instanceId : searchCondition.getIdList()) {
+            long id = Long.parseLong(instanceId);
+            TaskPlanBasicInfoDTO planBasicInfoDTO = planBasicInfoDTOMap.get(id);
+            if (planBasicInfoDTO == null) {
+                logNotExistId(id);
+                continue;
+            }
+            try {
+                InstanceInfoDTO instanceInfo = buildInstance(planBasicInfoDTO, appIdScopeMap);
+                instanceAttributeInfoList.add(instanceInfo);
+            } catch (Exception e) {
+                logBuildInstanceFailure(planBasicInfoDTO, e);
             }
         }
         FetchInstanceInfoResponseDTO fetchInstanceInfoResponse = new FetchInstanceInfoResponseDTO();
@@ -154,5 +196,13 @@ public class IamTaskPlanCallbackResourceImpl extends BaseIamCallbackService
     @Override
     public CallbackBaseResponseDTO callback(CallbackRequestDTO callbackRequest) {
         return baseCallback(callbackRequest);
+    }
+
+    @Override
+    protected FetchResourceTypeSchemaResponseDTO fetchResourceTypeSchemaResp(
+        CallbackRequestDTO callbackRequest) {
+        FetchResourceTypeSchemaResponseDTO resp = new FetchResourceTypeSchemaResponseDTO();
+        resp.setData(JsonSchemaUtils.generateJsonSchema(EsbPlanInfoV3DTO.class));
+        return resp;
     }
 }

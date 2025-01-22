@@ -24,13 +24,13 @@
 
 package com.tencent.bk.job.file_gateway.service.remote.impl;
 
+import com.tencent.bk.job.common.model.dto.CommonCredential;
 import com.tencent.bk.job.common.model.http.HttpReq;
 import com.tencent.bk.job.common.util.http.HttpReqGenUtil;
 import com.tencent.bk.job.file.worker.model.req.BaseReq;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileWorkerDTO;
 import com.tencent.bk.job.file_gateway.service.CredentialService;
-import com.tencent.bk.job.manage.model.credential.CommonCredential;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -51,7 +51,7 @@ public class BaseRemoteFileReqGenServiceImpl {
         return "http://" + host + ":" + port.toString() + "/worker/api" + url;
     }
 
-    protected String fillBaseReqGetUrl(BaseReq req, Long appId, FileWorkerDTO fileWorkerDTO,
+    protected String fillBaseReqGetUrl(BaseReq req, FileWorkerDTO fileWorkerDTO,
                                        FileSourceDTO fileSourceDTO, String url) {
         String completeUrl = getCompleteUrl(fileWorkerDTO, url);
         String credentialId = fileSourceDTO.getCredentialId();
@@ -64,7 +64,7 @@ public class BaseRemoteFileReqGenServiceImpl {
             req.setCredential(commonCredential);
             log.debug("Credential of id {} is {}", credentialId, commonCredential);
         } else if (StringUtils.isNotBlank(credentialId)) {
-            log.warn("Cannot find credential by id {}", credentialId);
+            log.warn("Cannot find credential by id {}, fileSource={}", credentialId, fileSourceDTO.getBasicDesc());
         }
         req.setFileSourceTypeCode(fileSourceDTO.getFileSourceType().getCode());
         req.setFileSourceInfoMap(fileSourceDTO.getFileSourceInfoMap());

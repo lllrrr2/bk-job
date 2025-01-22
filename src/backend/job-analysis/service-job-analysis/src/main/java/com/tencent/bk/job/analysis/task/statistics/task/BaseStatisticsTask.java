@@ -24,11 +24,11 @@
 
 package com.tencent.bk.job.analysis.task.statistics.task;
 
+import com.tencent.bk.job.analysis.api.consts.StatisticsConstants;
 import com.tencent.bk.job.analysis.dao.StatisticsDAO;
 import com.tencent.bk.job.analysis.service.BasicServiceManager;
-import com.tencent.bk.job.common.statistics.consts.StatisticsConstants;
 import com.tencent.bk.job.common.util.TimeUtil;
-import com.tencent.bk.job.manage.model.inner.ServiceApplicationDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
 import org.springframework.util.StopWatch;
@@ -42,7 +42,8 @@ public abstract class BaseStatisticsTask implements IStatisticsTask {
     protected final StatisticsDAO statisticsDAO;
     protected final DSLContext dslContext;
 
-    protected BaseStatisticsTask(BasicServiceManager basicServiceManager, StatisticsDAO statisticsDAO,
+    protected BaseStatisticsTask(BasicServiceManager basicServiceManager,
+                                 StatisticsDAO statisticsDAO,
                                  DSLContext dslContext) {
         this.basicServiceManager = basicServiceManager;
         this.statisticsDAO = statisticsDAO;

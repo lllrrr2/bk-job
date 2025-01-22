@@ -26,22 +26,20 @@ package com.tencent.bk.job.crontab.api.inner;
 
 import com.tencent.bk.job.common.annotation.EsbAPI;
 import com.tencent.bk.job.common.model.InternalResponse;
+import com.tentent.bk.job.common.api.feign.annotation.SmartFeignClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 @Api(tags = {"job-crontab:Service:Metrics"})
-@RequestMapping("/service/metrics")
-@RestController
+@SmartFeignClient(value = "job-crontab", contextId = "cronMetricResource")
 @EsbAPI
 public interface ServiceCronMetricsResource {
 
     @ApiOperation(value = "定时任务总量", produces = "application/json")
-    @GetMapping("/count")
+    @GetMapping("/service/metrics/count")
     InternalResponse<Integer> countCronJob(
         @ApiParam(value = "业务Id")
         @RequestParam(value = "appId", required = false)

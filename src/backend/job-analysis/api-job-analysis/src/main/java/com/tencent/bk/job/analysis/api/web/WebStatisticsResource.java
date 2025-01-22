@@ -71,9 +71,9 @@ public interface WebStatisticsResource {
             ")")
         @PathVariable(value = "metric", required = true)
             TotalMetricEnum metric,
-        @ApiParam("业务Id列表，不传为全业务")
-        @RequestParam(value = "appIdList", required = false)
-            List<Long> appIdList,
+        @ApiParam("资源范围列表，不传为全部业务；传入参数格式如下{scopeType}:{scopeId}")
+        @RequestParam(value = "scopes", required = false)
+            List<String> scopes,
         @ApiParam("统计日期，例如：2020-12-16，不传默认为今天")
         @RequestParam(value = "date", required = false)
             String date
@@ -96,9 +96,9 @@ public interface WebStatisticsResource {
             ")")
         @PathVariable(value = "metric", required = true)
             TotalMetricEnum metric,
-        @ApiParam("业务Id列表，不传为全业务")
-        @RequestParam(value = "appIdList", required = false)
-            List<Long> appIdList,
+        @ApiParam("资源范围列表，不传为全部业务；传入参数格式如下{scopeType}:{scopeId}")
+        @RequestParam(value = "scopes", required = false)
+            List<String> scopes,
         @ApiParam("统计起始日期，例如：2019-01-30，本期需求先不传这个参数，按默认最小值处理")
         @RequestParam(value = "dataStartDate", required = false)
             String dataStartDate,
@@ -127,9 +127,9 @@ public interface WebStatisticsResource {
             ")")
         @PathVariable(value = "metric", required = true)
             TotalMetricEnum metric,
-        @ApiParam("业务Id列表，不传为全业务")
-        @RequestParam(value = "appIdList", required = false)
-            List<Long> appIdList,
+        @ApiParam("资源范围列表，不传为全部业务；传入参数格式如下{scopeType}:{scopeId}")
+        @RequestParam(value = "scopes", required = false)
+            List<String> scopes,
         @ApiParam("统计日期，不传默认为今天，例如：2020-12-17")
         @RequestParam(value = "date", required = false)
             String date
@@ -142,7 +142,7 @@ public interface WebStatisticsResource {
         @RequestHeader("username")
             String username,
         @ApiParam("统计量Code，取值：(\n" +
-            "HOST_SYSTEM_TYPE:主机操作系统类型（结果label取值：LINUX，WINDOWS，AIX，OTHERS）\n" +
+            "HOST_SYSTEM_TYPE:主机操作系统类型（结果label取值：LINUX，WINDOWS，AIX，UNIX，SOLARIS，FREEBSD，MACOS，OTHERS）\n" +
             "STEP_TYPE:作业步骤类型（结果label取值：FILE_LOCAL，FILE_SERVER，SCRIPT_MANUAL，SCRIPT_REF，CONFIRM）\n" +
             "SCRIPT_TYPE:脚本类型（结果label取值：Bat，Shell，Perl，Powershell，Python，SQL）\n" +
             "SCRIPT_VERSION_STATUS:脚本版本状态（结果label取值：ONLINE，OFFLINE，PREPARING，FORBIDDEN）\n" +
@@ -153,9 +153,9 @@ public interface WebStatisticsResource {
             ")")
         @PathVariable(value = "metric", required = true)
             DistributionMetricEnum metric,
-        @ApiParam("业务Id列表，不传为全业务")
-        @RequestParam(value = "appIdList", required = false)
-            List<Long> appIdList,
+        @ApiParam("资源范围列表，不传为全部业务；传入参数格式如下{scopeType}:{scopeId}")
+        @RequestParam(value = "scopes", required = false)
+            List<String> scopes,
         @ApiParam("统计日期，例如：2020-12-16，不传默认为今天")
         @RequestParam(value = "date", required = false)
             String date
@@ -169,6 +169,8 @@ public interface WebStatisticsResource {
             String username,
         @ApiParam("资源类型，取值：(\n" +
             "EXECUTED_TASK:执行过的任务（包含快速执行脚本、快速分发文件、作业）（对应dimension取值：TASK_STARTUP_MODE，TASK_TYPE，TASK_TIME_CONSUMING" +
+            "）\n" +
+            "EXECUTED_ROLLING_TASK:滚动执行过的任务（包含快速执行脚本、快速分发文件、作业）（对应dimension取值：TASK_TYPE" +
             "）\n" +
             "EXECUTED_FAST_SCRIPT:执行过的快速执行脚本（对应dimension取值：SCRIPT_TYPE）\n" +
             "EXECUTED_FAST_FILE:执行过的快速分发文件（对应dimension取值：FILE_TRANSFER_MODE）\n" +
@@ -184,9 +186,9 @@ public interface WebStatisticsResource {
             ")")
         @PathVariable(value = "dimension", required = true)
             DimensionEnum dimension,
-        @ApiParam("业务Id列表，不传为全业务")
-        @RequestParam(value = "appIdList", required = false)
-            List<Long> appIdList,
+        @ApiParam("资源范围列表，不传为全部业务；传入参数格式如下{scopeType}:{scopeId}")
+        @RequestParam(value = "scopes", required = false)
+            List<String> scopes,
         @ApiParam("查询起始日期，不传默认为今天，例如：2019-01-30")
         @RequestParam(value = "startDate", required = false)
             String startDate,

@@ -23,209 +23,241 @@
  * IN THE SOFTWARE.
 */
 
-import Vue from 'vue';
-import VueRouter from 'vue-router';
 import _ from 'lodash';
+import Vue, {
+  customRef,
+} from 'vue';
+import VueRouter from 'vue-router';
+
 import {
-    leaveConfirm,
+  leaveConfirm,
 } from '@utils/assist';
 import {
-    routerCache,
+  routerCache,
 } from '@utils/cache-helper';
 
-import Entry from '@views/index';
-import BusinessPermission from '@views/business-permission';
 import NotFound from '@views/404';
-
-import Home from '@views/home/routes';
 import AccountManage from '@views/account-manage/routes';
-import NotifyManage from '@views/notify-manage/routes';
-import PublicScriptManage from '@views/public-script-manage/routes';
-import GlobalSetting from '@views/global-setting/routes';
-import WhiteIP from '@views/white-ip/routes';
-import TaskManage from '@views/task-manage/routes';
-import PlanManage from '@views/plan-manage/routes';
+import BusinessPermission from '@views/business-permission';
+import CronJob from '@views/cron-job/routes';
+import DangerousRuleManage from '@views/dangerous-rule-manage/routes';
+import Dashboard from '@views/dashboard/routes';
+import DetectRecords from '@views/detect-records/routes';
+import ExecutiveHistory from '@views/executive-history/routes';
 import FastExecution from '@views/fast-execution/routes';
+import FileManage from '@views/file-manage/routes';
+import GlobalSetting from '@views/global-setting/routes';
+import Home from '@views/home/routes';
+import Entry from '@views/index';
+import NotifyManage from '@views/notify-manage/routes';
+import PlanManage from '@views/plan-manage/routes';
+import PublicScriptManage from '@views/public-script-manage/routes';
 import ScriptManage from '@views/script-manage/routes';
 import ScriptTemplate from '@views/script-template/routes';
-import CronJob from '@views/cron-job/routes';
-import ExecutiveHistory from '@views/executive-history/routes';
-import Dashboard from '@views/dashboard/routes';
-import FileManage from '@views/file-manage/routes';
-import TicketManage from '@views/ticket-manage/routes';
 import ServiceState from '@views/service-state/routes';
-import DetectRecords from '@views/detect-records/routes';
-import DangerousRuleManage from '@views/dangerous-rule-manage/routes';
 import TagManage from '@views/tag-manage/routes';
+import TaskManage from '@views/task-manage/routes';
+import TicketManage from '@views/ticket-manage/routes';
+import WhiteIP from '@views/white-ip/routes';
+
+import { connectToMain, rootPath } from '@blueking/sub-saas';
 
 Vue.use(VueRouter);
 
+let router;
 let lastRouterHrefCache = '/';
 
 const renderPageWithComponent = (route, component) => {
-    if (route.component) {
+  if (route.component) {
     // eslint-disable-next-line no-param-reassign
-        route.component = component;
-    }
-    if (route.children) {
-        route.children.forEach((item) => {
-            renderPageWithComponent(item);
-        });
-    }
+    route.component = component;
+  }
+  if (route.children) {
+    route.children.forEach((item) => {
+      renderPageWithComponent(item);
+    });
+  }
 };
 
-export default ({ appList, isAdmin, appId }) => {
-    // appid是否有效
-    let isValidAppId = false;
-    // appid是有有权限查看
-    let hasAPPIdPermission = false;
-    
-    const appInfo = appList.find(_ => _.id === appId);
-    // appId存在于业务列表中——有效的appid
-    if (appInfo) {
-        isValidAppId = true;
-        // appId存在于业务列表中——有权限访问
-        if (appInfo.hasPermission) {
-            hasAPPIdPermission = true;
-        }
+export default ({ appList, isAdmin, scopeType, scopeId }) => {
+  // scope 是否有效
+  let isValidScope = false;
+  // scope 是有有权限查看
+  let hasScopePermission = false;
+
+  const noScope = !scopeType && !scopeId;
+
+  const appInfo = appList.find(_ => _.scopeType === scopeType && _.scopeId === scopeId);
+  // scope 存在于业务列表中——有效的 scope
+  if (appInfo) {
+    isValidScope = true;
+    // scope 存在于业务列表中——有权限访问
+    if (appInfo.hasPermission) {
+      hasScopePermission = true;
     }
+  }
 
-    // 生成路由配置
-    const routes = [
-        {
-            path: '/',
-            component: Entry,
-            redirect: {
-                name: 'home',
-            },
-            children: [
-                Dashboard,
-                ScriptTemplate,
-            ],
-        },
-        {
-            path: `/${appId}`,
-            component: Entry,
-            redirect: {
-                name: 'home',
-            },
-            children: [
-                AccountManage,
-                NotifyManage,
-                Home,
-                TaskManage,
-                PlanManage,
-                FastExecution,
-                ScriptManage,
-                CronJob,
-                ExecutiveHistory,
-                FileManage,
-                TicketManage,
-                TagManage,
-            ],
-        },
-        {
-            path: '/api_(execute|plan)/:id+',
-            component: {
-                render () {
-                    return this._e(); // eslint-disable-line no-underscore-dangle
-                },
-            },
-        },
-        {
-            path: '*',
-            name: '404',
-            component: NotFound,
-        },
-    ];
+  const systemManageRoute = [
+    Dashboard,
+    ScriptTemplate,
+  ];
 
-    if (!isValidAppId) {
-        renderPageWithComponent(routes[1], NotFound);
-    } else if (!hasAPPIdPermission) {
-        renderPageWithComponent(routes[1], BusinessPermission);
+  // 生成路由配置
+  const routes = [
+    {
+      path: rootPath,
+      component: Entry,
+      redirect: {
+        name: 'home',
+      },
+      children: systemManageRoute,
+    },
+    {
+      path: noScope ? rootPath : `${rootPath}${scopeType}/${scopeId}`,
+      component: Entry,
+      redirect: {
+        name: 'home',
+      },
+      children: [
+        AccountManage,
+        NotifyManage,
+        Home,
+        TaskManage,
+        PlanManage,
+        FastExecution,
+        ScriptManage,
+        CronJob,
+        ExecutiveHistory,
+        FileManage,
+        TicketManage,
+        TagManage,
+      ],
+    },
+    {
+      path: '/api_(execute|execute_step|plan)/:id+',
+      component: {
+        render() {
+          return this._e(); // eslint-disable-line no-underscore-dangle
+        },
+      },
+    },
+    {
+      path: '*',
+      name: '404',
+      component: NotFound,
+    },
+  ];
+
+  if (noScope || !hasScopePermission) {
+    renderPageWithComponent(routes[1], BusinessPermission);
+  } else if (!isValidScope) {
+    renderPageWithComponent(routes[1], NotFound);
+  }
+
+  // admin用户拥有系统设置功能
+  if (isAdmin) {
+    systemManageRoute.push(PublicScriptManage);
+    systemManageRoute.push(WhiteIP);
+    systemManageRoute.push(GlobalSetting);
+    systemManageRoute.push(ServiceState);
+    systemManageRoute.push(DangerousRuleManage);
+    systemManageRoute.push(DetectRecords);
+  }
+
+  router = new VueRouter({
+    mode: 'history',
+    routes,
+    scrollBehavior() {
+      return {
+        x: 0, y: 0,
+      };
+    },
+  });
+
+  const routerPush = router.push;
+  const routerReplace = router.replace;
+
+  // window.routerFlashBack === true 时查找路由缓存参数
+  const routerFlaskBack = (params) => {
+    /* eslint-disable no-param-reassign */
+    params = _.cloneDeep(params);
+    if (window.routerFlashBack) {
+      // 路由回退
+      const query = routerCache.getItem(params.name);
+      if (query) {
+        params.query = {
+          ...query,
+          ...params.query || {},
+        };
+      }
+    } else {
+      routerCache.clearItem(params.name);
     }
-
-    // admin用户拥有系统设置功能
-    if (isAdmin) {
-        routes[0].children.push(PublicScriptManage);
-        routes[0].children.push(WhiteIP);
-        routes[0].children.push(GlobalSetting);
-        routes[0].children.push(ServiceState);
-        routes[0].children.push(DangerousRuleManage);
-        routes[0].children.push(DetectRecords);
-    }
-
-    const router = new VueRouter({
-        mode: 'history',
-        routes,
-        scrollBehavior () {
-            return {
-                x: 0, y: 0,
-            };
-        },
-    });
-
-    const routerPush = router.push;
-    const routerReplace = router.replace;
-
-    // window.routerFlashBack === true 时查找路由缓存参数
-    const routerFlaskBack = (params, currentRoute) => {
-        /* eslint-disable no-param-reassign */
-        params = _.cloneDeep(params);
-        if (window.routerFlashBack) {
-            // 路由回退
-            const query = routerCache.getItem(params.name);
-            if (query) {
-                params.query = {
-                    ...query,
-                    ...params.query || {},
-                };
-            }
-        } else {
-            routerCache.clearItem(params.name);
-        }
-        lastRouterHrefCache = router.resolve(params).href;
-        return params;
-    };
-    const leaveConfirmHandler = (currentRoute) => {
-        if (Object.prototype.hasOwnProperty.call(currentRoute, 'meta')
+    lastRouterHrefCache = router.resolve(params).href;
+    return params;
+  };
+  const leaveConfirmHandler = (currentRoute) => {
+    // 在业务逻辑中可以找到当前路由的 meta 挂在自定义 leavaConfirm
+    if (Object.prototype.hasOwnProperty.call(currentRoute, 'meta')
             && Object.prototype.hasOwnProperty.call(currentRoute.meta, 'leavaConfirm')
             && typeof currentRoute.meta.leavaConfirm === 'function') {
-            return currentRoute.meta.leavaConfirm();
-        }
-        return leaveConfirm();
-    };
+      return currentRoute.meta.leavaConfirm();
+    }
+    return leaveConfirm();
+  };
     // 路由切换时
     // 检测页面数据的编辑状态——弹出确认框提示用户确认
     // 如果需要路由回溯（window.routerFlashBack === true）查找缓存是否有跳转目标的路由缓存数据
-    router.push = (params, callback = () => {}) => {
-        const { currentRoute } = router;
-        // 检测当前路由自定义离开确认交互
-        leaveConfirmHandler(currentRoute).then(() => {
-            routerPush.call(router, routerFlaskBack(params, currentRoute));
-            window.routerFlashBack = false;
-        }, () => {
-            callback();
-        });
-    };
-    // 路由切换时
-    // 检测页面数据的编辑状态——弹出确认框提示用户确认
-    // 如果需要路由回溯（window.routerFlashBack === true）查找缓存是否有跳转目标的路由缓存数据
-    router.replace = (params, callback = () => {}) => {
+  router.push = (params, callback = () => {}) => {
+    const { currentRoute } = router;
     // 检测当前路由自定义离开确认交互
-        const { currentRoute } = router;
-        leaveConfirmHandler(currentRoute).then(() => {
-            routerReplace.call(router, routerFlaskBack(params, currentRoute));
-            window.routerFlashBack = false;
-        }, () => {
-            callback();
-        });
-    };
-    // 异步路由加载失败刷新页面
-    router.onError((error) => {
-        if (/Loading chunk (\d*) failed/.test(error.message)) {
-            window.location.href = lastRouterHrefCache;
-        }
+    leaveConfirmHandler(currentRoute).then(() => {
+      routerPush.call(router, routerFlaskBack(params, currentRoute));
+      window.routerFlashBack = false;
+    }, () => {
+      callback();
     });
-    return router;
+  };
+  // 路由切换时
+  // 检测页面数据的编辑状态——弹出确认框提示用户确认
+  // 如果需要路由回溯（window.routerFlashBack === true）查找缓存是否有跳转目标的路由缓存数据
+  router.replace = (params, callback = () => {}) => {
+    // 检测当前路由自定义离开确认交互
+    const { currentRoute } = router;
+    leaveConfirmHandler(currentRoute).then(() => {
+      routerReplace.call(router, routerFlaskBack(params, currentRoute));
+      window.routerFlashBack = false;
+    }, () => {
+      callback();
+    });
+  };
+  // 异步路由加载失败刷新页面
+  router.onError((error) => {
+    if (/Loading chunk (\d*) failed/.test(error.message)) {
+      window.location.href = lastRouterHrefCache;
+    }
+  });
+
+  connectToMain(router);
+
+  return router;
 };
+
+let isRouteWatch = false;
+export const useRoute = () => customRef((track, trigger) => ({
+  get() {
+    setTimeout(() => {
+      if (isRouteWatch) {
+        return;
+      }
+      window.BKApp.$watch('$route', () => {
+        trigger();
+      });
+      isRouteWatch = true;
+    });
+    track();
+    return router.currentRoute;
+  },
+}));
+
+export const useRouter = () => router;

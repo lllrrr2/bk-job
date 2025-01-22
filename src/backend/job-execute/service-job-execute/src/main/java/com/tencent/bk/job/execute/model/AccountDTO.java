@@ -24,8 +24,8 @@
 
 package com.tencent.bk.job.execute.model;
 
-import com.tencent.bk.job.manage.common.consts.account.AccountCategoryEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
+import com.tencent.bk.job.common.constant.AccountCategoryEnum;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
 import lombok.Data;
 
 /**

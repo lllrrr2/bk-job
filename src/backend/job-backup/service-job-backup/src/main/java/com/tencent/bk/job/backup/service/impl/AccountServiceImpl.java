@@ -24,16 +24,14 @@
 
 package com.tencent.bk.job.backup.service.impl;
 
-import com.tencent.bk.job.backup.client.ServiceAccountResourceClient;
-import com.tencent.bk.job.backup.client.WebAccountResourceClient;
 import com.tencent.bk.job.backup.service.AccountService;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.InternalException;
 import com.tencent.bk.job.common.model.InternalResponse;
 import com.tencent.bk.job.common.model.Response;
+import com.tencent.bk.job.manage.api.inner.ServiceAccountResource;
 import com.tencent.bk.job.manage.model.inner.ServiceAccountDTO;
 import com.tencent.bk.job.manage.model.web.request.AccountCreateUpdateReq;
-import com.tencent.bk.job.manage.model.web.vo.AccountVO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -43,25 +41,19 @@ import org.springframework.stereotype.Service;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @since 24/11/2020 21:08
- */
 @Slf4j
-@Service
+@Service("jobBackupAccountService")
 public class AccountServiceImpl implements AccountService {
-    private final ServiceAccountResourceClient serviceAccountResourceClient;
-    private final WebAccountResourceClient webAccountResourceClient;
+    private final ServiceAccountResource accountResource;
 
     @Autowired
-    public AccountServiceImpl(ServiceAccountResourceClient serviceAccountResourceClient,
-                              WebAccountResourceClient webAccountResourceClient) {
-        this.serviceAccountResourceClient = serviceAccountResourceClient;
-        this.webAccountResourceClient = webAccountResourceClient;
+    public AccountServiceImpl(ServiceAccountResource accountResource) {
+        this.accountResource = accountResource;
     }
 
     @Override
     public ServiceAccountDTO getAccountAliasById(Long id) {
-        InternalResponse<ServiceAccountDTO> accountResp = serviceAccountResourceClient.getAccountByAccountId(id);
+        InternalResponse<ServiceAccountDTO> accountResp = accountResource.getAccountByAccountId(id);
         if (accountResp != null) {
             if (0 == accountResp.getCode()) {
                 ServiceAccountDTO account = accountResp.getData();
@@ -85,12 +77,11 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public List<AccountVO> listAccountByAppId(String username, Long appId) {
-        Response<List<AccountVO>> appAccountListResp = webAccountResourceClient.listAccounts(username, appId,
-            null);
+    public List<ServiceAccountDTO> listAccountByAppId(String username, Long appId) {
+        Response<List<ServiceAccountDTO>> appAccountListResp = accountResource.listAccounts(appId, null);
         if (appAccountListResp != null) {
             if (0 == appAccountListResp.getCode()) {
-                List<AccountVO> accountList = appAccountListResp.getData();
+                List<ServiceAccountDTO> accountList = appAccountListResp.getData();
                 if (CollectionUtils.isNotEmpty(accountList)) {
                     return accountList;
                 } else {
@@ -109,7 +100,6 @@ public class AccountServiceImpl implements AccountService {
     @Override
     public Long saveAccount(String username, Long appId, ServiceAccountDTO account) {
         AccountCreateUpdateReq accountCreateUpdateReq = new AccountCreateUpdateReq();
-        accountCreateUpdateReq.setAppId(appId);
         accountCreateUpdateReq.setAccount(account.getAccount());
         accountCreateUpdateReq.setAlias(account.getAlias());
         accountCreateUpdateReq.setType(account.getType());
@@ -124,8 +114,8 @@ public class AccountServiceImpl implements AccountService {
         accountCreateUpdateReq.setDbPassword(account.getDbPassword());
         accountCreateUpdateReq.setDbPort(account.getDbPort());
 
-        Response<Long> saveAccountResp = webAccountResourceClient.saveAccount(username, appId,
-            accountCreateUpdateReq);
+        Response<Long> saveAccountResp = accountResource.saveAccount(username,
+            appId, accountCreateUpdateReq);
 
         Integer errorCode = -1;
         if (saveAccountResp != null) {

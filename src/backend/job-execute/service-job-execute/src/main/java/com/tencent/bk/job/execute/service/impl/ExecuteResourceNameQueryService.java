@@ -27,40 +27,45 @@ package com.tencent.bk.job.execute.service.impl;
 import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
 import com.tencent.bk.job.common.iam.service.ResourceNameQueryService;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
-import com.tencent.bk.job.execute.client.TaskTemplateResourceClient;
+import com.tencent.bk.job.common.iam.util.IamUtil;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
 import com.tencent.bk.job.execute.model.AccountDTO;
 import com.tencent.bk.job.execute.service.AccountService;
 import com.tencent.bk.job.execute.service.ApplicationService;
 import com.tencent.bk.job.execute.service.ScriptService;
 import com.tencent.bk.job.execute.service.TaskPlanService;
+import com.tencent.bk.job.manage.api.inner.ServiceTaskTemplateResource;
 import com.tencent.bk.job.manage.model.inner.ServiceScriptDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Slf4j
-@Service
+@Service("jobExecuteResourceNameQueryService")
 public class ExecuteResourceNameQueryService implements ResourceNameQueryService {
     private final ApplicationService applicationService;
     private final ScriptService scriptService;
     private final TaskPlanService taskPlanService;
-    private final TaskTemplateResourceClient taskTemplateService;
+    private final ServiceTaskTemplateResource taskTemplateResource;
     private final AccountService accountService;
+    private final AppScopeMappingService appScopeMappingService;
 
 
     @Autowired
     public ExecuteResourceNameQueryService(ApplicationService applicationService,
                                            ScriptService scriptService,
                                            TaskPlanService taskPlanService,
-                                           TaskTemplateResourceClient taskTemplateService,
-                                           AccountService accountService) {
+                                           ServiceTaskTemplateResource taskTemplateResource,
+                                           AccountService accountService,
+                                           AppScopeMappingService appScopeMappingService) {
         this.applicationService = applicationService;
         this.scriptService = scriptService;
         this.taskPlanService = taskPlanService;
-        this.taskTemplateService = taskTemplateService;
+        this.taskTemplateResource = taskTemplateResource;
         this.accountService = accountService;
+        this.appScopeMappingService = appScopeMappingService;
     }
 
     @Override
@@ -70,15 +75,17 @@ public class ExecuteResourceNameQueryService implements ResourceNameQueryService
                 ServiceScriptDTO script = scriptService.getBasicScriptInfo(resourceId);
                 return script == null ? null : script.getName();
             case BUSINESS:
-                long appId = Long.parseLong(resourceId);
-                if (appId > 0) {
+            case BUSINESS_SET:
+                Long appId = appScopeMappingService.getAppIdByScope(
+                    IamUtil.getResourceScopeFromIamResource(resourceType, resourceId));
+                if (appId != null && appId > 0) {
                     return getAppName(appId);
                 }
                 break;
             case TEMPLATE:
                 long templateId = Long.parseLong(resourceId);
                 if (templateId > 0) {
-                    return taskTemplateService.getTemplateNameById(templateId).getData();
+                    return taskTemplateResource.getTemplateNameById(templateId).getData();
                 }
                 break;
             case PLAN:
@@ -105,7 +112,7 @@ public class ExecuteResourceNameQueryService implements ResourceNameQueryService
     }
 
     private String getAppName(Long appId) {
-        ApplicationInfoDTO applicationInfo = applicationService.getAppById(appId);
+        ServiceApplicationDTO applicationInfo = applicationService.getAppById(appId);
         if (applicationInfo != null) {
             if (StringUtils.isNotBlank(applicationInfo.getName())) {
                 return applicationInfo.getName();

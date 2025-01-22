@@ -25,20 +25,15 @@
 package com.tencent.bk.job.manage.dao.notify;
 
 import com.tencent.bk.job.manage.model.dto.notify.NotifyPolicyRoleTargetDTO;
-import org.jooq.DSLContext;
 
 import java.util.List;
 
 public interface NotifyPolicyRoleTargetDAO {
-    Long insert(DSLContext dslContext, NotifyPolicyRoleTargetDTO notifyPolicyRoleTargetDTO);
 
-    int deleteById(DSLContext dslContext, Long id);
+    Long insert(NotifyPolicyRoleTargetDTO notifyPolicyRoleTargetDTO);
 
-    int deleteByPolicyId(DSLContext dslContext, Long policyId);
+    int deleteByPolicyId(Long policyId);
 
-    NotifyPolicyRoleTargetDTO getById(DSLContext dslContext, Long id);
+    List<NotifyPolicyRoleTargetDTO> listByPolicyId(Long policyId);
 
-    List<NotifyPolicyRoleTargetDTO> listByPolicyId(DSLContext dslContext, Long policyId);
-
-    int updateById(DSLContext dslContext, NotifyPolicyRoleTargetDTO notifyPolicyRoleTargetDTO);
 }

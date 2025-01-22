@@ -27,46 +27,39 @@ package com.tencent.bk.job.manage.dao.notify.impl;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.InternalException;
+import com.tencent.bk.job.common.paas.cmsi.CmsiApiClient;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.manage.dao.notify.NotifyEsbChannelDAO;
 import com.tencent.bk.job.manage.model.dto.notify.NotifyEsbChannelDTO;
-import com.tencent.bk.job.manage.service.PaaSService;
-import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Repository;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * @Description
- * @Date 2020/1/2
- * @Version 1.0
- */
 @Repository
 public class NotifyEsbChannelDAOImpl implements NotifyEsbChannelDAO {
 
     private static final Logger logger = LoggerFactory.getLogger(NotifyEsbChannelDAOImpl.class);
-    private static final String KEY_ESB_CHANNEL = "esbChannel";
-    private PaaSService paaSService;
-    private LoadingCache<String, List<NotifyEsbChannelDTO>> esbChannelCache = CacheBuilder.newBuilder()
+    private final CmsiApiClient cmsiApiClient;
+    private final LoadingCache<String, List<NotifyEsbChannelDTO>> esbChannelCache = CacheBuilder.newBuilder()
         .maximumSize(10).expireAfterWrite(10, TimeUnit.MINUTES).
             build(new CacheLoader<String, List<NotifyEsbChannelDTO>>() {
                       @Override
-                      public List<NotifyEsbChannelDTO> load(String searchKey) throws Exception {
+                      public List<NotifyEsbChannelDTO> load(@NonNull String searchKey) {
                           logger.info("esbChannelCache searchKey=" + searchKey);
-                          List<NotifyEsbChannelDTO> channelDtoList = null;
-                          try {
-                              //新增渠道默认为已启用
-                              channelDtoList =
-                                  paaSService.getAllChannelList("", "100").stream().map(it -> new NotifyEsbChannelDTO(
+                          List<NotifyEsbChannelDTO> channelDtoList;
+                          //新增渠道默认为已启用
+                          channelDtoList =
+                              cmsiApiClient.getNotifyChannelList().stream().map(it -> new NotifyEsbChannelDTO(
                                   it.getType(),
                                   it.getLabel(),
                                   it.isActive(),
@@ -74,45 +67,30 @@ public class NotifyEsbChannelDAOImpl implements NotifyEsbChannelDAO {
                                   it.getIcon(),
                                   LocalDateTime.now()
                               )).collect(Collectors.toList());
-                              logger.info(String.format("result.size=%d", channelDtoList.size()));
-                              return channelDtoList;
-                          } catch (IOException e) {
-                              logger.error("updateNotifyEsbChannel: Fail to fetch remote notifyChannel, return", e);
-                              return null;
-                          }
+                          logger.info(String.format("result.size=%d", channelDtoList.size()));
+                          return channelDtoList;
                       }
                   }
             );
-    public NotifyEsbChannelDAOImpl(PaaSService paaSService) {
-        this.paaSService = paaSService;
+
+    public NotifyEsbChannelDAOImpl(CmsiApiClient cmsiApiClient) {
+        this.cmsiApiClient = cmsiApiClient;
     }
 
     @Override
-    public NotifyEsbChannelDTO getNotifyEsbChannelByType(DSLContext dslContext, String type) {
-        try {
-            List<NotifyEsbChannelDTO> notifyEsbChannelDTOList = esbChannelCache.get(KEY_ESB_CHANNEL);
-            for (NotifyEsbChannelDTO notifyEsbChannelDTO : notifyEsbChannelDTOList) {
-                if (notifyEsbChannelDTO.getType().equals(type)) {
-                    return notifyEsbChannelDTO;
-                }
-            }
-        } catch (ExecutionException e) {
-            String errorMsg = "Fail to load EsbChannel from cache";
-            logger.error(errorMsg, e);
-            throw new InternalException(errorMsg, e, ErrorCode.PAAS_MSG_CHANNEL_DATA_ERROR);
-        }
-        return null;
-    }
-
-    @Override
-    public List<NotifyEsbChannelDTO> listNotifyEsbChannel(DSLContext dslContext) {
+    public List<NotifyEsbChannelDTO> listNotifyEsbChannel() {
         try {
             String lang = JobContextUtil.getUserLang();
             return esbChannelCache.get(lang);
-        } catch (ExecutionException e) {
+        } catch (ExecutionException | UncheckedExecutionException e) {
             String errorMsg = "Fail to load EsbChannel from cache";
             logger.error(errorMsg, e);
-            throw new InternalException(errorMsg, e, ErrorCode.PAAS_MSG_CHANNEL_DATA_ERROR);
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            } else {
+                throw new InternalException(errorMsg, e, ErrorCode.INTERNAL_ERROR);
+            }
         }
     }
 }

@@ -24,23 +24,32 @@
 
 package com.tencent.bk.job.file_gateway.service;
 
-import com.tencent.bk.job.file_gateway.consts.TaskStatusEnum;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceTaskDTO;
+import com.tencent.bk.job.file_gateway.model.dto.FileTaskProgressDTO;
 import com.tencent.bk.job.file_gateway.model.resp.inner.FileSourceTaskStatusDTO;
 import com.tencent.bk.job.file_gateway.model.resp.inner.TaskInfoDTO;
 
 import java.util.List;
 
 public interface FileSourceTaskService {
-    TaskInfoDTO startFileSourceDownloadTask(String username, Long appId, Long stepInstanceId, Integer executeCount,
-                                            String batchTaskId, Integer fileSourceId, List<String> filePathList);
+    TaskInfoDTO startFileSourceDownloadTask(String username,
+                                            Long appId,
+                                            Long stepInstanceId,
+                                            Integer executeCount,
+                                            String batchTaskId,
+                                            Integer fileSourceId,
+                                            List<String> filePathList);
 
-    TaskInfoDTO startFileSourceDownloadTaskWithId(String username, Long appId, Long stepInstanceId,
-                                                  Integer executeCount, String batchTaskId, Integer fileSourceId,
-                                                  List<String> filePathList, String fileSourceTaskId);
+    TaskInfoDTO startFileSourceDownloadTaskWithId(String username,
+                                                  Long appId,
+                                                  Long stepInstanceId,
+                                                  Integer executeCount,
+                                                  String batchTaskId,
+                                                  Integer fileSourceId,
+                                                  List<String> filePathList,
+                                                  String fileSourceTaskId);
 
-    String updateFileSourceTask(String taskId, String filePath, String downloadPath, Long fileSize, String speed,
-                                Integer progress, String content, TaskStatusEnum status);
+    String updateFileSourceTask(FileTaskProgressDTO fileTaskProgressDTO);
 
     FileSourceTaskStatusDTO getFileSourceTaskStatusAndLogs(String taskId, Long logStart, Long logLength);
 

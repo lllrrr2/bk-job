@@ -50,17 +50,17 @@ public class JobManageConfig {
     @Value("${job.edition:ee}")
     private String jobEdition;
 
-    @Value("${job.web.url:}")
-    private String jobWebUrl;
-
-    @Value("${bk.helper.url:}")
-    private String bkHelperUrl;
-
     @Value("${bk.doc.root:}")
     private String bkDocRoot;
 
     @Value("${bk.feedback.root:}")
     private String bkFeedBackRoot;
+
+    @Value("${bk.sharedResUrl:}")
+    private String bkSharedResUrl;
+
+    @Value("${bk.sharedBaseJsPath:/bk_job/base.js}")
+    private String bkSharedBaseJsPath;
 
     @Value("${bk.ce.root:https://bk.tencent.com}")
     private String bkCERoot;
@@ -77,8 +77,8 @@ public class JobManageConfig {
     @Value("${job.manage.sync.resource.watch.enabled:true}")
     private boolean enableResourceWatch;
 
-    @Value("${swagger.url:swagger.job.com}")
-    private String swaggerUrl;
+    @Value("${job.manage.sync.hostEvent.handlerNum:3}")
+    private int hostEventHandlerNum;
 
     //---------------------------- Cmdb Config ---------------------------------
     @Value("${cmdb.default.supplier.account:0}")
@@ -87,7 +87,7 @@ public class JobManageConfig {
     @Value("${cmdb.server.url:}")
     private String cmdbServerUrl;
 
-    @Value("${cmdb.app.index.path:/#/business/{appId}/index}")
+    @Value("${cmdb.app.index.path:/#/{scopeType}/{scopeId}/index}")
     private String cmdbAppIndexPath;
 
     //---------------------------- Paas Config ---------------------------------

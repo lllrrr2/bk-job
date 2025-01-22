@@ -26,6 +26,7 @@ package com.tencent.bk.job.analysis.service;
 
 import com.tencent.bk.job.analysis.consts.AnalysisConsts;
 import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
+import com.tencent.bk.job.common.iam.service.AppAuthService;
 import com.tencent.bk.job.common.iam.service.AuthService;
 import com.tencent.bk.job.common.iam.service.ResourceNameQueryService;
 import lombok.extern.slf4j.Slf4j;
@@ -33,12 +34,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Slf4j
-@Service("ResourceNameQueryService")
+@Service("jobAnalysisResourceNameQueryService")
 public class ResourceNameQueryServiceImpl implements ResourceNameQueryService {
 
     @Autowired
-    public ResourceNameQueryServiceImpl(AuthService authService) {
+    public ResourceNameQueryServiceImpl(AuthService authService, AppAuthService appAuthService) {
         authService.setResourceNameQueryService(this);
+        appAuthService.setResourceNameQueryService(this);
     }
 
     @Override

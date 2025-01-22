@@ -1,0 +1,2 @@
+helmCheck:
+  enabled: true

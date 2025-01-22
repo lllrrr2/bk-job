@@ -24,23 +24,24 @@
 
 package com.tencent.bk.job.crontab.api.esb.impl;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
+import com.tencent.bk.audit.context.AuditContext;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.exception.InternalException;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.iam.constant.ActionId;
-import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
 import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.iam.model.AuthResult;
-import com.tencent.bk.job.common.iam.service.AuthService;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
-import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.common.util.date.DateUtils;
+import com.tencent.bk.job.crontab.api.common.CronCheckUtil;
 import com.tencent.bk.job.crontab.api.esb.EsbCronJobResource;
+import com.tencent.bk.job.crontab.auth.CronAuthService;
 import com.tencent.bk.job.crontab.exception.TaskExecuteAuthFailedException;
 import com.tencent.bk.job.crontab.model.dto.CronJobInfoDTO;
 import com.tencent.bk.job.crontab.model.esb.request.EsbGetCronListRequest;
@@ -48,7 +49,7 @@ import com.tencent.bk.job.crontab.model.esb.request.EsbSaveCronRequest;
 import com.tencent.bk.job.crontab.model.esb.request.EsbUpdateCronStatusRequest;
 import com.tencent.bk.job.crontab.model.esb.response.EsbCronInfoResponse;
 import com.tencent.bk.job.crontab.service.CronJobService;
-import com.tencent.bk.sdk.iam.util.PathBuilder;
+import com.tencent.bk.job.crontab.util.CronExpressionUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,28 +68,22 @@ import java.util.stream.Collectors;
 @RestController
 public class EsbCronJobResourceImpl implements EsbCronJobResource {
 
-    private CronJobService cronJobService;
-    private MessageI18nService i18nService;
-    private AuthService authService;
+    private final CronJobService cronJobService;
+    private final CronAuthService cronAuthService;
 
     @Autowired
-    public EsbCronJobResourceImpl(CronJobService cronJobService, MessageI18nService i18nService,
-                                  AuthService authService) {
+    public EsbCronJobResourceImpl(CronJobService cronJobService,
+                                  CronAuthService cronAuthService) {
         this.cronJobService = cronJobService;
-        this.i18nService = i18nService;
-        this.authService = authService;
+        this.cronAuthService = cronAuthService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_get_cron_list"})
-    public EsbResp<List<EsbCronInfoResponse>> getCronList(EsbGetCronListRequest request) {
+    public EsbResp<List<EsbCronInfoResponse>> getCronList(String username,
+                                                          String appCode,
+                                                          EsbGetCronListRequest request) {
         if (request.validate()) {
-            AuthResult authResult = authService.auth(true, request.getUserName(), ActionId.LIST_BUSINESS,
-                ResourceTypeEnum.BUSINESS, request.getAppId().toString(), null);
-            if (!authResult.isPass()) {
-                return authService.buildEsbAuthFailResp(authResult.getRequiredActionResources());
-            }
-
             if (request.getId() != null && request.getId() > 0) {
                 CronJobInfoDTO cronJobInfoById = cronJobService.getCronJobInfoById(request.getAppId(), request.getId());
                 return EsbResp
@@ -125,8 +120,8 @@ public class EsbCronJobResourceImpl implements EsbCronJobResource {
                         request.getLastModifyTimeEnd(), "yyyy-MM-dd", ChronoUnit.SECONDS, ZoneId.systemDefault()));
                 }
                 PageData<CronJobInfoDTO> cronJobInfoPageData =
-                    cronJobService.listPageCronJobInfos(cronJobCondition, baseSearchCondition);
-                return EsbResp.buildSuccessResp(cronJobInfoPageData.getData().parallelStream()
+                    cronJobService.listPageCronJobInfosWithoutVars(cronJobCondition, baseSearchCondition);
+                return EsbResp.buildSuccessResp(cronJobInfoPageData.getData().stream()
                     .map(CronJobInfoDTO::toEsbCronInfo).collect(Collectors.toList()));
             }
         }
@@ -135,19 +130,21 @@ public class EsbCronJobResourceImpl implements EsbCronJobResource {
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_update_cron_status"})
-    public EsbResp<EsbCronInfoResponse> updateCronStatus(EsbUpdateCronStatusRequest request) {
-        String username = request.getUserName();
+    @AuditEntry(actionId = ActionId.MANAGE_CRON)
+    public EsbResp<EsbCronInfoResponse> updateCronStatus(String username,
+                                                         String appCode,
+                                                         @AuditRequestBody EsbUpdateCronStatusRequest request) {
         Long appId = request.getAppId();
         if (request.validate()) {
 
-            AuthResult authResult = authService.auth(true, request.getUserName(), ActionId.MANAGE_CRON,
-                ResourceTypeEnum.CRON, request.getId().toString(),
-                PathBuilder.newBuilder(ResourceTypeEnum.BUSINESS.getId(), appId.toString()).build());
+            AuthResult authResult = cronAuthService.authManageCron(
+                username, request.getAppResourceScope(), request.getId(), null
+            );
             if (!authResult.isPass()) {
-                return authService.buildEsbAuthFailResp(authResult.getRequiredActionResources());
+                throw new PermissionDeniedException(authResult);
             }
 
-            Boolean updateResult = null;
+            Boolean updateResult;
             try {
                 updateResult = cronJobService.changeCronJobEnableStatus(username, appId, request.getId(),
                     request.getStatus() == 1);
@@ -165,59 +162,59 @@ public class EsbCronJobResourceImpl implements EsbCronJobResource {
         throw new InternalException(ErrorCode.UPDATE_CRON_JOB_FAILED);
     }
 
+    private void checkRequest(EsbSaveCronRequest request) {
+        if (request == null) {
+            throw new InvalidParamException(
+                ErrorCode.ILLEGAL_PARAM_WITH_REASON,
+                new Object[]{
+                    "Request body cannot be null"
+                });
+        }
+        request.validate();
+        if (StringUtils.isNotBlank(request.getCronExpression())) {
+            CronCheckUtil.checkCronExpression(request.getCronExpression(), "expression");
+        }
+    }
+
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_save_cron"})
-    public EsbResp<EsbCronInfoResponse> saveCron(EsbSaveCronRequest request) {
+    @AuditEntry
+    public EsbResp<EsbCronInfoResponse> saveCron(String username,
+                                                 String appCode,
+                                                 @AuditRequestBody EsbSaveCronRequest request) {
+        boolean isUpdate = request.getId() != null && request.getId() > 0;
+        // 判断审计操作
+        AuditContext.current().updateActionId(isUpdate ? ActionId.MANAGE_CRON : ActionId.CREATE_CRON);
+
         CronJobInfoDTO cronJobInfo = new CronJobInfoDTO();
         EsbCronInfoResponse esbCronInfoResponse = new EsbCronInfoResponse();
         esbCronInfoResponse.setId(0L);
-        if (request == null || !request.validate()) {
-            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
-        }
-        Long appId = request.getAppId();
-        AuthResult authResult;
-        if (request.getId() != null && request.getId() > 0) {
-            authResult = authService.auth(true, request.getUserName(), ActionId.MANAGE_CRON, ResourceTypeEnum.CRON,
-                request.getId().toString(), PathBuilder.newBuilder(ResourceTypeEnum.BUSINESS.getId(),
-                    appId.toString()).build());
-        } else {
-            authResult = authService.auth(true, request.getUserName(), ActionId.CREATE_CRON, ResourceTypeEnum.BUSINESS,
-                request.getAppId().toString(), null);
-        }
-        if (!authResult.isPass()) {
-            return authService.buildEsbAuthFailResp(authResult.getRequiredActionResources());
-        }
+        checkRequest(request);
+
         cronJobInfo.setId(request.getId());
         cronJobInfo.setAppId(request.getAppId());
         cronJobInfo.setName(request.getName());
         cronJobInfo.setTaskPlanId(request.getPlanId());
-        cronJobInfo.setCronExpression(request.getCronExpression());
-        if (cronJobInfo.getId() == null || cronJobInfo.getId() == 0) {
-            cronJobInfo.setCreator(request.getUserName());
+        cronJobInfo.setCronExpression(CronExpressionUtil.fixExpressionForQuartz(request.getCronExpression()));
+        if (!isUpdate) {
+            cronJobInfo.setCreator(username);
             cronJobInfo.setDelete(false);
         }
         cronJobInfo.setEnable(false);
-        cronJobInfo.setLastModifyUser(request.getUserName());
+        cronJobInfo.setLastModifyUser(username);
         cronJobInfo.setLastModifyTime(DateUtils.currentTimeSeconds());
 
-        if (cronJobInfo.validate()) {
-            Long cronId = null;
-            try {
-                cronId = cronJobService.saveCronJobInfo(cronJobInfo);
-            } catch (TaskExecuteAuthFailedException e) {
-                throw new PermissionDeniedException(e.getAuthResult());
-            }
-            if (cronId > 0) {
-                esbCronInfoResponse.setId(cronId);
-                return EsbResp.buildSuccessResp(esbCronInfoResponse);
-            } else {
-                throw new InternalException(ErrorCode.UPDATE_CRON_JOB_FAILED);
-            }
+        CronJobInfoDTO result;
+        if (isUpdate) {
+            result = cronJobService.updateCronJobInfo(username, cronJobInfo);
         } else {
-            if (log.isDebugEnabled()) {
-                log.debug("Validate request failed!|{}", JobContextUtil.getDebugMessage());
-            }
-            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
+            result = cronJobService.createCronJobInfo(username, cronJobInfo);
+        }
+        if (result.getId() > 0) {
+            esbCronInfoResponse = CronJobInfoDTO.toEsbCronInfo(cronJobService.getCronJobInfoById(result.getId()));
+            return EsbResp.buildSuccessResp(esbCronInfoResponse);
+        } else {
+            throw new InternalException(ErrorCode.UPDATE_CRON_JOB_FAILED);
         }
     }
 }

@@ -36,11 +36,11 @@ import java.util.List;
 @Component
 public class WorkerConfig {
 
-    @Value("${swagger.url:swagger.job.com}")
-    private String swaggerUrl;
-
     @Value("${job.file-worker.version:0.0.1}")
     private String version;
+
+    @Value("${job.file-worker.tags:}")
+    private List<String> tagList;
 
     @Value("${job.file-worker.name:anon}")
     private String name;
@@ -50,6 +50,9 @@ public class WorkerConfig {
 
     @Value("${job.file-worker.app-id:-1}")
     private Long appId;
+
+    @Value("${job.file-worker.enabled-file-source-types:}")
+    private String enabledFileSourceTypeStr;
 
     @Value("${job.file-worker.ability-tags:}")
     private String abilityTagStr;
@@ -62,6 +65,9 @@ public class WorkerConfig {
 
     @Value("${job.file-worker.cloud-area-id:0}")
     private Long cloudAreaId;
+
+    @Value("${job.file-worker.inner-ip-protocol:}")
+    private String innerIpProtocol;
 
     @Value("${job.file-worker.inner-ip:}")
     private String innerIp;

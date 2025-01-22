@@ -24,7 +24,7 @@
 
 package com.tencent.bk.job.file.worker.api;
 
-import com.tencent.bk.job.common.annotation.InternalAPI;
+import com.tencent.bk.job.common.annotation.WorkerAPI;
 import com.tencent.bk.job.common.model.Response;
 import com.tencent.bk.job.file.worker.model.req.WorkerOffLineReq;
 import io.swagger.annotations.Api;
@@ -41,7 +41,7 @@ import java.util.List;
 @Api(tags = {"job-file-worker:api:OP"})
 @RequestMapping("/worker/api/op")
 @RestController
-@InternalAPI
+@WorkerAPI
 public interface OpResource {
 
     @ApiOperation(value = "Worker下线", produces = "application/json")

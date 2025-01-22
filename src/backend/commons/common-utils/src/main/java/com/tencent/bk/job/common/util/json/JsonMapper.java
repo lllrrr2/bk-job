@@ -29,6 +29,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.joda.JodaModule;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -41,7 +42,7 @@ import java.text.SimpleDateFormat;
 @Slf4j
 public class JsonMapper {
 
-    private ObjectMapper mapper;
+    private final ObjectMapper mapper;
 
     public JsonMapper() {
         this(null);
@@ -57,11 +58,17 @@ public class JsonMapper {
         mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
         mapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
         mapper.setDateFormat(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"));
+        mapper.registerModule(new JodaModule());
+        mapper.findAndRegisterModules();
     }
 
 
     public static JsonMapper nonEmptyMapper() {
         return new JsonMapper(Include.NON_EMPTY);
+    }
+
+    public static JsonMapper nonNullMapper() {
+        return new JsonMapper(Include.NON_NULL);
     }
 
 
@@ -74,13 +81,13 @@ public class JsonMapper {
         return new JsonMapper(Include.ALWAYS);
     }
 
-    public String toJson(Object object) {
+    public String toJson(Object object) throws JsonParseException {
 
         try {
             return mapper.writeValueAsString(object);
         } catch (IOException e) {
             log.warn("Write to json string error:" + object, e);
-            return null;
+            throw new JsonParseException(e);
         }
     }
 
@@ -94,7 +101,7 @@ public class JsonMapper {
      *
      * @see #fromJson(String, TypeReference)
      */
-    public <T> T fromJson(String jsonString, Class<T> clazz) {
+    public <T> T fromJson(String jsonString, Class<T> clazz) throws JsonParseException {
         if (StringUtils.isEmpty(jsonString)) {
             return null;
         }
@@ -103,7 +110,7 @@ public class JsonMapper {
             return mapper.readValue(jsonString, clazz);
         } catch (IOException e) {
             log.warn("Parse json string error:" + jsonString, e);
-            return null;
+            throw new JsonParseException(e);
         }
     }
 
@@ -113,31 +120,19 @@ public class JsonMapper {
      * 如果JSON字符串为Null或"null"字符串, 返回Null.
      * 如果JSON字符串为"[]", 返回空集合.
      */
-    public <T> T fromJson(String jsonString, TypeReference<T> typeReference) {
+    public <T> T fromJson(String jsonString, TypeReference<T> typeReference) throws JsonParseException {
         if (StringUtils.isEmpty(jsonString)) {
             return null;
         }
 
         try {
             return mapper.readValue(jsonString, typeReference);
-        } catch (IOException e) {
+        } catch (Throwable e) {
+            // 捕获所有异常，统一转换为JsonParseException
             log.warn("parse json string error:" + typeReference, e);
-            return null;
+            throw new JsonParseException(e);
         }
     }
-
-
-    /**
-     * 当JSON里只含有Bean的部分屬性時，更新一個已存在Bean，只覆蓋該部分的屬性.
-     */
-    public void update(String jsonString, Object object) {
-        try {
-            mapper.readerForUpdating(object).readValue(jsonString);
-        } catch (IOException e) {
-            log.warn("Update json string:" + jsonString + " to object:" + object + " error.", e);
-        }
-    }
-
 
     /**
      * 取出Mapper做进一步的设置或使用其他序列化API.

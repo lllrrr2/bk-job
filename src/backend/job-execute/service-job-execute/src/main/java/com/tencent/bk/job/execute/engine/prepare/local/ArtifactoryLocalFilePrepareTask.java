@@ -24,33 +24,19 @@
 
 package com.tencent.bk.job.execute.engine.prepare.local;
 
-import com.tencent.bk.job.common.artifactory.model.dto.NodeDTO;
 import com.tencent.bk.job.common.artifactory.sdk.ArtifactoryClient;
-import com.tencent.bk.job.common.util.FileUtil;
-import com.tencent.bk.job.common.util.ListUtil;
-import com.tencent.bk.job.common.util.file.PathUtil;
-import com.tencent.bk.job.execute.constants.Consts;
 import com.tencent.bk.job.execute.engine.prepare.JobTaskContext;
 import com.tencent.bk.job.execute.model.FileDetailDTO;
 import com.tencent.bk.job.execute.model.FileSourceDTO;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
+import com.tencent.bk.job.execute.model.StepInstanceDTO;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.helpers.FormattingTuple;
-import org.slf4j.helpers.MessageFormatter;
 
-import java.io.File;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 本地文件下载进度拉取任务调度
@@ -58,7 +44,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 public class ArtifactoryLocalFilePrepareTask implements JobTaskContext {
 
-    private final Long stepInstanceId;
+    private final StepInstanceDTO stepInstance;
     private final boolean isForRetry;
     private final List<FileSourceDTO> fileSourceList;
     private final LocalFilePrepareTaskResultHandler resultHandler;
@@ -67,39 +53,23 @@ public class ArtifactoryLocalFilePrepareTask implements JobTaskContext {
     private final String artifactoryRepo;
     private final String jobStorageRootPath;
     private final List<Future<Boolean>> futureList = new ArrayList<>();
-    public static ThreadPoolExecutor threadPoolExecutor = null;
-    public static FinalResultHandler finalResultHandler = null;
-
-    public static void init(int concurrency) {
-        if (threadPoolExecutor == null) {
-            threadPoolExecutor = new ThreadPoolExecutor(
-                concurrency,
-                concurrency,
-                180L,
-                TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(100),
-                (r, executor) -> {
-                    //使用请求的线程直接拉取数据
-                    log.error(
-                        "download localupload file from artifactory runnable rejected," +
-                            " use current thread({}), plz add more threads",
-                        Thread.currentThread().getName());
-                    r.run();
-                });
-        }
-    }
+    private final ExecutorService localFileDownloadExecutor;
+    private final ExecutorService localFileWatchExecutor;
+    public static Future<?> localFileWatchFuture = null;
 
     public ArtifactoryLocalFilePrepareTask(
-        Long stepInstanceId,
+        StepInstanceDTO stepInstance,
         boolean isForRetry,
         List<FileSourceDTO> fileSourceList,
         LocalFilePrepareTaskResultHandler resultHandler,
         ArtifactoryClient artifactoryClient,
         String artifactoryProject,
         String artifactoryRepo,
-        String jobStorageRootPath
+        String jobStorageRootPath,
+        ExecutorService localFileDownloadExecutor,
+        ExecutorService localFileWatchExecutor
     ) {
-        this.stepInstanceId = stepInstanceId;
+        this.stepInstance = stepInstance;
         this.isForRetry = isForRetry;
         this.fileSourceList = fileSourceList;
         this.resultHandler = resultHandler;
@@ -107,6 +77,8 @@ public class ArtifactoryLocalFilePrepareTask implements JobTaskContext {
         this.artifactoryProject = artifactoryProject;
         this.artifactoryRepo = artifactoryRepo;
         this.jobStorageRootPath = jobStorageRootPath;
+        this.localFileDownloadExecutor = localFileDownloadExecutor;
+        this.localFileWatchExecutor = localFileWatchExecutor;
     }
 
     @Override
@@ -120,170 +92,43 @@ public class ArtifactoryLocalFilePrepareTask implements JobTaskContext {
                 future.cancel(true);
             }
         }
-        if (finalResultHandler != null) {
-            finalResultHandler.interrupt();
+        if (localFileWatchFuture != null) {
+            localFileWatchFuture.cancel(true);
         }
     }
 
     public void execute() {
+        int localFileCount = 0;
         for (FileSourceDTO fileSourceDTO : fileSourceList) {
             if (fileSourceDTO == null) {
-                log.warn("[{}]:fileSourceDTO is null", stepInstanceId);
+                log.warn("[{}]:fileSourceDTO is null", stepInstance.getUniqueKey());
                 continue;
             }
             if (fileSourceDTO.isLocalUpload() || fileSourceDTO.getFileType() == TaskFileTypeEnum.LOCAL.getType()) {
                 List<FileDetailDTO> files = fileSourceDTO.getFiles();
                 for (FileDetailDTO file : files) {
-                    FileDownloadTask task = new FileDownloadTask(file);
-                    Future<Boolean> future = threadPoolExecutor.submit(task);
+                    LocalFileDownloadTask task = new LocalFileDownloadTask(
+                        stepInstance,
+                        artifactoryClient,
+                        artifactoryProject,
+                        artifactoryRepo,
+                        jobStorageRootPath,
+                        file
+                    );
+                    Future<Boolean> future = localFileDownloadExecutor.submit(task);
                     futureList.add(future);
+                    localFileCount += 1;
                 }
             }
         }
-        finalResultHandler = new FinalResultHandler(this, futureList, resultHandler);
-        finalResultHandler.start();
+        LocalFileDownloadResultWatcher resultWatcher = new LocalFileDownloadResultWatcher(
+            this,
+            stepInstance,
+            futureList,
+            resultHandler
+        );
+        localFileWatchFuture = localFileWatchExecutor.submit(resultWatcher);
+        log.info("[{}]: {} localFile downloadTask committed", stepInstance.getUniqueKey(), localFileCount);
     }
 
-    class FinalResultHandler extends Thread {
-
-        ArtifactoryLocalFilePrepareTask artifactoryLocalFilePrepareTask;
-        List<Future<Boolean>> futureList;
-        LocalFilePrepareTaskResultHandler resultHandler;
-
-        FinalResultHandler(
-            ArtifactoryLocalFilePrepareTask artifactoryLocalFilePrepareTask,
-            List<Future<Boolean>> futureList,
-            LocalFilePrepareTaskResultHandler resultHandler
-        ) {
-            this.artifactoryLocalFilePrepareTask = artifactoryLocalFilePrepareTask;
-            this.futureList = futureList;
-            this.resultHandler = resultHandler;
-        }
-
-        @Override
-        public void run() {
-            List<Boolean> resultList = new ArrayList<>();
-            for (Future<Boolean> future : futureList) {
-                try {
-                    resultList.add(future.get(30, TimeUnit.MINUTES));
-                } catch (InterruptedException e) {
-                    log.info("[{}]:task stopped", stepInstanceId);
-                    resultHandler.onStopped(artifactoryLocalFilePrepareTask);
-                    return;
-                } catch (ExecutionException e) {
-                    log.info("[{}]:task download failed", stepInstanceId);
-                    resultHandler.onFailed(artifactoryLocalFilePrepareTask);
-                    return;
-                } catch (TimeoutException e) {
-                    log.info("[{}]:task download timeout", stepInstanceId);
-                    resultHandler.onFailed(artifactoryLocalFilePrepareTask);
-                    return;
-                }
-            }
-            if (ListUtil.isAllTrue(resultList)) {
-                log.info("[{}]:all task success", stepInstanceId);
-                resultHandler.onSuccess(artifactoryLocalFilePrepareTask);
-            } else {
-                log.warn("[{}]:some localFile prepare tasks failed", stepInstanceId);
-                resultHandler.onFailed(artifactoryLocalFilePrepareTask);
-            }
-        }
-    }
-
-    class FileDownloadTask implements Callable<Boolean> {
-
-        private final FileDetailDTO file;
-
-        FileDownloadTask(FileDetailDTO file) {
-            this.file = file;
-        }
-
-        @Override
-        public Boolean call() {
-            try {
-                return doCall();
-            } catch (Throwable t) {
-                FormattingTuple msg = MessageFormatter.format(
-                    "[{}]:Unexpected error when prepare localFile {}",
-                    stepInstanceId,
-                    file.getFilePath()
-                );
-                log.error(msg.getMessage(), t);
-                return false;
-            }
-        }
-
-        private Boolean doCall() {
-            String filePath = file.getFilePath();
-            // 本地存储路径
-            String localPath = PathUtil.joinFilePath(jobStorageRootPath, Consts.LOCAL_FILE_DIR_NAME);
-            localPath = PathUtil.joinFilePath(localPath, filePath);
-            File localFile = new File(localPath);
-            // 如果本地文件还未下载就已存在，说明是分发配置文件，直接完成准备阶段
-            if (localFile.exists()) {
-                log.debug("[{}]:local file already exists", stepInstanceId);
-                return true;
-            }
-            // 制品库的完整路径
-            NodeDTO nodeDTO = artifactoryClient.queryNodeDetail(artifactoryProject, artifactoryRepo, filePath);
-            if (nodeDTO == null) {
-                log.warn(
-                    "[{}]:File {} not exists in project {} repo {}",
-                    stepInstanceId,
-                    filePath,
-                    artifactoryProject,
-                    artifactoryRepo
-                );
-                return false;
-            }
-            Pair<InputStream, Long> pair = artifactoryClient.getFileInputStream(
-                artifactoryProject,
-                artifactoryRepo,
-                filePath
-            );
-            InputStream ins = pair.getLeft();
-            Long length = pair.getRight();
-            Long fileSize = nodeDTO.getSize();
-            if (fileSize != null && !fileSize.equals(length)) {
-                log.warn(
-                    "[{}]:{},ins length={},node.size={}",
-                    stepInstanceId,
-                    filePath,
-                    length,
-                    nodeDTO.getSize()
-                );
-            }
-            if (fileSize == null || fileSize <= 0) {
-                fileSize = length;
-            }
-            // 保存到本地临时目录
-            AtomicInteger speed = new AtomicInteger(0);
-            AtomicInteger process = new AtomicInteger(0);
-            try {
-                log.debug(
-                    "[{}]:begin to download {} to {}",
-                    stepInstanceId,
-                    filePath,
-                    localPath
-                );
-                FileUtil.writeInsToFile(ins, localPath, fileSize, speed, process);
-                return true;
-            } catch (InterruptedException e) {
-                log.warn(
-                    "[{}]:Interrupted:Download {} to {}",
-                    stepInstanceId,
-                    filePath,
-                    localPath
-                );
-            } catch (Exception e) {
-                log.error(
-                    "[{}]:Fail to download {} to {}",
-                    stepInstanceId,
-                    filePath,
-                    localPath
-                );
-            }
-            return false;
-        }
-    }
 }

@@ -24,16 +24,19 @@
 
 package com.tencent.bk.job.logsvr.model;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.ToString;
 
 import java.util.List;
-import java.util.StringJoiner;
 
 @Getter
 @Setter
 @Builder
+@ToString
 public class FileLogQuery {
     /**
      * 作业实例创建时间,格式yyyy_MM_dd
@@ -43,34 +46,29 @@ public class FileLogQuery {
      * 作业步骤实例ID
      */
     private Long stepInstanceId;
+
     /**
-     * 执行任务的主机ip
+     * 执行任务的主机ID列表
      */
-    private String ip;
+    @Deprecated
+    @CompatibleImplementation(name = "execute_object", type = CompatibleType.HISTORY_DATA, deprecatedVersion = "3.9.x")
+    private List<Long> hostIds;
     /**
-     * 执行任务的主机ip列表
+     * 执行对象实例 ID
      */
-    private List<String> ips;
+    private List<String> executeObjectIds;
     /**
      * 执行次数
      */
     private Integer executeCount;
+    /**
+     * 滚动执行批次
+     */
+    private Integer batch;
     /**
      * 分发模式
      *
      * @see com.tencent.bk.job.logsvr.consts.FileTaskModeEnum
      */
     private Integer mode;
-
-    @Override
-    public String toString() {
-        return new StringJoiner(", ", FileLogQuery.class.getSimpleName() + "[", "]")
-            .add("jobCreateDate='" + jobCreateDate + "'")
-            .add("stepInstanceId=" + stepInstanceId)
-            .add("ip='" + ip + "'")
-            .add("ips='" + ips + "'")
-            .add("executeCount=" + executeCount)
-            .add("mode=" + mode)
-            .toString();
-    }
 }

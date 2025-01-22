@@ -24,17 +24,20 @@
 
 package com.tencent.bk.job.common.esb.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.esb.model.iam.EsbApplyPermissionDTO;
 import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.model.ValidateResult;
+import com.tencent.bk.job.common.model.error.ErrorDetailDTO;
 import com.tencent.bk.job.common.util.I18nUtil;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.function.Function;
 
@@ -79,7 +82,12 @@ public class EsbResp<T> {
         return new EsbResp<>(data);
     }
 
+    public static <T> EsbResp<T> buildSuccessResp(Integer errorCode, String message) {
+        return new EsbResp<>(errorCode, message, null);
+    }
+
     public static <T> EsbResp<T> buildCommonFailResp(Integer errorCode, Object[] errorParams, T data) {
+
         String message = I18nUtil.getI18nMessage(String.valueOf(errorCode), errorParams);
         return new EsbResp<>(errorCode, message, data);
     }
@@ -94,7 +102,8 @@ public class EsbResp<T> {
     }
 
     public static <T> EsbResp<T> buildAuthFailResult(EsbApplyPermissionDTO permission) {
-        EsbResp<T> esbResp = buildCommonFailResp(ErrorCode.BK_PERMISSION_DENIED, null, null);
+        EsbResp<T> esbResp = buildCommonFailResp(ErrorCode.BK_PERMISSION_DENIED,
+            new String[]{JobContextUtil.getUsername()}, null);
         esbResp.setPermission(permission);
         return esbResp;
     }
@@ -112,5 +121,22 @@ public class EsbResp<T> {
         newEsbResp.setResult(esbResp.getResult());
         newEsbResp.setData(converter.apply(esbResp.getData()));
         return newEsbResp;
+    }
+
+    public static <T> EsbResp<T> buildValidateFailResp(ErrorDetailDTO errorDetail) {
+        EsbResp<T> resp = buildCommonFailResp(ErrorCode.BAD_REQUEST);
+        if (errorDetail != null && errorDetail.getBadRequestDetail() != null) {
+            String errorMsg = errorDetail.getBadRequestDetail().findFirstFieldErrorDesc();
+            if (StringUtils.isNotBlank(errorMsg)) {
+                // set validation detailed message instead of common error message
+                resp.setMessage(errorMsg);
+            }
+        }
+        return resp;
+    }
+
+    @JsonIgnore
+    public boolean isSuccess() {
+        return (this.result != null && this.result) || (this.code != null && this.code == ErrorCode.RESULT_OK);
     }
 }

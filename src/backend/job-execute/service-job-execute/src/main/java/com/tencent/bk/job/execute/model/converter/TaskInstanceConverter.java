@@ -25,7 +25,9 @@
 package com.tencent.bk.job.execute.model.converter;
 
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
-import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
+import com.tencent.bk.job.common.util.ApplicationContextRegister;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
 import com.tencent.bk.job.execute.common.constants.TaskTypeEnum;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
@@ -36,24 +38,30 @@ import javax.validation.constraints.NotNull;
 import java.util.Objects;
 
 public class TaskInstanceConverter {
-    public static TaskInstanceVO convertToTaskInstanceVO(@NotNull TaskInstanceDTO taskInstanceDTO,
-                                                         @NotNull MessageI18nService i18nService) {
+    public static TaskInstanceVO convertToTaskInstanceVO(TaskInstanceDTO taskInstanceDTO) {
+        MessageI18nService i18nService = ApplicationContextRegister.getBean(MessageI18nService.class);
+        AppScopeMappingService appScopeMappingService =
+            ApplicationContextRegister.getBean(AppScopeMappingService.class);
+
         TaskInstanceVO taskInstanceVO = new TaskInstanceVO();
         taskInstanceVO.setId(taskInstanceDTO.getId());
-        taskInstanceVO.setAppId(taskInstanceDTO.getAppId());
+
+        ResourceScope resourceScope = appScopeMappingService.getScopeByAppId(taskInstanceDTO.getAppId());
+        taskInstanceVO.setScopeType(resourceScope.getType().getValue());
+        taskInstanceVO.setScopeId(resourceScope.getId());
+
         taskInstanceVO.setName(taskInstanceDTO.getName());
         taskInstanceVO.setOperator(taskInstanceDTO.getOperator());
         taskInstanceVO.setStartupMode(taskInstanceDTO.getStartupMode());
         taskInstanceVO.setStartupModeDesc(
             i18nService.getI18n(TaskStartupModeEnum.getStartupMode(taskInstanceDTO.getStartupMode()).getI18nKey()));
-        taskInstanceVO.setStatus(taskInstanceDTO.getStatus());
+        taskInstanceVO.setStatus(taskInstanceDTO.getStatus().getValue());
         taskInstanceVO.setStatusDesc(
-            i18nService.getI18n(Objects.requireNonNull(
-                RunStatusEnum.valueOf(taskInstanceDTO.getStatus())).getI18nKey()));
+            i18nService.getI18n(taskInstanceDTO.getStatus().getI18nKey()));
         taskInstanceVO.setType(taskInstanceDTO.getType());
         taskInstanceVO.setTypeDesc(
             i18nService.getI18n(Objects.requireNonNull(TaskTypeEnum.valueOf(taskInstanceDTO.getType())).getI18nKey()));
-        taskInstanceVO.setTaskId(taskInstanceDTO.getTaskId());
+        taskInstanceVO.setTaskId(taskInstanceDTO.getPlanId());
         taskInstanceVO.setTemplateId(taskInstanceDTO.getTaskTemplateId());
         taskInstanceVO.setDebugTask(taskInstanceDTO.isDebugTask());
         taskInstanceVO.setTotalTime(taskInstanceDTO.getTotalTime());
@@ -76,12 +84,11 @@ public class TaskInstanceConverter {
         serviceTaskInstance.setType(taskInstanceDTO.getType());
         serviceTaskInstance.setTypeDesc(
             i18nService.getI18n(Objects.requireNonNull(TaskTypeEnum.valueOf(taskInstanceDTO.getType())).getI18nKey()));
-        serviceTaskInstance.setStatus(taskInstanceDTO.getStatus());
+        serviceTaskInstance.setStatus(taskInstanceDTO.getStatus().getValue());
         serviceTaskInstance.setStatusDesc(
-            i18nService.getI18n(Objects.requireNonNull(RunStatusEnum.valueOf(taskInstanceDTO.getStatus()))
-                .getI18nKey()));
+            i18nService.getI18n(taskInstanceDTO.getStatus().getI18nKey()));
         serviceTaskInstance.setDebugTask(taskInstanceDTO.isDebugTask());
-        serviceTaskInstance.setTaskId(taskInstanceDTO.getTaskId());
+        serviceTaskInstance.setTaskId(taskInstanceDTO.getPlanId());
         serviceTaskInstance.setTemplateId(taskInstanceDTO.getTaskTemplateId());
         serviceTaskInstance.setStartTime(taskInstanceDTO.getStartTime());
         serviceTaskInstance.setEndTime(taskInstanceDTO.getEndTime());

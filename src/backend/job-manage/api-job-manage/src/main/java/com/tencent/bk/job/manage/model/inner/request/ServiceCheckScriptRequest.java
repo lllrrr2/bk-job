@@ -24,10 +24,14 @@
 
 package com.tencent.bk.job.manage.model.inner.request;
 
+import com.tencent.bk.job.common.validation.CheckEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import javax.validation.constraints.NotBlank;
 
 /**
  * 检查脚本集请求
@@ -40,13 +44,15 @@ public class ServiceCheckScriptRequest {
      * 脚本内容
      */
     @ApiModelProperty("脚本内容")
+    @NotBlank
     private String scriptContent;
     /**
      * 脚本类型
      *
-     * @see com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum
+     * @see com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum
      */
     @ApiModelProperty("脚本类型")
+    @CheckEnum(enumClass = ScriptTypeEnum.class, enumMethod = "isValid")
     private Integer scriptType;
 
     public ServiceCheckScriptRequest(String scriptContent, Integer scriptType) {

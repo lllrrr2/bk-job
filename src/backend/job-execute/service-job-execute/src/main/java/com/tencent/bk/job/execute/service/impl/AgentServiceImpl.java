@@ -24,61 +24,80 @@
 
 package com.tencent.bk.job.execute.service.impl;
 
-import com.tencent.bk.job.common.gse.service.QueryAgentStatusClient;
-import com.tencent.bk.job.common.model.dto.IpDTO;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.tencent.bk.job.common.gse.service.AgentStateClient;
+import com.tencent.bk.job.common.gse.service.model.HostAgentStateQuery;
+import com.tencent.bk.job.common.model.dto.HostDTO;
+import com.tencent.bk.job.common.util.ip.IpUtils;
+import com.tencent.bk.job.execute.config.GseConfig;
 import com.tencent.bk.job.execute.engine.consts.Consts;
-import com.tencent.bk.job.execute.model.ServersDTO;
 import com.tencent.bk.job.execute.service.AgentService;
+import com.tencent.bk.job.execute.service.HostService;
+import com.tencent.bk.job.manage.model.inner.ServiceHostDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 public class AgentServiceImpl implements AgentService {
-    private final QueryAgentStatusClient queryAgentStatusClient;
-    private volatile String agentBindIp;
+    private final AgentStateClient agentStateClient;
+    private final HostService hostService;
+    private final LoadingCache<String, HostDTO> agentHostCache = CacheBuilder.newBuilder()
+        .maximumSize(1).expireAfterWrite(60, TimeUnit.SECONDS).
+            build(new CacheLoader<String, HostDTO>() {
+                      @SuppressWarnings("all")
+                      @Override
+                      public HostDTO load(String key) {
+                          HostDTO agentHost = getAgentBindHost();
+                          log.info("Load agent host and save to cache:{}", agentHost);
+                          return agentHost;
+                      }
+                  }
+            );
 
     @Autowired
-    public AgentServiceImpl(QueryAgentStatusClient queryAgentStatusClient) {
-        this.queryAgentStatusClient = queryAgentStatusClient;
+    public AgentServiceImpl(@Qualifier(GseConfig.EXECUTE_BEAN_AGENT_STATE_CLIENT)
+                                AgentStateClient agentStateClient,
+                            HostService hostService) {
+        this.agentStateClient = agentStateClient;
+        this.hostService = hostService;
     }
 
     @Override
-    public String getLocalAgentBindIp() {
-        if (StringUtils.isNotBlank(agentBindIp)) {
-            return agentBindIp;
+    public HostDTO getLocalAgentHost() {
+        try {
+            String CACHE_KEY_AGENT_HOST = "agentHost";
+            HostDTO host = agentHostCache.get(CACHE_KEY_AGENT_HOST);
+            return host == null ? null : host.clone();
+        } catch (ExecutionException e) {
+            log.warn("Fail to load agentHost from cache, try to load directly", e);
+            return getAgentBindHost();
         }
-        return getAgentBindIp();
     }
 
-    @Override
-    public ServersDTO getLocalServersDTO() {
-        List<IpDTO> ipDTOList = new ArrayList<>();
-        ipDTOList.add(new IpDTO((long) Consts.DEFAULT_CLOUD_ID, getLocalAgentBindIp()));
-        ServersDTO servers = new ServersDTO();
-        servers.setStaticIpList(ipDTOList);
-        servers.setIpList(ipDTOList);
-        return servers;
-    }
-
-    private String getAgentBindIp() {
-        log.info("Get local agent bind ip!");
+    private HostDTO getAgentBindHost() {
+        log.info("Get local agent bind host!");
         synchronized (this) {
-            if (StringUtils.isNotBlank(agentBindIp)) {
-                return agentBindIp;
-            }
             String physicalMachineMultiIp;
             String nodeIP = System.getenv("BK_JOB_NODE_IP");
             if (StringUtils.isNotBlank(nodeIP)) {
@@ -92,10 +111,120 @@ public class AgentServiceImpl implements AgentService {
                 }
                 physicalMachineMultiIp = sj.toString();
             }
-            agentBindIp = queryAgentStatusClient.getHostIpByAgentStatus(physicalMachineMultiIp, Consts.DEFAULT_CLOUD_ID);
-            log.info("Local agent bind ip is {}", agentBindIp);
-            return agentBindIp;
+            ServiceHostDTO host;
+            if (physicalMachineMultiIp.contains(":")) {
+                // IPv6地址
+                // 首先转为完整无压缩格式
+                physicalMachineMultiIp = IpUtils.getFullIpv6ByCompressedOne(physicalMachineMultiIp);
+                host = getServiceHostByMultiIpv6(physicalMachineMultiIp);
+            } else {
+                // IPv4地址
+                host = getServiceHostByMultiIpv4(physicalMachineMultiIp);
+            }
+            if (host == null) {
+                log.error("Invalid host for ip: {}", physicalMachineMultiIp);
+                return null;
+            }
+            return ServiceHostDTO.toHostDTO(host);
         }
+    }
+
+    private ServiceHostDTO getServiceHostByMultiIpv4(String multiIpv4) {
+        List<HostDTO> hostIps = buildHostIps((long) Consts.DEFAULT_CLOUD_ID, multiIpv4);
+        if (CollectionUtils.isEmpty(hostIps)) {
+            log.warn("Cannot find host by multiIpv4:{}", multiIpv4);
+            return null;
+        }
+        Map<HostDTO, ServiceHostDTO> map = hostService.batchGetHosts(hostIps);
+        ServiceHostDTO aliveHost = findOneAliveHost(map.values());
+        if (aliveHost == null) {
+            log.warn("Cannot find alive hosts, use first ip of {}", multiIpv4);
+            return map.get(hostIps.get(0));
+        }
+        return aliveHost;
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    private List<HostDTO> buildHostIps(Long cloudAreaId, String multiIpv4) {
+        if (StringUtils.isBlank(multiIpv4)) {
+            return Collections.emptyList();
+        }
+        List<HostDTO> hostIps = new ArrayList<>();
+        String[] ipArr = multiIpv4.trim().split("[,;]");
+        for (String ip : ipArr) {
+            hostIps.add(new HostDTO(cloudAreaId, ip));
+        }
+        return hostIps;
+    }
+
+    private ServiceHostDTO getServiceHostByMultiIpv6(String multiIpv6) {
+        if (StringUtils.isBlank(multiIpv6)) {
+            return null;
+        }
+        String[] ipv6Arr = multiIpv6.trim().split("[,;]");
+        List<ServiceHostDTO> hosts = new ArrayList<>();
+        for (String ipv6 : ipv6Arr) {
+            hosts.add(hostService.getHostByCloudIpv6(Consts.DEFAULT_CLOUD_ID, ipv6));
+        }
+        if (CollectionUtils.isEmpty(hosts)) {
+            log.warn("Cannot find host by multiIpv6:{}", multiIpv6);
+            return null;
+        }
+        ServiceHostDTO aliveHost = findOneAliveHost(hosts);
+        if (aliveHost == null) {
+            log.warn("Cannot find alive hosts, use first ip of {}", multiIpv6);
+            return hosts.get(0);
+        }
+        return aliveHost;
+    }
+
+    /**
+     * 从多个主机中找出Agent存活的一个
+     *
+     * @param serviceHosts 主机列表
+     * @return Agent存活的第一个主机或者Null
+     */
+    private ServiceHostDTO findOneAliveHost(Collection<ServiceHostDTO> serviceHosts) {
+        if (CollectionUtils.isEmpty(serviceHosts)) {
+            return null;
+        }
+        List<HostAgentStateQuery> hostAgentStateQueryList = new ArrayList<>(serviceHosts.size());
+        Map<String, HostAgentStateQuery> hostAgentStateQueryMap = new HashMap<>(serviceHosts.size());
+        for (ServiceHostDTO serviceHost : serviceHosts) {
+            if (serviceHost == null) {
+                continue;
+            }
+            HostAgentStateQuery query = new HostAgentStateQuery();
+            query.setHostId(serviceHost.getHostId());
+            query.setBizId(serviceHost.getBizId());
+            query.setCloudIp(serviceHost.getCloudIp());
+            query.setAgentId(serviceHost.getAgentId());
+            hostAgentStateQueryList.add(query);
+            hostAgentStateQueryMap.put(serviceHost.getHostIdOrCloudIp(), query);
+        }
+        Map<String, Boolean> agentStatusMap = agentStateClient.batchGetAgentAliveStatus(hostAgentStateQueryList);
+
+        Map<String, ServiceHostDTO> effectiveAgentIdToHostMap = new HashMap<>();
+        serviceHosts.forEach(serviceHost -> {
+                HostAgentStateQuery hostAgentStateQuery = hostAgentStateQueryMap.get(serviceHost.getHostIdOrCloudIp());
+                String effectiveAgentId = agentStateClient.getEffectiveAgentId(hostAgentStateQuery);
+                effectiveAgentIdToHostMap.put(effectiveAgentId, serviceHost);
+            }
+        );
+        List<ServiceHostDTO> aliveHosts = new ArrayList<>();
+        agentStatusMap.forEach((effectiveAgentId, status) -> {
+            if (status != null && status) {
+                aliveHosts.add(effectiveAgentIdToHostMap.get(effectiveAgentId));
+            }
+        });
+        if (CollectionUtils.isEmpty(aliveHosts)) {
+            return null;
+        } else if (aliveHosts.size() > 1) {
+            ServiceHostDTO choosedHost = aliveHosts.get(0);
+            log.warn("{} aliveHosts found, use {}", aliveHosts.size(), choosedHost);
+            return choosedHost;
+        }
+        return aliveHosts.get(0);
     }
 
     private Map<String, String> getMachineIP() {
@@ -108,8 +237,8 @@ public class AgentServiceImpl implements AgentService {
                 while (allNetInterfaces.hasMoreElements()) {// 循环网卡获取网卡的IP地址
                     NetworkInterface netInterface = allNetInterfaces.nextElement();
                     String netInterfaceName = netInterface.getName();
-                    if (StringUtils.isBlank(netInterfaceName) || "lo".equalsIgnoreCase(netInterfaceName)) {// 过滤掉127
-                        // .0.0.1的IP
+                    if (StringUtils.isBlank(netInterfaceName) || "lo".equalsIgnoreCase(netInterfaceName)) {
+                        // 过滤掉127.0.0.1的IP
                         continue;
                     }
                     Enumeration<InetAddress> addresses = netInterface.getInetAddresses();

@@ -24,18 +24,26 @@
 
 package com.tencent.bk.job.file_gateway;
 
+import com.tencent.bk.job.common.service.boot.JobBootApplication;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
+import org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Slf4j
-@SpringBootApplication(scanBasePackages = "com.tencent.bk.job", exclude = {RedisAutoConfiguration.class})
+@JobBootApplication(
+    scanBasePackages = "com.tencent.bk.job.file_gateway",
+    exclude = {JooqAutoConfiguration.class, ApplicationAvailabilityAutoConfiguration.class},
+    excludeName = {"org.springframework.cloud.kubernetes.client.discovery.KubernetesDiscoveryClientAutoConfiguration"})
 @EnableCaching
-@EnableFeignClients
+@EnableFeignClients(
+    basePackages = {
+        "com.tencent.bk.job.manage.api"
+    }
+)
 @EnableScheduling
 public class JobFileGatewayBootApplication {
 

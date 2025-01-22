@@ -26,30 +26,34 @@ package com.tencent.bk.job.execute.service.impl;
 
 import com.tencent.bk.job.common.i18n.locale.LocaleUtils;
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
 import com.tencent.bk.job.common.model.dto.UserRoleInfoDTO;
+import com.tencent.bk.job.common.service.config.JobCommonConfig;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import com.tencent.bk.job.common.util.date.DateUtils;
-import com.tencent.bk.job.execute.client.ServiceNotificationResourceClient;
-import com.tencent.bk.job.execute.client.ServiceUserResourceClient;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
-import com.tencent.bk.job.execute.config.JobExecuteConfig;
+import com.tencent.bk.job.execute.engine.listener.event.TaskExecuteMQEventDispatcher;
 import com.tencent.bk.job.execute.model.NotifyDTO;
+import com.tencent.bk.job.execute.model.StepInstanceBaseDTO;
 import com.tencent.bk.job.execute.model.StepInstanceDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.TaskNotifyDTO;
 import com.tencent.bk.job.execute.service.ApplicationService;
+import com.tencent.bk.job.execute.service.FileExecuteObjectTaskService;
 import com.tencent.bk.job.execute.service.NotifyService;
+import com.tencent.bk.job.execute.service.ScriptExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceService;
 import com.tencent.bk.job.execute.service.TaskInstanceService;
-import com.tencent.bk.job.manage.common.consts.notify.ExecuteStatusEnum;
-import com.tencent.bk.job.manage.common.consts.notify.NotifyConsts;
-import com.tencent.bk.job.manage.common.consts.notify.ResourceTypeEnum;
-import com.tencent.bk.job.manage.common.consts.notify.TriggerTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskStepTypeEnum;
-import com.tencent.bk.job.manage.model.inner.ServiceNotificationMessage;
+import com.tencent.bk.job.manage.api.common.constants.notify.ExecuteStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.notify.NotifyConsts;
+import com.tencent.bk.job.manage.api.common.constants.notify.ResourceTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.notify.TriggerTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskStepTypeEnum;
+import com.tencent.bk.job.manage.api.inner.ServiceNotificationResource;
+import com.tencent.bk.job.manage.api.inner.ServiceUserResource;
 import com.tencent.bk.job.manage.model.inner.ServiceNotificationTriggerDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTemplateNotificationDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTriggerTemplateNotificationDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,7 +67,6 @@ import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -73,7 +76,7 @@ import java.util.Properties;
 import java.util.Set;
 
 @Slf4j
-@Service
+@Service("jobExecuteNotifyService")
 public class NotifyServiceImpl implements NotifyService {
     private static final Properties templatePropsEN = new Properties();
     private static final Properties templatePropsZH = new Properties();
@@ -82,24 +85,39 @@ public class NotifyServiceImpl implements NotifyService {
         loadNotifyTemplate();
     }
 
-    private final JobExecuteConfig jobExecuteConfig;
-    private final ServiceNotificationResourceClient notificationResourceClient;
-    private final ServiceUserResourceClient userResourceClient;
+    private final JobCommonConfig jobCommonConfig;
+    private final ServiceNotificationResource notificationResource;
+    private final ServiceUserResource userResource;
     private final ApplicationService applicationService;
     private final TaskInstanceService taskInstanceService;
     private final MessageI18nService i18nService;
+    private final ScriptExecuteObjectTaskService scriptExecuteObjectTaskService;
+
+    private final FileExecuteObjectTaskService fileExecuteObjectTaskService;
+    private final TaskExecuteMQEventDispatcher taskExecuteMQEventDispatcher;
+    private final StepInstanceService stepInstanceService;
 
     @Autowired
-    public NotifyServiceImpl(JobExecuteConfig jobExecuteConfig,
-                             ServiceNotificationResourceClient notificationResourceClient,
-                             ServiceUserResourceClient userResourceClient, ApplicationService applicationService,
-                             TaskInstanceService taskInstanceService, MessageI18nService i18nService) {
-        this.jobExecuteConfig = jobExecuteConfig;
-        this.notificationResourceClient = notificationResourceClient;
-        this.userResourceClient = userResourceClient;
+    public NotifyServiceImpl(JobCommonConfig jobCommonConfig,
+                             ServiceNotificationResource notificationResource,
+                             ServiceUserResource userResource,
+                             ApplicationService applicationService,
+                             TaskInstanceService taskInstanceService,
+                             MessageI18nService i18nService,
+                             ScriptExecuteObjectTaskService scriptExecuteObjectTaskService,
+                             FileExecuteObjectTaskService fileExecuteObjectTaskService,
+                             TaskExecuteMQEventDispatcher taskExecuteMQEventDispatcher,
+                             StepInstanceService stepInstanceService) {
+        this.jobCommonConfig = jobCommonConfig;
+        this.notificationResource = notificationResource;
+        this.userResource = userResource;
         this.applicationService = applicationService;
         this.taskInstanceService = taskInstanceService;
         this.i18nService = i18nService;
+        this.scriptExecuteObjectTaskService = scriptExecuteObjectTaskService;
+        this.fileExecuteObjectTaskService = fileExecuteObjectTaskService;
+        this.taskExecuteMQEventDispatcher = taskExecuteMQEventDispatcher;
+        this.stepInstanceService = stepInstanceService;
     }
 
     private static void loadNotifyTemplate() {
@@ -126,14 +144,14 @@ public class NotifyServiceImpl implements NotifyService {
             return "";
         }
         if (costInMills < 60_000) {
-            String cost = "";
+            String cost;
+            DecimalFormat df;
             if (costInMills < 1_000) {
-                DecimalFormat df = new DecimalFormat("0.000");
-                cost = df.format(costInMills / 1000.0d);
+                df = new DecimalFormat("0.000");
             } else {
-                DecimalFormat df = new DecimalFormat("#.000");
-                cost = df.format(costInMills / 1000.0d);
+                df = new DecimalFormat("#.000");
             }
+            cost = df.format(costInMills / 1000.0d);
             if (isChineseLocale()) {
                 return cost + " 秒";
             } else {
@@ -163,9 +181,6 @@ public class NotifyServiceImpl implements NotifyService {
     }
 
     private static boolean isChineseLocale() {
-//        Locale locale = LocaleContextHolder.getLocale();
-//        log.info("locale={}", locale);
-//        return (locale == null || locale.equals(Locale.SIMPLIFIED_CHINESE) || locale.equals(Locale.CHINA));
         return true;
     }
 
@@ -179,7 +194,7 @@ public class NotifyServiceImpl implements NotifyService {
         trigger.setAppId(taskNotifyDTO.getAppId());
         trigger.setTriggerUser(taskNotifyDTO.getOperator());
         Integer startupMode = taskNotifyDTO.getStartupMode();
-        if (startupMode.equals(TaskStartupModeEnum.NORMAL.getValue())) {
+        if (startupMode.equals(TaskStartupModeEnum.WEB.getValue())) {
             trigger.setTriggerType(TriggerTypeEnum.PAGE_EXECUTE.getType());
         } else if (startupMode.equals(TaskStartupModeEnum.API.getValue())) {
             trigger.setTriggerType(TriggerTypeEnum.API_INVOKE.getType());
@@ -194,63 +209,8 @@ public class NotifyServiceImpl implements NotifyService {
         return trigger;
     }
 
-    private String buildContentTemplateKey(String executeStatusKey, String channelKey) {
-        return "task." + executeStatusKey + ".msg.content.template." + channelKey;
-    }
-
-    private String buildTitleTemplateKey(String executeStatusKey, String channelKey) {
-        return "task." + executeStatusKey + ".msg.title.template." + channelKey;
-    }
-
-    private String getExecuteStatusKey(ExecuteStatusEnum executeStatus) {
-        String executeStatusKey = "";
-        if (executeStatus == ExecuteStatusEnum.FAIL) {
-            executeStatusKey = "fail";
-        } else if (executeStatus == ExecuteStatusEnum.SUCCESS) {
-            executeStatusKey = "success";
-        } else if (executeStatus == ExecuteStatusEnum.READY) {
-            executeStatusKey = "waiting";
-        }
-        return executeStatusKey;
-    }
-
-    private String getChannelKey(String channel) {
-        String channelKey = "";
-        if (StringUtils.isEmpty(channel)) {
-            return "common";
-        }
-        if (channel.equalsIgnoreCase("weixin")) {
-            channelKey = "weixin";
-        } else if (channel.equalsIgnoreCase("work-weixin")) {
-            channelKey = "weixin";
-        } else if (channel.equalsIgnoreCase("sms")) {
-            channelKey = "sms";
-        } else if (channel.equalsIgnoreCase("mail")) {
-            channelKey = "mail";
-        } else {
-            channelKey = "common";
-        }
-        return channelKey;
-    }
-
-    private String replaceTemplatePlaceHolder(String template, Map<String, String> replacements) {
-        String result = template;
-        for (Map.Entry<String, String> replacement : replacements.entrySet()) {
-            result = result.replaceAll("\\{" + replacement.getKey() + "}", replacement.getValue());
-        }
-        return result;
-    }
-
-    private String getTemplate(String key) {
-        if (isChineseLocale()) {
-            return templatePropsZH.getProperty(key);
-        } else {
-            return templatePropsEN.getProperty(key);
-        }
-    }
-
     private String buildJobExecuteDetailUrl(Long taskInstanceId) {
-        return jobExecuteConfig.getJobWebUrl() + "/api_execute/" + taskInstanceId;
+        return jobCommonConfig.getJobWebUrl() + "/api_execute/" + taskInstanceId;
     }
 
     @Override
@@ -278,7 +238,7 @@ public class NotifyServiceImpl implements NotifyService {
         triggerTemplateNotificationDTO.setTriggerDTO(trigger);
         triggerTemplateNotificationDTO.setTemplateCode(getTemplateCodeByExecuteStatus(executeStatus));
         triggerTemplateNotificationDTO.setVariablesMap(getTemplateVariablesMap(taskNotifyDTO, executeStatus));
-        notificationResourceClient.triggerTemplateNotification(triggerTemplateNotificationDTO);
+        notificationResource.triggerTemplateNotification(triggerTemplateNotificationDTO);
     }
 
     private Map<String, String> getTemplateVariablesMap(TaskNotifyDTO taskNotifyDTO, ExecuteStatusEnum executeStatus) {
@@ -293,11 +253,12 @@ public class NotifyServiceImpl implements NotifyService {
         TaskInstanceDTO taskInstanceDTO = taskInstanceService.getTaskInstance(taskNotifyDTO.getTaskInstanceId());
         variablesMap.put("task.start_time", DateUtils.formatUnixTimestampWithZone(taskInstanceDTO.getStartTime(),
             ChronoUnit.MILLIS));
-        List<Long> stepIdList = taskInstanceService.getTaskStepIdList(taskInstanceDTO.getId());
+        List<Long> stepIdList = stepInstanceService.getTaskStepIdList(taskInstanceDTO.getId());
         variablesMap.put("task.step.total_seq_cnt", "" + stepIdList.size());
-        long currentStepId = taskInstanceDTO.getCurrentStepId();
+        long currentStepId = taskInstanceDTO.getCurrentStepInstanceId();
         variablesMap.put("task.step.current_seq_id", "" + (stepIdList.indexOf(currentStepId) + 1));
-        StepInstanceDTO stepInstanceDTO = taskInstanceService.getStepInstanceDetail(currentStepId);
+        StepInstanceDTO stepInstanceDTO = stepInstanceService.getStepInstanceDetail(
+            taskInstanceDTO.getId(), currentStepId);
         if (executeStatus == ExecuteStatusEnum.FAIL || executeStatus == ExecuteStatusEnum.SUCCESS) {
             if (stepInstanceDTO.getTotalTime() != null) {
                 variablesMap.put("task.step.duration", "" + stepInstanceDTO.getTotalTime() / 1000.0);
@@ -305,15 +266,35 @@ public class NotifyServiceImpl implements NotifyService {
             if (taskInstanceDTO.getTotalTime() != null) {
                 variablesMap.put("task.total_duration", "" + taskInstanceDTO.getTotalTime() / 1000.0);
             }
-            variablesMap.put("task.step.failed_cnt", "" + stepInstanceDTO.getFailIPNum());
-            variablesMap.put("task.step.success_cnt", "" + stepInstanceDTO.getSuccessIPNum());
+            int totalTargetIpCount = stepInstanceDTO.getTargetExecuteObjectCount();
+            if (executeStatus == ExecuteStatusEnum.SUCCESS) {
+                variablesMap.put("task.step.success_cnt", "" + totalTargetIpCount);
+                variablesMap.put("task.step.failed_cnt", "" + 0);
+            } else {
+                int successIpCount = 0;
+                if (stepInstanceDTO.isScriptStep()) {
+                    successIpCount = scriptExecuteObjectTaskService.getSuccessTaskCount(
+                        stepInstanceDTO.getTaskInstanceId(),
+                        stepInstanceDTO.getId(),
+                        stepInstanceDTO.getExecuteCount()
+                    );
+                } else if (stepInstanceDTO.isFileStep()) {
+                    successIpCount = fileExecuteObjectTaskService.getSuccessTaskCount(
+                        stepInstanceDTO.getTaskInstanceId(),
+                        stepInstanceDTO.getId(),
+                        stepInstanceDTO.getExecuteCount()
+                    );
+                }
+                variablesMap.put("task.step.failed_cnt", String.valueOf(totalTargetIpCount - successIpCount));
+                variablesMap.put("task.step.success_cnt", String.valueOf(successIpCount));
+            }
         }
         // 国际化处理
         Long appId = taskNotifyDTO.getAppId();
-        ApplicationInfoDTO applicationInfoDTO = applicationService.getAppById(appId);
+        ServiceApplicationDTO applicationDTO = applicationService.getAppById(appId);
         String userLang = JobContextUtil.getUserLang();
         if (userLang == null) {
-            String appLang = applicationInfoDTO.getLanguage();
+            String appLang = applicationDTO.getLanguage();
             if ("1".equals(appLang)) {
                 userLang = LocaleUtils.LANG_ZH_CN;
             } else if ("2".equals(appLang)) {
@@ -329,11 +310,11 @@ public class NotifyServiceImpl implements NotifyService {
             locale = Locale.ENGLISH;
         }
         if (taskNotifyDTO.getResourceType() == ResourceTypeEnum.SCRIPT.getType()) {
-            variablesMap.put("task.type", i18nService.getI18n("task.type.name.fast_execute_script", locale));
+            variablesMap.put("task.type", i18nService.getI18n(locale, "task.type.name.fast_execute_script"));
         } else if (taskNotifyDTO.getResourceType() == ResourceTypeEnum.FILE.getType()) {
-            variablesMap.put("task.type", i18nService.getI18n("task.type.name.fast_push_file", locale));
+            variablesMap.put("task.type", i18nService.getI18n(locale, "task.type.name.fast_push_file"));
         } else if (taskNotifyDTO.getResourceType() == ResourceTypeEnum.JOB.getType()) {
-            variablesMap.put("task.type", i18nService.getI18n("task.type.name.job", locale));
+            variablesMap.put("task.type", i18nService.getI18n(locale, "task.type.name.job"));
         } else {
             variablesMap.put("task.type", "Unknown");
             log.error("Not supported resourceType:{}", taskNotifyDTO.getResourceType());
@@ -341,11 +322,11 @@ public class NotifyServiceImpl implements NotifyService {
         variablesMap.put("task.operator", taskNotifyDTO.getOperator());
         variablesMap.put("current.date", DateUtils.formatLocalDateTime(LocalDateTime.now(), "yyyy-MM-dd"));
         variablesMap.put("task.step.name", stepInstanceDTO.getName());
-        if (stepInstanceDTO.getStepType().equals(TaskStepTypeEnum.SCRIPT.getType())) {
+        if (stepInstanceDTO.getStepType() == TaskStepTypeEnum.SCRIPT) {
             variablesMap.put("task.step.type", i18nService.getI18n("task.step.type.name.script"));
-        } else if (stepInstanceDTO.getStepType().equals(TaskStepTypeEnum.FILE.getType())) {
+        } else if (stepInstanceDTO.getStepType() == TaskStepTypeEnum.FILE) {
             variablesMap.put("task.step.type", i18nService.getI18n("task.step.type.name.file"));
-        } else if (stepInstanceDTO.getStepType().equals(TaskStepTypeEnum.APPROVAL.getType())) {
+        } else if (stepInstanceDTO.getStepType() == TaskStepTypeEnum.APPROVAL) {
             variablesMap.put("task.step.type", i18nService.getI18n("task.step.type.name.manual_confirm"));
         }
         if (executeStatus == ExecuteStatusEnum.SUCCESS) {
@@ -354,7 +335,7 @@ public class NotifyServiceImpl implements NotifyService {
             variablesMap.put("confirm.message", String.valueOf(taskNotifyDTO.getConfirmMessage()));
             variablesMap.put("task.step.confirm_info", String.valueOf(taskNotifyDTO.getConfirmMessage()));
             Set<String> receiverSet = new HashSet<>(taskNotifyDTO.getNotifyDTO().getReceiverUsers());
-            receiverSet.addAll(userResourceClient.getUsersByRoles(
+            receiverSet.addAll(userResource.getUsersByRoles(
                 appId,
                 taskNotifyDTO.getOperator(),
                 taskNotifyDTO.getResourceType(),
@@ -364,32 +345,6 @@ public class NotifyServiceImpl implements NotifyService {
             variablesMap.put("task.step.confirmer", String.join(",", receiverSet));
         }
         return variablesMap;
-    }
-
-    private Map<String, ServiceNotificationMessage> buildNotificationMessage(ExecuteStatusEnum executeStatus,
-                                                                             Collection<String> notifyChannels,
-                                                                             Map<String, String> placeholders) {
-        Map<String, ServiceNotificationMessage> messageMap = new HashMap<>();
-        for (String notifyChannel : notifyChannels) {
-            String executeStatusKey = getExecuteStatusKey(executeStatus);
-            String channelKey = getChannelKey(notifyChannel);
-            String contentTemplateKey = buildContentTemplateKey(executeStatusKey, channelKey);
-            String titleTemplateKey = buildTitleTemplateKey(executeStatusKey, channelKey);
-            String title = getTemplate(titleTemplateKey);
-            String contentTemplate = getTemplate(contentTemplateKey);
-
-            if (StringUtils.isBlank(contentTemplate)) {
-                title = getTemplate(buildTitleTemplateKey(executeStatusKey, "common"));
-                contentTemplate = getTemplate(buildContentTemplateKey(executeStatusKey, "common"));
-            }
-
-            String content = replaceTemplatePlaceHolder(contentTemplate, placeholders);
-
-            ServiceNotificationMessage notificationMessage = new ServiceNotificationMessage(title, content);
-            messageMap.put(notifyChannel, notificationMessage);
-        }
-
-        return messageMap;
     }
 
     @Override
@@ -409,7 +364,87 @@ public class NotifyServiceImpl implements NotifyService {
             serviceTemplateNotificationDTO.setTemplateCode(NotifyConsts.NOTIFY_TEMPLATE_CODE_CONFIRMATION);
             Map<String, String> variablesMap = getTemplateVariablesMap(taskNotifyDTO, ExecuteStatusEnum.READY);
             serviceTemplateNotificationDTO.setVariablesMap(variablesMap);
-            notificationResourceClient.sendTemplateNotification(serviceTemplateNotificationDTO);
+            notificationResource.sendTemplateNotification(serviceTemplateNotificationDTO);
         }
+    }
+
+    @Override
+    public void asyncSendMQFailTaskNotification(TaskInstanceDTO taskInstance,
+                                                StepInstanceBaseDTO stepInstance) {
+        TaskNotifyDTO taskNotifyDTO = buildCommonTaskNotification(taskInstance, stepInstance);
+        taskNotifyDTO.setResourceExecuteStatus(ExecuteStatusEnum.FAIL.getStatus());
+        taskNotifyDTO.setStepName(stepInstance.getName());
+        setResourceInfo(taskInstance, stepInstance, taskNotifyDTO);
+        taskExecuteMQEventDispatcher.dispatchNotifyMsg(taskNotifyDTO);
+    }
+
+    @Override
+    public void asyncSendMQSuccessTaskNotification(TaskInstanceDTO taskInstance,
+                                                   StepInstanceBaseDTO stepInstance) {
+        TaskNotifyDTO taskNotifyDTO = buildCommonTaskNotification(taskInstance, stepInstance);
+        taskNotifyDTO.setResourceExecuteStatus(ExecuteStatusEnum.SUCCESS.getStatus());
+        taskNotifyDTO.setCost(taskInstance.getTotalTime());
+        setResourceInfo(taskInstance, stepInstance, taskNotifyDTO);
+        taskExecuteMQEventDispatcher.dispatchNotifyMsg(taskNotifyDTO);
+    }
+
+    @Override
+    public void asyncSendMQConfirmNotification(TaskInstanceDTO taskInstance,
+                                               StepInstanceBaseDTO stepInstance) {
+        StepInstanceDTO stepInstanceDetail = stepInstanceService.getStepInstanceDetail(
+            taskInstance.getId(), stepInstance.getId());
+        if (stepInstanceDetail == null) {
+            log.warn("StepInstance is not exist, stepInstanceId: {}", stepInstance.getId());
+            return;
+        }
+        TaskNotifyDTO taskNotifyDTO = buildCommonTaskNotification(taskInstance, stepInstance);
+        taskNotifyDTO.setResourceExecuteStatus(ExecuteStatusEnum.READY.getStatus());
+        taskNotifyDTO.setStepName(stepInstance.getName());
+        taskNotifyDTO.setConfirmMessage(stepInstanceDetail.getConfirmMessage());
+        NotifyDTO notifyDTO = new NotifyDTO();
+        notifyDTO.setReceiverUsers(stepInstanceDetail.getConfirmUsers());
+        notifyDTO.setReceiverRoles(stepInstanceDetail.getConfirmRoles());
+        notifyDTO.setChannels(stepInstanceDetail.getNotifyChannels());
+        notifyDTO.setTriggerUser(stepInstance.getOperator());
+        taskNotifyDTO.setNotifyDTO(notifyDTO);
+        taskNotifyDTO.setResourceId(String.valueOf(taskInstance.getPlanId()));
+        taskNotifyDTO.setResourceType(ResourceTypeEnum.JOB.getType());
+        taskNotifyDTO.setOperator(stepInstance.getOperator());
+        taskExecuteMQEventDispatcher.dispatchNotifyMsg(taskNotifyDTO);
+    }
+
+
+    private void setResourceInfo(TaskInstanceDTO taskInstance, StepInstanceBaseDTO stepInstance,
+                                 TaskNotifyDTO taskNotifyDTO) {
+        Long taskPlanId = taskInstance.getPlanId();
+        taskNotifyDTO.setResourceId(String.valueOf(taskPlanId));
+        if (taskPlanId == -1L) {
+            if (stepInstance.isScriptStep()) {
+                taskNotifyDTO.setResourceType(ResourceTypeEnum.SCRIPT.getType());
+            } else if (stepInstance.isFileStep()) {
+                taskNotifyDTO.setResourceType(ResourceTypeEnum.FILE.getType());
+            } else {
+                log.warn("notify resourceType not supported yet:{}, use Job", stepInstance.getExecuteType());
+                taskNotifyDTO.setResourceType(ResourceTypeEnum.JOB.getType());
+            }
+        } else {
+            taskNotifyDTO.setResourceType(ResourceTypeEnum.JOB.getType());
+        }
+    }
+
+    private TaskNotifyDTO buildCommonTaskNotification(TaskInstanceDTO taskInstance, StepInstanceBaseDTO stepInstance) {
+        TaskNotifyDTO taskNotifyDTO = new TaskNotifyDTO();
+        taskNotifyDTO.setAppId(taskInstance.getAppId());
+        String operator = getOperator(taskInstance.getOperator(), stepInstance.getOperator());
+        taskNotifyDTO.setOperator(operator);
+        taskNotifyDTO.setTaskInstanceId(taskInstance.getId());
+        taskNotifyDTO.setStartupMode(taskInstance.getStartupMode());
+        taskNotifyDTO.setTaskId(taskInstance.getPlanId());
+        taskNotifyDTO.setTaskInstanceName(taskInstance.getName());
+        return taskNotifyDTO;
+    }
+
+    private String getOperator(String taskOperator, String stepOperator) {
+        return StringUtils.isNotEmpty(stepOperator) ? stepOperator : taskOperator;
     }
 }

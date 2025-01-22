@@ -24,27 +24,36 @@
 
 package com.tencent.bk.job.manage.model.web.request.whiteip;
 
+import com.tencent.bk.job.common.model.dto.ResourceScope;
+import com.tencent.bk.job.manage.model.web.request.chooser.host.HostIdWithMeta;
+import com.tencent.bk.job.manage.model.web.request.whiteip.validation.CheckWhiteIpScope;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
 @ApiModel("IP白名单记录创建请求")
+@CheckWhiteIpScope
 public class WhiteIPRecordCreateUpdateReq {
 
-    @ApiModelProperty(value = "ID,更新IP白名单记录的时候需要传入，新建时不需要", required = false)
+    /**
+     * 内部字段
+     */
+    @Deprecated
+    @ApiModelProperty(value = "白名单记录 ID", hidden = true)
     private Long id;
 
-    @ApiModelProperty(value = "多个业务ID，逗号分隔", required = true)
-    private String appIdStr;
+    @ApiModelProperty(value = "是否对所有资源范围生效，默认为false")
+    private boolean allScope = false;
 
-    @ApiModelProperty(value = "云区域ID", required = true)
-    private Long cloudAreaId;
+    @ApiModelProperty(value = "多个资源范围列表")
+    private List<ResourceScope> scopeList;
 
-    @ApiModelProperty(value = "IPs(换行分隔)", required = true)
-    private String ipStr;
+    @ApiModelProperty(value = "主机列表", required = true)
+    private List<HostIdWithMeta> hostList = new ArrayList<>();
 
     @ApiModelProperty(value = "备注", required = true)
     private String remark;

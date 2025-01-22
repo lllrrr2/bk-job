@@ -45,6 +45,7 @@ import org.springframework.cloud.kubernetes.commons.discovery.KubernetesServiceI
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -53,7 +54,6 @@ public class K8SServiceInfoProvider implements ServiceInfoProvider {
     public final String KEY_HELM_NAMESPACE = "meta.helm.sh/release-namespace";
     public final String KEY_JOB_MS_VERSION = "bk.job.image/tag";
     public final String VERSION_UNKNOWN = "-";
-    public final String NAMESPACE_DEFAULT = "default";
     public final String PHASE_RUNNING = "Running";
     private final DiscoveryClient discoveryClient;
 
@@ -62,11 +62,17 @@ public class K8SServiceInfoProvider implements ServiceInfoProvider {
         log.debug("K8sServiceInfoServiceImpl inited");
     }
 
+    /**
+     * 从服务实例元数据中提取命名空间
+     *
+     * @param serviceInstance 服务实例
+     * @return 命名空间
+     */
     private String getNameSpace(ServiceInstance serviceInstance) {
         KubernetesServiceInstance k8sServiceInstance = (KubernetesServiceInstance) serviceInstance;
         String namespace = k8sServiceInstance.getNamespace();
         if (StringUtils.isNotBlank(namespace)) return namespace;
-        return serviceInstance.getMetadata().getOrDefault(KEY_HELM_NAMESPACE, NAMESPACE_DEFAULT);
+        return serviceInstance.getMetadata().getOrDefault(KEY_HELM_NAMESPACE, null);
     }
 
     private V1Pod findPodByUid(V1PodList podList, String uid) {
@@ -92,6 +98,12 @@ public class K8SServiceInfoProvider implements ServiceInfoProvider {
         return ServiceInstanceInfoDTO.STATUS_UNKNOWN;
     }
 
+    /**
+     * 通过K8s API获取服务实例（pod）状态等详细信息
+     *
+     * @param serviceInstance 服务实例
+     * @return 服务实例详细信息
+     */
     private ServiceInstanceInfoDTO getDetailFromK8s(
         ServiceInstance serviceInstance
     ) {
@@ -139,23 +151,44 @@ public class K8SServiceInfoProvider implements ServiceInfoProvider {
         return serviceInstanceInfoDTO;
     }
 
+    /**
+     * 获取所有服务实例信息
+     *
+     * @return 服务实例信息
+     */
     @Override
     public List<ServiceInstanceInfoDTO> listServiceInfo() {
+        String jobServiceSymbol = "job-";
         List<String> serviceIdList = discoveryClient.getServices();
         List<ServiceInstance> serviceInstanceList = new ArrayList<>();
         for (String serviceId : serviceIdList) {
-            serviceInstanceList.addAll(discoveryClient.getInstances(serviceId));
-        }
-        for (ServiceInstance serviceInstance : serviceInstanceList) {
-            log.debug("serviceInstance={}", JsonUtils.toJson(serviceInstance));
-        }
-        return serviceInstanceList.parallelStream().filter(serviceInstance -> {
-            if (serviceInstance.getServiceId().contains("job-gateway-management")) {
-                return false;
-            } else {
-                return serviceInstance.getServiceId().contains("job-");
+            if (serviceId.contains(jobServiceSymbol)) {
+                serviceInstanceList.addAll(discoveryClient.getInstances(serviceId));
             }
-        }).map(this::getDetailFromK8s).collect(Collectors.toList());
+        }
+        tryToLogServiceInstanceList(serviceInstanceList);
+        return serviceInstanceList.stream().filter(
+                serviceInstance -> !serviceInstance.getServiceId().contains("job-gateway-management")
+            ).filter(serviceInstance -> getNameSpace(serviceInstance) != null)
+            .map(this::getDetailFromK8s).collect(Collectors.toList());
+    }
+
+    private void tryToLogServiceInstanceList(List<ServiceInstance> serviceInstanceList) {
+        try {
+            for (ServiceInstance serviceInstance : serviceInstanceList) {
+                Map<String, String> metaData = serviceInstance.getMetadata();
+                // 清除null key，防止后续序列化失败
+                if (metaData != null && metaData.containsKey(null)) {
+                    log.debug("Ignore null key value:{}", metaData.get(null));
+                    metaData.remove(null);
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("serviceInstance={}", JsonUtils.toJson(serviceInstance));
+                }
+            }
+        } catch (Throwable t) {
+            log.warn("Fail to logServiceInstanceList", t);
+        }
     }
 
 }

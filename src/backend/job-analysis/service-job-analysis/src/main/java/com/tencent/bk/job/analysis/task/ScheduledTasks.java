@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.analysis.task;
 
+import com.tencent.bk.job.analysis.task.ai.AIChatHistoryCleanTask;
 import com.tencent.bk.job.analysis.task.analysis.AnalysisTaskScheduler;
 import com.tencent.bk.job.analysis.task.statistics.StatisticsTaskScheduler;
 import org.slf4j.Logger;
@@ -33,24 +34,22 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/**
- * @Description 增加调度需要注意到ScheduleConfig中更新线程池配置
- * @Date 2020/1/3
- * @Version 1.0
- */
-@Component
+@Component("jobAnalysisScheduledTasks")
 @EnableScheduling
 public class ScheduledTasks {
 
     private static final Logger logger = LoggerFactory.getLogger(ScheduledTasks.class);
-    private AnalysisTaskScheduler analysisTaskScheduler;
-    private StatisticsTaskScheduler statisticsTaskScheduler;
+    private final AnalysisTaskScheduler analysisTaskScheduler;
+    private final StatisticsTaskScheduler statisticsTaskScheduler;
+    private final AIChatHistoryCleanTask aiChatHistoryCleanTask;
 
     @Autowired
     public ScheduledTasks(AnalysisTaskScheduler analysisTaskScheduler,
-                          StatisticsTaskScheduler statisticsTaskScheduler) {
+                          StatisticsTaskScheduler statisticsTaskScheduler,
+                          AIChatHistoryCleanTask aiChatHistoryCleanTask) {
         this.analysisTaskScheduler = analysisTaskScheduler;
         this.statisticsTaskScheduler = statisticsTaskScheduler;
+        this.aiChatHistoryCleanTask = aiChatHistoryCleanTask;
     }
 
     /**
@@ -80,6 +79,18 @@ public class ScheduledTasks {
             analysisTaskScheduler.schedule();
         } catch (Exception e) {
             logger.error("analysisTaskSchedulerTask fail", e);
+        }
+    }
+
+    /**
+     * 定时清理用户产生的AI对话记录，1h一次
+     */
+    @Scheduled(cron = "0 20 * * * *")
+    public void aiChatHistoryCleanTask() {
+        try {
+            aiChatHistoryCleanTask.execute();
+        } catch (Exception e) {
+            logger.error("aiChatHistoryCleanTask fail", e);
         }
     }
 }

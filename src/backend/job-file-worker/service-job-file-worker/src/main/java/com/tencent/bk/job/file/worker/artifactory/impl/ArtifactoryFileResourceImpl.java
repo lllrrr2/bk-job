@@ -40,11 +40,11 @@ import com.tencent.bk.job.file.worker.artifactory.consts.ArtifactoryActionCodeEn
 import com.tencent.bk.job.file.worker.artifactory.consts.ArtifactoryNodeTypeEnum;
 import com.tencent.bk.job.file.worker.artifactory.service.ArtifactoryBaseService;
 import com.tencent.bk.job.file.worker.artifactory.service.ArtifactoryRemoteClient;
-import com.tencent.bk.job.file.worker.cos.service.MetaDataService;
-import com.tencent.bk.job.file.worker.cos.service.RemoteClient;
 import com.tencent.bk.job.file.worker.model.req.BaseReq;
 import com.tencent.bk.job.file.worker.model.req.ExecuteActionReq;
 import com.tencent.bk.job.file.worker.model.req.ListFileNodeReq;
+import com.tencent.bk.job.file.worker.service.MetaDataService;
+import com.tencent.bk.job.file.worker.service.RemoteClient;
 import com.tencent.bk.job.file_gateway.model.resp.common.FileNodesDTO;
 import com.tencent.bk.job.file_gateway.model.resp.common.FileTreeNodeDef;
 import io.micrometer.core.instrument.util.StringUtils;
@@ -98,7 +98,7 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
         ArtifactoryRemoteClient client = baseService.getArtifactoryClientFromBaseReq(req);
         List<ProjectDTO> projectDTOList = client.listProject();
         // 按名称搜索
-        projectDTOList = projectDTOList.parallelStream().filter(projectDTO -> {
+        projectDTOList = projectDTOList.stream().filter(projectDTO -> {
             String displayName = projectDTO.getDisplayName();
             String name = req.getName();
             if (null == displayName) {
@@ -126,7 +126,7 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
         mappedPageData.setStart(pageData.getStart());
         mappedPageData.setPageSize(pageData.getPageSize());
         mappedPageData.setTotal(pageData.getTotal());
-        mappedPageData.setData(pageData.getData().parallelStream().map(projectDTO -> {
+        mappedPageData.setData(pageData.getData().stream().map(projectDTO -> {
             Map<String, Object> map = new HashMap<>();
             map.put("name", projectDTO.getName());
             map.put("displayName", projectDTO.getDisplayName());
@@ -148,22 +148,26 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
                 "Parent path of repo must only contains projectName"});
         }
         if (StringUtils.isBlank(path)) {
-            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME_AND_REASON, new String[]{"path", "path" +
-                " cannot be blank"});
+            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME_AND_REASON, new String[]{
+                "path",
+                "path cannot be blank"
+            });
         }
         String projectId = path;
-        // TODO:搜索优化，当前只支持原生前缀搜索
-        com.tencent.bk.job.common.artifactory.model.dto.PageData<RepoDTO> pageData = null;
+        com.tencent.bk.job.common.artifactory.model.dto.PageData<RepoDTO> pageData;
         Integer start = req.getStart();
         Integer pageSize = req.getPageSize();
-        if (pageSize <= 0) {
-            // 不分页，全量拉取
-            pageData = client.listRepo(projectId, req.getName(), 1, Integer.MAX_VALUE);
-        } else {
-            pageData = client.listRepo(projectId, req.getName(), start / pageSize + 1, pageSize);
+        // 全量拉取
+        pageData = client.listRepo(projectId, null, 1, Integer.MAX_VALUE);
+        List<RepoDTO> repoList = pageData.getRecords();
+        // 名称搜索过滤
+        if (StringUtils.isNotBlank(req.getName())) {
+            repoList = repoList.stream()
+                .filter(repo -> repo.getName().contains(req.getName()))
+                .collect(Collectors.toList());
         }
         // 排序
-        pageData.getRecords().sort((o1, o2) -> {
+        repoList.sort((o1, o2) -> {
             if (o1 == null && o2 == null) {
                 return 0;
             } else if (o1 == null) {
@@ -174,11 +178,8 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
                 return CompareUtil.safeCompareNullBack(o2.getLastModifiedDate(), o1.getLastModifiedDate());
             }
         });
-        PageData<Map<String, Object>> mappedPageData = new PageData<>();
-        mappedPageData.setStart((pageData.getPageNumber() - 1) * pageData.getPageSize());
-        mappedPageData.setPageSize(pageData.getPageSize());
-        mappedPageData.setTotal(pageData.getTotalRecords());
-        mappedPageData.setData(pageData.getRecords().parallelStream().map(repoDTO -> {
+        // 字段映射
+        List<Map<String, Object>> repoMapList = repoList.stream().map(repoDTO -> {
             Map<String, Object> map = new HashMap<>();
             map.put("projectId", repoDTO.getProjectId());
             map.put("name", repoDTO.getName());
@@ -190,7 +191,9 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
             // 补充字段
             map.put("completePath", repoDTO.getProjectId() + "/" + repoDTO.getName());
             return map;
-        }).collect(Collectors.toList()));
+        }).collect(Collectors.toList());
+        // 内存分页
+        PageData<Map<String, Object>> mappedPageData = PageUtil.pageInMem(repoMapList, start, pageSize);
         fileNodesDTO.setPageData(mappedPageData);
     }
 
@@ -200,21 +203,37 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
         path = StringUtil.removePrefixAndSuffix(path, "/");
         String[] pathArr = path.split("/");
         if (pathArr.length < 2) {
-            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME_AND_REASON, new String[]{"path", "path" +
-                " must contain projectId and repoName"});
+            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME_AND_REASON, new String[]{
+                "path",
+                "path must contain projectId and repoName"
+            });
         }
         String projectId = pathArr[0];
         String repoName = pathArr[1];
         String fullPath = path.substring(projectId.length() + repoName.length() + 1);
-        // TODO:搜索优化
-        com.tencent.bk.job.common.artifactory.model.dto.PageData<NodeDTO> pageData = null;
+        com.tencent.bk.job.common.artifactory.model.dto.PageData<NodeDTO> pageData;
         Integer start = req.getStart();
         Integer pageSize = req.getPageSize();
+        String nameKey = req.getName();
         if (pageSize <= 0) {
             // 不分页，全量拉取
-            pageData = client.listNode(projectId, repoName, fullPath, 1, Integer.MAX_VALUE);
+            pageData = client.searchNode(
+                projectId,
+                repoName,
+                fullPath,
+                nameKey,
+                1,
+                Integer.MAX_VALUE
+            );
         } else {
-            pageData = client.listNode(projectId, repoName, fullPath, start / pageSize + 1, pageSize);
+            pageData = client.searchNode(
+                projectId,
+                repoName,
+                fullPath,
+                nameKey,
+                start / pageSize + 1,
+                pageSize
+            );
         }
         // 排序
         pageData.getRecords().sort((o1, o2) -> {
@@ -239,7 +258,7 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
         mappedPageData.setStart((pageData.getPageNumber() - 1) * pageData.getPageSize());
         mappedPageData.setPageSize(pageData.getPageSize());
         mappedPageData.setTotal(pageData.getTotalRecords());
-        mappedPageData.setData(pageData.getRecords().parallelStream().map(nodeDTO -> {
+        mappedPageData.setData(pageData.getRecords().stream().map(nodeDTO -> {
             Map<String, Object> map = new HashMap<>();
             map.put("projectId", nodeDTO.getProjectId());
             map.put("repoName", nodeDTO.getRepoName());
@@ -313,7 +332,8 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
                 projectId = (String) params.get("projectId");
             }
             if (StringUtils.isNotBlank(projectId)) {
-                deleteProject(projectId, req);
+                boolean result = deleteProject(projectId, req);
+                log.info("delete project {}:{}", projectId, result);
             } else {
                 throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME, new String[]{"projectId"});
             }
@@ -330,7 +350,8 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
             } else if (StringUtils.isBlank(repoName)) {
                 throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME, new String[]{"name"});
             } else {
-                deleteRepo(projectId, repoName, req);
+                boolean result = deleteRepo(projectId, repoName, req);
+                log.info("delete repo {}/{}:{}", projectId, repoName, result);
             }
         } else if (ArtifactoryActionCodeEnum.DELETE_NODE.name().equals(actionCode)) {
             String projectId = null;
@@ -349,7 +370,8 @@ public class ArtifactoryFileResourceImpl implements IFileResource {
             } else if (StringUtils.isBlank(fullPath)) {
                 throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM_WITH_PARAM_NAME, new String[]{"fullPath"});
             } else {
-                deleteNode(projectId, repoName, fullPath, req);
+                boolean result = deleteNode(projectId, repoName, fullPath, req);
+                log.info("delete node {}/{},{}:{}", projectId, repoName, fullPath, result);
             }
         }
         return InternalResponse.buildSuccessResp(true);

@@ -27,7 +27,6 @@ package com.tencent.bk.job.common.cc.model.req;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tencent.bk.job.common.esb.model.EsbReq;
-import com.tencent.bk.job.common.model.dto.PageDTO;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -44,8 +43,8 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public abstract class AbstractCcReq extends EsbReq {
     @JsonProperty("bk_biz_id")
-    private Long appId;
+    private Long bizId;
     private Map<String, Object> condition;
-    private PageDTO page;
+    private Page page;
     private List<String> fields;
 }

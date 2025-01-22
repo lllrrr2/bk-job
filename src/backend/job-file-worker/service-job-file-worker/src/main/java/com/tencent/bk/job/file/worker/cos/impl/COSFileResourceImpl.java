@@ -35,15 +35,15 @@ import com.tencent.bk.job.file.worker.api.IFileResource;
 import com.tencent.bk.job.file.worker.cos.JobTencentInnerCOSClient;
 import com.tencent.bk.job.file.worker.cos.consts.COSActionCodeEnum;
 import com.tencent.bk.job.file.worker.cos.consts.COSNodeTypeEnum;
-import com.tencent.bk.job.file.worker.cos.service.COSBaseService;
-import com.tencent.bk.job.file.worker.cos.service.COSRemoteClient;
-import com.tencent.bk.job.file.worker.cos.service.MetaDataService;
-import com.tencent.bk.job.file.worker.cos.service.RemoteClient;
 import com.tencent.bk.job.file.worker.model.BucketDTO;
 import com.tencent.bk.job.file.worker.model.FileDTO;
 import com.tencent.bk.job.file.worker.model.req.BaseReq;
 import com.tencent.bk.job.file.worker.model.req.ExecuteActionReq;
 import com.tencent.bk.job.file.worker.model.req.ListFileNodeReq;
+import com.tencent.bk.job.file.worker.service.COSBaseService;
+import com.tencent.bk.job.file.worker.service.COSRemoteClient;
+import com.tencent.bk.job.file.worker.service.MetaDataService;
+import com.tencent.bk.job.file.worker.service.RemoteClient;
 import com.tencent.bk.job.file_gateway.model.resp.common.FileNodesDTO;
 import com.tencent.bk.job.file_gateway.model.resp.common.FileTreeNodeDef;
 import com.tencent.cos.model.Bucket;
@@ -51,6 +51,7 @@ import com.tencent.cos.model.COSObjectSummary;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -79,7 +80,7 @@ public class COSFileResourceImpl implements IFileResource {
             JobTencentInnerCOSClient jobTencentInnerCOSClient = cosBaseService.getCOSClientFromBaseReq(req);
             List<Bucket> bucketList = jobTencentInnerCOSClient.listBuckets();
             // 根据name搜索
-            bucketList = bucketList.parallelStream().filter(
+            bucketList = bucketList.stream().filter(
                 bucketDTO -> {
                     String name = req.getName();
                     String bucketName = bucketDTO.getName();
@@ -139,7 +140,11 @@ public class COSFileResourceImpl implements IFileResource {
             jobTencentInnerCOSClient.deleteBucket(bucketName);
             return true;
         } catch (Exception e) {
-            log.error("Fail to delete bucket {}", bucketName, e);
+            String msg = MessageFormatter.format(
+                "Fail to delete bucket {}",
+                bucketName
+            ).getMessage();
+            log.error(msg, e);
             throw new InvalidParamException(e.getMessage(), ErrorCode.FAIL_TO_REQUEST_THIRD_FILE_SOURCE_DELETE_BUCKET);
         }
     }
@@ -152,7 +157,14 @@ public class COSFileResourceImpl implements IFileResource {
             jobTencentInnerCOSClient.deleteObject(bucketName, key);
             return true;
         } catch (Exception e) {
-            log.error("Fail to delete bucket {} file:{}", bucketName, key, e);
+            String msg = MessageFormatter.arrayFormat(
+                "Fail to delete bucket {} file:{}",
+                new String[]{
+                    bucketName,
+                    key
+                }
+            ).getMessage();
+            log.error(msg, e);
             throw new InvalidParamException(e.getMessage(), ErrorCode.FAIL_TO_REQUEST_THIRD_FILE_SOURCE_DELETE_OBJECT);
         }
     }
@@ -269,7 +281,7 @@ public class COSFileResourceImpl implements IFileResource {
         List<BucketDTO> bucketDTOList = listBucket(req);
         // 排序：创建时间降序
         bucketDTOList.sort((o1, o2) -> o2.getCreateDate().compareTo(o1.getCreateDate()));
-        List<Map<String, Object>> mapData = bucketDTOList.parallelStream().map(bucketDTO -> {
+        List<Map<String, Object>> mapData = bucketDTOList.stream().map(bucketDTO -> {
             Map<String, Object> map = new HashMap<>();
             map.put("name", bucketDTO.getName());
             map.put("type", bucketDTO.getXCosAcl());
@@ -317,7 +329,7 @@ public class COSFileResourceImpl implements IFileResource {
         fileDTOList.addAll(dirList);
         fileDTOList.addAll(fileList);
         // 分页
-        List<Map<String, Object>> mapData = fileDTOList.parallelStream().map(fileDTO -> {
+        List<Map<String, Object>> mapData = fileDTOList.stream().map(fileDTO -> {
             Map<String, Object> map = new HashMap<>();
             String fileName = fileDTO.getKey();
             map.put("name", fileName);

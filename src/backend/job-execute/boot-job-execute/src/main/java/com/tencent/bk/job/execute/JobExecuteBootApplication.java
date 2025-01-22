@@ -24,21 +24,25 @@
 
 package com.tencent.bk.job.execute;
 
-import com.tencent.bk.job.common.config.FeatureToggleConfig;
+import com.tencent.bk.job.common.service.boot.JobBootApplication;
+import com.tencent.devops.leaf.plugin.annotation.EnableLeafServer;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
+import org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
-/**
- * @date 2019/09/20
- */
-@SpringBootApplication(scanBasePackages = "com.tencent.bk.job", exclude = {RedisAutoConfiguration.class})
-@EnableDiscoveryClient
-@EnableFeignClients
-@EnableConfigurationProperties({FeatureToggleConfig.class})
+@JobBootApplication(
+    scanBasePackages = "com.tencent.bk.job.execute",
+    exclude = {JooqAutoConfiguration.class, ApplicationAvailabilityAutoConfiguration.class},
+    excludeName = {"org.springframework.cloud.kubernetes.client.discovery.KubernetesDiscoveryClientAutoConfiguration"})
+@EnableFeignClients(
+    basePackages = {
+        "com.tencent.bk.job.manage.api",
+        "com.tencent.bk.job.logsvr.api",
+        "com.tencent.bk.job.file_gateway.api"
+    }
+)
+@EnableLeafServer
 public class JobExecuteBootApplication {
 
     public static void main(String[] args) {

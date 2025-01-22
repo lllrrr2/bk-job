@@ -26,12 +26,14 @@ package com.tencent.bk.job.execute.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.annotation.PersistenceObject;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
  * 步骤变量值
  */
+@PersistenceObject
 @Data
 @NoArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -43,7 +45,7 @@ public class VariableValueDTO {
     @JsonProperty("type")
     private Integer type;
     @JsonProperty("serverValue")
-    private ServersDTO serverValue;
+    private ExecuteTargetDTO serverValue;
 
     public VariableValueDTO(String name, Integer type, String value) {
         this.name = name;
@@ -51,9 +53,9 @@ public class VariableValueDTO {
         this.type = type;
     }
 
-    public VariableValueDTO(String name, Integer type, ServersDTO serverValue) {
+    public VariableValueDTO(String name, Integer type, ExecuteTargetDTO executeTarget) {
         this.name = name;
         this.type = type;
-        this.serverValue = serverValue;
+        this.serverValue = executeTarget;
     }
 }

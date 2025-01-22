@@ -26,8 +26,6 @@ package com.tencent.bk.job.execute.service.impl;
 
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.model.InternalResponse;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
-import com.tencent.bk.job.execute.client.ScriptCheckResourceClient;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
 import com.tencent.bk.job.execute.model.DangerousRecordDTO;
 import com.tencent.bk.job.execute.model.ScriptCheckItemDTO;
@@ -37,11 +35,13 @@ import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.service.ApplicationService;
 import com.tencent.bk.job.execute.service.DangerousRecordService;
 import com.tencent.bk.job.execute.service.DangerousScriptCheckService;
-import com.tencent.bk.job.manage.common.consts.RuleMatchHandleActionEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptCheckErrorLevelEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.RuleMatchHandleActionEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptCheckErrorLevelEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.inner.ServiceCheckScriptResource;
 import com.tencent.bk.job.manage.model.inner.ServiceScriptCheckResultItemDTO;
 import com.tencent.bk.job.manage.model.inner.request.ServiceCheckScriptRequest;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,17 +56,17 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class DangerousScriptCheckServiceImpl implements DangerousScriptCheckService {
-    private final ScriptCheckResourceClient scriptCheckResourceClient;
+    private final ServiceCheckScriptResource scriptCheckResource;
     private final MessageI18nService messageI18nService;
     private final DangerousRecordService dangerousRecordService;
     private final ApplicationService applicationService;
 
     @Autowired
-    public DangerousScriptCheckServiceImpl(ScriptCheckResourceClient scriptCheckResourceClient,
+    public DangerousScriptCheckServiceImpl(ServiceCheckScriptResource scriptCheckResource,
                                            MessageI18nService messageI18nService,
                                            DangerousRecordService dangerousRecordService,
                                            ApplicationService applicationService) {
-        this.scriptCheckResourceClient = scriptCheckResourceClient;
+        this.scriptCheckResource = scriptCheckResource;
         this.messageI18nService = messageI18nService;
         this.dangerousRecordService = dangerousRecordService;
         this.applicationService = applicationService;
@@ -74,14 +74,9 @@ public class DangerousScriptCheckServiceImpl implements DangerousScriptCheckServ
 
     @Override
     public List<ServiceScriptCheckResultItemDTO> check(ScriptTypeEnum scriptType, String content) {
-        try {
-            InternalResponse<List<ServiceScriptCheckResultItemDTO>> response =
-                scriptCheckResourceClient.check(new ServiceCheckScriptRequest(content, scriptType.getValue()));
-            return response.isSuccess() ? response.getData() : Collections.emptyList();
-        } catch (Throwable e) {
-            // 服务降级，返回空的检查结果
-            return Collections.emptyList();
-        }
+        InternalResponse<List<ServiceScriptCheckResultItemDTO>> response =
+            scriptCheckResource.check(new ServiceCheckScriptRequest(content, scriptType.getValue()));
+        return response.isSuccess() ? response.getData() : Collections.emptyList();
     }
 
     @Override
@@ -99,8 +94,8 @@ public class DangerousScriptCheckServiceImpl implements DangerousScriptCheckServ
         List<String> checkResultDescList =
             checkResults.stream().filter(checkResult
                 -> ScriptCheckErrorLevelEnum.FATAL.getValue() == checkResult.getLevel())
-            .map(checkResult -> buildScriptCheckResultDetail(stepName, checkResult))
-            .collect(Collectors.toList());
+                .map(checkResult -> buildScriptCheckResultDetail(stepName, checkResult))
+                .collect(Collectors.toList());
         if (CollectionUtils.isEmpty(checkResultDescList)) {
             return "";
         }
@@ -134,7 +129,7 @@ public class DangerousScriptCheckServiceImpl implements DangerousScriptCheckServ
         record.setRuleExpression(checkResultItem.getRuleExpression());
         record.setAction(checkResultItem.getAction());
         record.setAppId(taskInstance.getAppId());
-        ApplicationInfoDTO app = applicationService.getAppById(taskInstance.getAppId());
+        ServiceApplicationDTO app = applicationService.getAppById(taskInstance.getAppId());
         if (app != null) {
             record.setAppName(app.getName());
         }
@@ -146,7 +141,7 @@ public class DangerousScriptCheckServiceImpl implements DangerousScriptCheckServ
             record.setClient("bk_job");
         }
         record.setOperator(taskInstance.getOperator());
-        record.setScriptLanguage(stepInstance.getScriptType());
+        record.setScriptLanguage(stepInstance.getScriptType().getValue());
         record.setScriptContent(stepInstance.getScriptContent());
 
         List<ScriptCheckItemDTO> checkItems = new ArrayList<>(1);

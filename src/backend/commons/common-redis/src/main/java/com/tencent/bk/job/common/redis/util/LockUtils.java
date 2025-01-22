@@ -35,12 +35,15 @@ import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 /**
- * @since 20/1/2020 10:49
+ * 分布式锁工具类
  */
 @Slf4j
 public class LockUtils {
 
-    private static final String LOCK_PREFIX = "job:util:lock:";
+    /**
+     * 分布式锁 key 的前缀
+     */
+    public static final String LOCK_KEY_PREFIX = "job:util:lock:";
     private static final Long RELEASE_SUCCESS = 1L;
     private static StringRedisTemplate redisTemplate = null;
     private static RedisScript<Long> unlockScript = null;
@@ -69,28 +72,16 @@ public class LockUtils {
      * @return 是否获取成功
      */
     public static boolean tryGetDistributedLock(String lockKey, String requestId, long expireTimeMillis) {
-        Boolean result = redisTemplate.opsForValue().setIfAbsent(LOCK_PREFIX + lockKey, requestId, expireTimeMillis,
-            TimeUnit.MILLISECONDS);
-        if (result != null) {
-            return result;
-        } else {
-            return false;
-        }
-    }
-
-    /**
-     * 尝试获取分布式锁
-     *
-     * @param prefix           锁前缀
-     * @param lockKey          锁
-     * @param requestId        请求标识
-     * @param expireTimeMillis 超期时间(毫秒)
-     * @return 是否获取成功
-     */
-    public static boolean tryGetDistributedLock(String prefix, String lockKey, String requestId,
-                                                long expireTimeMillis) {
-        Boolean result = redisTemplate.opsForValue().setIfAbsent(prefix + lockKey, requestId, expireTimeMillis,
-            TimeUnit.MILLISECONDS);
+        String realKey = LOCK_KEY_PREFIX + lockKey;
+        Boolean result = redisTemplate.opsForValue()
+            .setIfAbsent(realKey, requestId, expireTimeMillis, TimeUnit.MILLISECONDS);
+        log.debug(
+            "set redis key {} to {}, expireTimeMillis={}, result={}",
+            realKey,
+            requestId,
+            expireTimeMillis,
+            result
+        );
         if (result != null) {
             return result;
         } else {
@@ -101,15 +92,13 @@ public class LockUtils {
     /**
      * 获取分布式锁(阻塞)
      *
-     * @param prefix           锁前缀
      * @param lockKey          锁名称
      * @param requestId        请求标识
      * @param expireTimeMillis 锁过期时间(毫秒)
      * @param timeoutSeconds   获取锁超时时间(秒)
      * @return 是否获取成功
      */
-    public static boolean lock(String prefix, String lockKey, String requestId, long expireTimeMillis,
-                               int timeoutSeconds) {
+    public static boolean lock(String lockKey, String requestId, long expireTimeMillis, int timeoutSeconds) {
         while (timeoutSeconds > 0) {
             boolean result = tryGetDistributedLock(lockKey, requestId, expireTimeMillis);
             if (!result) {
@@ -131,20 +120,8 @@ public class LockUtils {
      * @return 是否释放成功
      */
     public static boolean releaseDistributedLock(String lockKey, String requestId) {
-        Long result = redisTemplate.execute(unlockScript, Collections.singletonList(LOCK_PREFIX + lockKey), requestId);
-        return RELEASE_SUCCESS.equals(result);
-    }
-
-    /**
-     * 释放分布式锁
-     *
-     * @param prefix    锁前缀
-     * @param lockKey   锁
-     * @param requestId 请求标识
-     * @return 是否释放成功
-     */
-    public static boolean releaseDistributedLock(String prefix, String lockKey, String requestId) {
-        Long result = redisTemplate.execute(unlockScript, Collections.singletonList(prefix + lockKey), requestId);
+        Long result = redisTemplate.execute(unlockScript, Collections.singletonList(LOCK_KEY_PREFIX + lockKey),
+            requestId);
         return RELEASE_SUCCESS.equals(result);
     }
 
@@ -155,18 +132,7 @@ public class LockUtils {
      * @return 是否释放成功
      */
     public static boolean forceReleaseDistributedLock(String lockKey) {
-        return forceReleaseDistributedLock(LOCK_PREFIX, lockKey);
-    }
-
-    /**
-     * 强制释放分布式锁
-     *
-     * @param prefix  锁前缀
-     * @param lockKey 锁
-     * @return 是否释放成功
-     */
-    public static boolean forceReleaseDistributedLock(String prefix, String lockKey) {
-        Boolean result = redisTemplate.delete(prefix + lockKey);
+        Boolean result = redisTemplate.delete(LOCK_KEY_PREFIX + lockKey);
         if (result != null) {
             return result;
         } else {
@@ -175,32 +141,35 @@ public class LockUtils {
     }
 
     /**
-     * 尝试获取可重入锁
+     * 尝试获取可重入锁,可重试
      *
-     * @param lockKey   锁
-     * @param requestId 请求ID
+     * @param lockKey          锁
+     * @param requestId        请求ID
+     * @param expireTimeMillis 锁超时时间
      * @return 是否获取成功
      */
     public static boolean tryGetReentrantLock(String lockKey, String requestId, long expireTimeMillis) {
-        int maxWaitingSeconds = 30;
-        while (maxWaitingSeconds > 0) {
+        int remainSeconds = 30;
+        while (remainSeconds > 0) {
             try {
                 //可重入锁判断
-                if (requestId != null && !requestId.isEmpty() && isReentrantLock(lockKey, requestId)) {
+                if (requestId != null && !requestId.isEmpty() && isHoldReentrantLock(lockKey, requestId)) {
                     return true;
                 }
-                return tryGetDistributedLock("", lockKey, requestId, expireTimeMillis);
+                return tryGetDistributedLock(lockKey, requestId, expireTimeMillis);
             } catch (Throwable e) {
+                String realLockKey = LOCK_KEY_PREFIX + lockKey;
                 if (e instanceof RedisException || e instanceof RedisSystemException) {
                     // Redis 故障
-                    String errorMsg = "Get lock from redis error! lockKey: " + lockKey + ", requestId: " + requestId
-                        + "! Block 1s until redis is up";
+                    String errorMsg = "Get lock from redis error! lockKey: " + realLockKey + ", requestId: "
+                        + requestId + "! Block 1s until redis is up";
                     log.error(errorMsg, e);
-                    maxWaitingSeconds -= 5;
+                    remainSeconds -= 1;
                     ThreadUtils.sleep(1000L);
                 } else {
                     // 非Redis原因导致的异常
-                    String errorMsg = "Get lock from redis error! lockKey: " + lockKey + ", requestId: " + requestId;
+                    String errorMsg = "Get lock from redis error! lockKey: " + realLockKey
+                        + ", requestId: " + requestId;
                     log.error(errorMsg, e);
                     return false;
                 }
@@ -210,10 +179,11 @@ public class LockUtils {
     }
 
     /**
-     * 是否为重入锁
+     * 是否已持有重入锁
      */
-    private static boolean isReentrantLock(String key, String originValue) {
-        String v = redisTemplate.opsForValue().get(key);
+    private static boolean isHoldReentrantLock(String lockKey, String originValue) {
+        String v = redisTemplate.opsForValue().get(LOCK_KEY_PREFIX + lockKey);
         return originValue.equals(v);
     }
+
 }

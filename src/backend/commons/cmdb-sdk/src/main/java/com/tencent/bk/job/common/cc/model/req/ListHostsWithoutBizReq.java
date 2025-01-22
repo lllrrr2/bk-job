@@ -25,9 +25,8 @@
 package com.tencent.bk.job.common.cc.model.req;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.tencent.bk.job.common.cc.model.ConditionDTO;
+import com.tencent.bk.job.common.cc.model.filter.PropertyFilterDTO;
 import com.tencent.bk.job.common.esb.model.EsbReq;
-import com.tencent.bk.job.common.model.dto.PageDTO;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -38,11 +37,21 @@ import java.util.List;
 @Setter
 public class ListHostsWithoutBizReq extends EsbReq {
     @JsonProperty("host_property_filter")
-    private ConditionDTO condition;
+    private PropertyFilterDTO condition;
 
     @JsonProperty("fields")
-    private List<String> fields = Arrays.asList("bk_host_id", "bk_host_innerip", "bk_host_name", "bk_os_name",
-        "bk_cloud_id");
+    private List<String> fields = Arrays.asList(
+        "bk_host_id",
+        "bk_host_innerip",
+        "bk_host_innerip_v6",
+        "bk_agent_id",
+        "bk_host_name",
+        "bk_os_name",
+        "bk_os_type",
+        "bk_cloud_id",
+        "bk_cloud_vendor",
+        "last_time"
+    );
 
-    private PageDTO page;
+    private Page page;
 }

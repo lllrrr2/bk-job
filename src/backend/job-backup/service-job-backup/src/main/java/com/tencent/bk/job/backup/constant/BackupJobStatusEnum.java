@@ -66,14 +66,14 @@ public enum BackupJobStatusEnum {
     PROCESSING(5),
 
     /**
-     * 处理成功
+     * 全部处理成功
      */
-    SUCCESS(6),
+    ALL_SUCCESS(6),
 
     /**
-     * 处理失败
+     * 全部处理失败
      */
-    FAILED(7),
+    ALL_FAILED(7),
 
     /**
      * 已取消
@@ -83,12 +83,17 @@ public enum BackupJobStatusEnum {
     /**
      * 已完成
      */
-    FINISHED(9);
+    FINISHED(9),
+
+    /**
+     * 部分成功/失败
+     */
+    PARTIAL_FAILED(10);
 
     @JsonValue
     private final Integer status;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static BackupJobStatusEnum valueOf(Integer status) {
         for (BackupJobStatusEnum value : values()) {
             if (value.getStatus().equals(status)) {

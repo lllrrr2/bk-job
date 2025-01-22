@@ -17,18 +17,47 @@ data:
           name: {{ .Values.job.security.actuator.user.name }}
           password: {{ .Values.job.security.actuator.user.password }}
           roles: ENDPOINT_ADMIN
+      sleuth:
+        otel:
+          exporter:
+            enabled: {{ .Values.job.trace.report.enabled }}
+            otlp:
+              endpoint: {{ .Values.job.trace.report.pushUrl }}
+          resource:
+            bkDataToken: {{ .Values.job.trace.report.secureKey }}
+          config:
+            traceIdRatioBased: {{ .Values.job.trace.report.ratio }}
+    bk:
+      bkDomain: {{ .Values.global.bkDomain }}
+      bkHelperLink: {{ .Values.global.bkHelperLink }}
     app:
-      code: {{ .Values.app.code }}
-      secret: {{ .Values.app.secret }}
+      code: {{ .Values.appCode }}
+      secret: {{ .Values.appSecret }}
     esb:
       service:
         url: {{ .Values.bkComponentApiUrl }}
+        publicUrl: {{ .Values.bkComponentApiUrl }}
+    bkApiGateway:
+      gse:
+        url: {{ .Values.bkGseApiGatewayUrl }}
+      bkNotice:
+        url: {{ .Values.bkNoticeApiGatewayUrl }}
+      bkAIDev:
+        url: {{ .Values.bkAIDevApiGatewayUrl }}
+        appCode: {{ .Values.bkAIDevAppCode }}
+        appSecret: {{ .Values.bkAIDevAppSecret }}
+      cmdb:
+        url: {{ .Values.bkCmdbApiGatewayUrl }}
+      bkApiGateway:
+        url: {{ .Values.bkApiGatewayConfig.url }}
     gse:
+      enabled: {{ .Values.gse.enabled }}
       cache:
         apiserver:
           host: {{ .Values.gse.cacheApiServer.host }}
           port: {{ .Values.gse.cacheApiServer.port }}
       ssl:
+        enabled: {{ .Values.gse.ssl.enabled }}
         keystore:
           password: ${gse.keystore.password}
           path: "/data/job/cert/gse_job_api_client.keystore"
@@ -47,17 +76,31 @@ data:
           connect:
             string: {{ .Values.gse.server.zookeeper.connect.string }}
       query:
-        threads:
-          num: {{ .Values.gse.query.threads.num }}
-        batchSize: {{ .Values.gse.query.batchSize }}
+        {{- toYaml .Values.gse.query | nindent 8 }}
       script:
         rootPath: {{ .Values.gse.script.rootPath }}
     iam:
+      web-url: {{ .Values.bkIamUrl }}
       base-url: {{ .Values.bkIamApiUrl }}
-      system-id: {{ .Values.app.code }}
+      system-id: {{ .Values.iam.systemId }}
+    audit:
+      enabled: {{ .Values.audit.enabled }}
+      system-id: {{ .Values.audit.systemId }}
     paas:
+      server:
+        url: {{ .Values.bkPaasUrl }}
       login:
+        {{- if .Values.login.custom.enabled }}
+        custom:
+          enabled: {{ .Values.login.custom.enabled }}
+          login-url: {{ .Values.login.custom.loginUrl }}
+          api-url: {{ .Values.login.custom.apiUrl }}
+          token-name: {{ .Values.login.custom.tokenName }}
+        {{- else }}
         url: {{ .Values.bkLoginUrl }}
+        {{- end }}
+    bkNotice:
+      enabled: {{ .Values.bkNotice.enabled }}
     job:
       security:
         service:
@@ -65,35 +108,36 @@ data:
           public-key-base64: {{ .Values.job.security.publicKeyBase64 }}
       edition: {{ .Values.job.edition }}
       encrypt:
+        type: {{ .Values.job.encrypt.type }}
         password: {{ .Values.job.encrypt.password }}
       web:
         url: {{ include "job.web.url" . }}
-      feature:
-        file-manage:
-          enabled: {{ .Values.job.feature.toggle.fileManage.enabled }}
       storage:
-        root-path: {{ .Values.job.storage.rootPath }}
+        root-path: {{ .Values.persistence.localStorage.path }}/local
     cmdb:
-     app:
-       index:
-         path: {{ .Values.cmdb.app.index.path }}
-     interface:
-       briefCacheTopo:
-         enabled: {{ .Values.cmdb.interface.briefCacheTopo.enabled }}
-       findHostRelation:
-         longTerm:
-           concurrency: {{ .Values.cmdb.interface.findHostRelation.longTerm.concurrency }}
-       flowControl:
-         default:
-           limit: {{ .Values.cmdb.interface.flowControl.default.limit }}
-         enabled: {{ .Values.cmdb.interface.flowControl.enabled }}
-       retry:
-         enabled: {{ .Values.cmdb.interface.retry.enabled }}
-     query:
-       threads:
-         num: {{ .Values.cmdb.query.threads.num }}
-     server:
-       url: {{ .Values.bkCmdbUrl }}
+      default:
+        supplier:
+          account: {{ .Values.cmdb.supplierAccount }}
+      app:
+        index:
+          path: {{ .Values.cmdb.app.index.path }}
+      interface:
+        briefCacheTopo:
+          enabled: {{ .Values.cmdb.interface.briefCacheTopo.enabled }}
+        findHostRelation:
+          longTerm:
+            concurrency: {{ .Values.cmdb.interface.findHostRelation.longTerm.concurrency }}
+        flowControl:
+          default:
+            limit: {{ .Values.cmdb.interface.flowControl.default.limit }}
+          enabled: {{ .Values.cmdb.interface.flowControl.enabled }}
+        retry:
+          enabled: {{ .Values.cmdb.interface.retry.enabled }}
+      query:
+        threads:
+          num: {{ .Values.cmdb.query.threads.num }}
+      server:
+        url: {{ .Values.bkCmdbUrl }}
     nodeman:
       server:
         url: {{ .Values.bkNodemanUrl }}
@@ -112,9 +156,27 @@ data:
         download:
           concurrency: {{ .Values.localFile.artifactory.download.concurrency }}
         repo: {{ .Values.localFile.artifactory.repo }}
+      expire-delete: {{ .Values.localFile.expireDelete }}
+      expire-days: {{ .Values.localFile.expireDays }}
     swagger:
       url: {{ .Values.swagger.url }}
     management:
       metrics:
         tags:
           application: ${spring.application.name}
+    log:
+      # 服务后台日志保留的小时数，默认48小时（2天）
+      keep-hours: {{ .Values.log.keepHours }}
+      # 根据磁盘占用量自动清理后台日志相关配置
+      clear-by-volume-usage:
+        # 是否开启自动清理任务，默认开启
+        enabled: {{ .Values.log.clearByVolumeUsage.enabled }}
+        # 服务后台日志可使用的最大磁盘空间（超出后将清理最旧的日志文件，但每类日志文件至少保留一个），单位支持B、KB、MB、GB、TB、PB，默认40GB
+        max-volume: {{ .Values.log.clearByVolumeUsage.maxVolume }}
+    jvm-diagnostic-file:
+      # 根据最后修改时间清理
+      clear-by-last-modify-time:
+        # 是否开启自动清理任务，默认开启
+        enabled: {{ .Values.jvmDiagnosticFile.clearByLastModifyTime.enabled }}
+        # JVM诊断文件保留的小时数，默认168小时（7天）
+        keep-hours: {{ .Values.jvmDiagnosticFile.clearByLastModifyTime.keepHours }}

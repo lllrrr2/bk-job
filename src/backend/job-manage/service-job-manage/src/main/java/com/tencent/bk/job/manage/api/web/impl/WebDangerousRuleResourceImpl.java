@@ -24,11 +24,14 @@
 
 package com.tencent.bk.job.manage.api.web.impl;
 
-import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
+import com.tencent.bk.audit.annotations.ActionAuditRecord;
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.job.common.audit.constants.EventContentConstants;
+import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.model.Response;
-import com.tencent.bk.job.common.model.ValidateResult;
 import com.tencent.bk.job.manage.api.web.WebDangerousRuleResource;
+import com.tencent.bk.job.manage.model.dto.globalsetting.DangerousRuleDTO;
+import com.tencent.bk.job.manage.model.query.DangerousRuleQuery;
 import com.tencent.bk.job.manage.model.web.request.globalsetting.AddOrUpdateDangerousRuleReq;
 import com.tencent.bk.job.manage.model.web.request.globalsetting.MoveDangerousRuleReq;
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.DangerousRuleVO;
@@ -42,45 +45,59 @@ import java.util.List;
 @RestController
 @Slf4j
 public class WebDangerousRuleResourceImpl implements WebDangerousRuleResource {
-    private DangerousRuleService dangerousRuleService;
-    private MessageI18nService i18nService;
+    private final DangerousRuleService dangerousRuleService;
 
     @Autowired
-    public WebDangerousRuleResourceImpl(DangerousRuleService dangerousRuleService,
-                                        MessageI18nService i18nService) {
+    public WebDangerousRuleResourceImpl(DangerousRuleService dangerousRuleService) {
         this.dangerousRuleService = dangerousRuleService;
-        this.i18nService = i18nService;
     }
 
     @Override
-    public Response<List<DangerousRuleVO>> listDangerousRules(String username) {
-        return Response.buildSuccessResp(dangerousRuleService.listDangerousRules(username));
+    @AuditEntry(actionId = ActionId.HIGH_RISK_DETECT_RULE)
+    @ActionAuditRecord(
+        actionId = ActionId.HIGH_RISK_DETECT_RULE,
+        content = EventContentConstants.VIEW_HIGH_RISK_DETECT_RULE
+    )
+    public Response<List<DangerousRuleVO>> listDangerousRules(String username,
+                                                              String expression,
+                                                              String description,
+                                                              List<Byte> scriptTypeList,
+                                                              List<Byte> action) {
+        DangerousRuleQuery query = DangerousRuleQuery.builder()
+            .expression(expression)
+            .description(description)
+            .scriptTypeList(scriptTypeList)
+            .action(action)
+            .build();
+        return Response.buildSuccessResp(dangerousRuleService.listDangerousRules(query));
+    }
+
+
+    @Override
+    @AuditEntry(actionId = ActionId.HIGH_RISK_DETECT_RULE)
+    public Response<DangerousRuleVO> createDangerousRule(String username, AddOrUpdateDangerousRuleReq req) {
+        DangerousRuleDTO dangerousRule = dangerousRuleService.createDangerousRule(username, req);
+        return Response.buildSuccessResp(dangerousRule.toVO());
     }
 
     @Override
-    public Response<Boolean> addOrUpdateDangerousRule(String username, AddOrUpdateDangerousRuleReq req) {
-        ValidateResult validateResult = checkAddOrUpdateDangerousRuleReq(req);
-        if (!validateResult.isPass()) {
-            throw new InvalidParamException(validateResult);
-        }
-        return Response.buildSuccessResp(dangerousRuleService.addOrUpdateDangerousRule(username, req));
-    }
-
-    private ValidateResult checkAddOrUpdateDangerousRuleReq(AddOrUpdateDangerousRuleReq req) {
-//        if (req.getId() == null || req.getId() == -1) {
-//            // 新增
-//        } else {
-//
-//        }
-        return ValidateResult.pass();
+    @AuditEntry(actionId = ActionId.HIGH_RISK_DETECT_RULE)
+    public Response<DangerousRuleVO> updateDangerousRule(String username,
+                                                         Long id,
+                                                         AddOrUpdateDangerousRuleReq req) {
+        req.setId(id);
+        DangerousRuleDTO dangerousRule = dangerousRuleService.updateDangerousRule(username, req);
+        return Response.buildSuccessResp(dangerousRule.toVO());
     }
 
     @Override
+    @AuditEntry(actionId = ActionId.HIGH_RISK_DETECT_RULE)
     public Response<Integer> moveDangerousRule(String username, MoveDangerousRuleReq req) {
         return Response.buildSuccessResp(dangerousRuleService.moveDangerousRule(username, req));
     }
 
     @Override
+    @AuditEntry(actionId = ActionId.HIGH_RISK_DETECT_RULE)
     public Response<Integer> deleteDangerousRuleById(String username, Long id) {
         return Response.buildSuccessResp(dangerousRuleService.deleteDangerousRuleById(username, id));
     }

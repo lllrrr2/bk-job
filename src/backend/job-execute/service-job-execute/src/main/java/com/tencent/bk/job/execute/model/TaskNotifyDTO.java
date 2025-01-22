@@ -26,13 +26,17 @@ package com.tencent.bk.job.execute.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
+import com.tencent.bk.job.execute.engine.listener.event.JobMessage;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 作业执行结果消息通知
+ */
 @Getter
 @Setter
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
-public class TaskNotifyDTO {
+public class TaskNotifyDTO implements JobMessage {
     /**
      * 操作者
      */
@@ -59,7 +63,7 @@ public class TaskNotifyDTO {
     /**
      * 资源操作结果
      *
-     * @see com.tencent.bk.job.manage.common.consts.notify.ExecuteStatusEnum
+     * @see com.tencent.bk.job.manage.api.common.constants.notify.ExecuteStatusEnum
      */
     private Integer resourceExecuteStatus;
     /**

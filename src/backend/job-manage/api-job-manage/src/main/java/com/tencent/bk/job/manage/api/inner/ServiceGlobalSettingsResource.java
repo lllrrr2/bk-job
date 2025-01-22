@@ -26,19 +26,33 @@ package com.tencent.bk.job.manage.api.inner;
 
 import com.tencent.bk.job.common.annotation.InternalAPI;
 import com.tencent.bk.job.common.model.InternalResponse;
+import com.tencent.bk.job.manage.model.inner.ServiceFileUploadSettingDTO;
+import com.tentent.bk.job.common.api.feign.annotation.SmartFeignClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 @Api(tags = {"job-manage:service:GlobalSettings"})
-@RequestMapping("/service/globalSettings")
-@RestController
+@SmartFeignClient(value = "job-manage", contextId = "globalSettingsResource")
 @InternalAPI
 public interface ServiceGlobalSettingsResource {
 
+    /**
+     * 获取文档中心基础Url
+     * Deprecated：3.9.x中不推荐使用，3.10.x中下线，请使用getDocJobRootUrl
+     *
+     * @return 文档中心基础Url
+     */
+    @Deprecated
     @ApiOperation(value = "获取文档中心基础Url", produces = "application/json")
-    @GetMapping("/docCenterBaseUrl")
+    @GetMapping("/service/globalSettings/docCenterBaseUrl")
     InternalResponse<String> getDocCenterBaseUrl();
+
+    @ApiOperation(value = "获取文档中心Job文档基础Url", produces = "application/json")
+    @GetMapping("/service/globalSettings/docJobRootUrl")
+    InternalResponse<String> getDocJobRootUrl();
+
+    @ApiOperation(value = "获取文件上传设置", produces = "application/json")
+    @GetMapping("/service/globalSettings/fileUploadSettings")
+    InternalResponse<ServiceFileUploadSettingDTO> getFileUploadSettings();
 }

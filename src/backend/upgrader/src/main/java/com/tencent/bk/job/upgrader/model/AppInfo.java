@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.upgrader.model;
 
+import com.tencent.bk.job.common.model.dto.ApplicationAttrsDO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -32,7 +33,44 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AppInfo {
+
     private Long id;
 
+    /**
+     * 资源范围类型
+     */
+    private String scopeType;
+
+    /**
+     * 资源范围ID,比如cmdb业务ID、cmdb业务集ID
+     */
+    private String scopeId;
+
+    /**
+     * 业务名称
+     */
     private String name;
+
+    /**
+     * 运维
+     */
+    private String maintainers;
+
+    private String owner;
+
+    /**
+     * 时区
+     */
+    private String timeZone;
+
+    /**
+     * 语言
+     */
+    private String language;
+
+    /**
+     * 业务属性
+     */
+    private ApplicationAttrsDO attrs;
+
 }

@@ -1,4 +1,4 @@
-{{- if .Values.fileWorkerConfig }}
+{{- if .Values.fileWorkerConfig.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,6 +15,8 @@ data:
     job:
       file-worker:
         version: {{ .Values.fileWorkerConfig.version }}
+        enabled-file-source-types: {{ .Values.fileWorkerConfig.enabledFileSourceTypes }}
+        tags: {{ .Values.fileWorkerConfig.tags }}
         token: {{ .Values.fileWorkerConfig.token }}
         app-id: {{ .Values.fileWorkerConfig.appId }}
         ability-tags: {{ .Values.fileWorkerConfig.abilityTags }}
@@ -22,7 +24,7 @@ data:
           port: {{ .Values.fileWorkerConfig.containerPort }}
         cloud-area-id: {{ .Values.fileWorkerConfig.cloudAreaId }}
         download-file:
-          dir: {{ .Values.fileWorkerConfig.downloadFile.dir }}
+          dir: {{ .Values.fileDistribute.hostPath }}
           max-size-gb: {{ .Values.fileWorkerConfig.downloadFile.maxSizeGB }}
           expire-days: {{ .Values.fileWorkerConfig.downloadFile.expireDays }}
         instance-name: {{ .Values.fileWorkerConfig.instanceName }}
@@ -31,7 +33,7 @@ data:
 
       file-gateway:
         api:
-          root-url: http://{{ include "common.names.fullname" . }}-gateway/job-file-gateway
+          root-url: http://{{ include "common.names.fullname" . }}-gateway/job-file-gateway          
     server:
       port: {{ .Values.fileWorkerConfig.containerPort }}
-  {{- end}}
+  {{- end }}

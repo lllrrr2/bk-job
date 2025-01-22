@@ -1,43 +1,48 @@
-/*
- * Tencent is pleased to support the open source community by making BK-JOB蓝鲸智云作业平台 available.
- *
- * Copyright (C) 2021 THL A29 Limited, a Tencent company.  All rights reserved.
- *
- * BK-JOB蓝鲸智云作业平台 is licensed under the MIT License.
- *
- * License for BK-JOB蓝鲸智云作业平台:
- * --------------------------------------------------------------------
- * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
- * documentation files (the "Software"), to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
- * to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all copies or substantial portions of
- * the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
- * THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
- * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- */
-
 package com.tencent.bk.job.common.gse.util;
 
-import com.tencent.bk.job.common.gse.constants.AgentStatusEnum;
+import org.apache.commons.lang3.StringUtils;
 
-public final class AgentUtils {
+import java.util.regex.Pattern;
 
-    private AgentUtils() {
+/**
+ * GSE Agent 工具类
+ */
+public class AgentUtils {
+    private static final Pattern GSE_V1_AGENT_ID_PATTERN = Pattern.compile(
+        "(\\d+):((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.(" +
+            "(?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])");
+
+    /**
+     * 是否是GSE1.0 AgentId
+     *
+     * @param agentId agentId
+     */
+    public static boolean isGseV1AgentId(String agentId) {
+        if (StringUtils.isEmpty(agentId)) {
+            return false;
+        }
+        return GSE_V1_AGENT_ID_PATTERN.matcher(agentId).matches();
     }
 
     /**
-     * 返回Agent的状态是否正常
+     * 是否是GSE2.0 AgentId
      *
-     * @param status agent的状态
-     * @return 正常: true, 异常: false
+     * @param agentId agentId
      */
-    public static boolean isAgentOkByStatus(int status) {
-        return status == AgentStatusEnum.ALIVE.getValue();
+    public static boolean isGseV2AgentId(String agentId) {
+        if (StringUtils.isEmpty(agentId)) {
+            return false;
+        }
+        return !isGseV1AgentId(agentId);
     }
+
+    /**
+     * 对接 GSE V1 的 agentId 值为 云区域:ip（内部实现，产品上 GSE V1 Agent 并没有 AgentId 的概念）。
+     * 只有GSE V2 Agent 才会在 cmdb 注册真实的 agentId。
+     * 为了避免与cmdb 主机 AgentId 属性的理解上的歧义，需要把内部实现上的 GSE V1 agentId 隐藏
+     */
+    public static String displayAsRealAgentId(String agentId) {
+        return AgentUtils.isGseV1AgentId(agentId) ? "" : agentId;
+    }
+
 }

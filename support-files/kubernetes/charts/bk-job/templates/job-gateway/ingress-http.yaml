@@ -1,4 +1,4 @@
-{{- if .Values.gatewayConfig.ingress.enabled -}}
+{{- if and (.Values.gatewayConfig.enabled) (.Values.gatewayConfig.ingress.enabled) -}}
 apiVersion: {{ template "common.capabilities.ingress.apiVersion" . }}
 kind: Ingress
 metadata:
@@ -23,11 +23,8 @@ spec:
   {{- if and .Values.ingress.ingressClassName (include "common.ingress.supportsIngressClassname" .) }}
   ingressClassName: {{ .Values.ingress.ingressClassName | quote }}
   {{- end }}
-  {{- if .Values.job.web.https.enabled }}
-  tls:
-  - hosts:
-      - {{ .Values.job.web.apiDomain }}
-    secretName: {{ include "common.names.fullname" . }}-ingress-tls
+  {{- if .Values.job.ingress.https.enabled }}
+  {{- include "job.ingress.gateway.tls" . | nindent 2 }}
   {{- end }}
   rules:
   {{- if .Values.job.web.apiDomain }}
@@ -41,7 +38,7 @@ spec:
         {{- if eq "true" (include "common.ingress.supportsPathType" .) }}
         pathType: {{ .Values.gatewayConfig.ingress.pathType }}
         {{- end }}
-        backend: {{- include "common.ingress.backend" (dict "serviceName" (printf "%s-gateway" (include "common.names.fullname" .)) "servicePort" .Values.gatewayConfig.service.port.http "context" $)  | nindent 14 }}
+        backend: {{- include "common.ingress.backend" (dict "serviceName" "bk-job-gateway" "servicePort" .Values.gatewayConfig.service.port.http "context" $)  | nindent 14 }}
   {{- end }}
   {{- range .Values.gatewayConfig.ingress.extraHosts }}
   - host: {{ .name }}
@@ -51,6 +48,6 @@ spec:
         {{- if eq "true" (include "common.ingress.supportsPathType" $) }}
         pathType: {{ default "ImplementationSpecific" .pathType }}
         {{- end }}
-        backend: {{- include "common.ingress.backend" (dict "serviceName" (printf "%s-gateway" (include "common.names.fullname" $)) "servicePort" "http" "context" $)  | nindent 14 }}
+        backend: {{- include "common.ingress.backend" (dict "serviceName" "bk-job-gateway" "servicePort" "http" "context" $)  | nindent 14 }}
   {{- end }}
 {{- end }}

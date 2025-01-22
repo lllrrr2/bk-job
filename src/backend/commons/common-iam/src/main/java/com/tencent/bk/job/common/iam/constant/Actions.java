@@ -103,15 +103,17 @@ public class Actions {
     public static final ActionInfo QUICK_TRANSFER_FILE = new ActionInfo(ActionId.QUICK_TRANSFER_FILE,
         ResourceTypeEnum.HOST);
     // 通知设置
-    public static final ActionInfo NOTIFICATION_SETTING = new ActionInfo(ActionId.NOTIFICATION_SETTING);
+    public static final ActionInfo NOTIFICATION_SETTING = new ActionInfo(ActionId.NOTIFICATION_SETTING,
+        ResourceTypeEnum.BUSINESS);
     // 全局设置
     public static final ActionInfo GLOBAL_SETTINGS = new ActionInfo(ActionId.GLOBAL_SETTINGS);
     // 运营视图查看
-    public static final ActionInfo DASHBOARD_VIEW = new ActionInfo(ActionId.DASHBOARD_VIEW);
+    public static final ActionInfo DASHBOARD_VIEW = new ActionInfo(ActionId.DASHBOARD_VIEW,
+        ResourceTypeEnum.DASHBOARD_VIEW);
     // 服务状态查看
     public static final ActionInfo SERVICE_STATE_ACCESS = new ActionInfo(ActionId.SERVICE_STATE_ACCESS);
     // 业务查看
-    public static final ActionInfo LIST_BUSINESS = new ActionInfo(ActionId.LIST_BUSINESS, ResourceTypeEnum.BUSINESS);
+    public static final ActionInfo LIST_BUSINESS = new ActionInfo(ActionId.ACCESS_BUSINESS, ResourceTypeEnum.BUSINESS);
     // 文件源
     public static final ActionInfo CREATE_FILE_SOURCE = new ActionInfo(ActionId.CREATE_FILE_SOURCE,
         ResourceTypeEnum.BUSINESS);
