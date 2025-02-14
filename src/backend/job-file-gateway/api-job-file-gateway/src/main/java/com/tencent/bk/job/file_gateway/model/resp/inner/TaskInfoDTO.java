@@ -35,6 +35,9 @@ public class TaskInfoDTO {
     String taskId;
     String fileSourceName;
     boolean fileSourcePublic;
+    Long workerId;
+    String workerAccessHost;
     Long cloudId;
+    String ipProtocol;
     String ip;
 }

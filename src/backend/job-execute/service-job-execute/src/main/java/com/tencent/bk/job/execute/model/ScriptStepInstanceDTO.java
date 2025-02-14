@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.execute.model;
 
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -32,6 +33,10 @@ import lombok.ToString;
 @Setter
 @ToString
 public class ScriptStepInstanceDTO {
+    /**
+     * 作业实例ID
+     */
+    private Long taskInstanceId;
     /**
      * 步骤实例ID
      */
@@ -58,10 +63,8 @@ public class ScriptStepInstanceDTO {
 
     /**
      * 执行脚本的类型:1(shell脚本)、2(bat脚本)、3(perl脚本)、4(python脚本)、5(powershell脚本)
-     *
-     * @see com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum
      */
-    private Integer scriptType;
+    private ScriptTypeEnum scriptType;
     /**
      * 执行脚本的执行参数
      */
@@ -96,4 +99,8 @@ public class ScriptStepInstanceDTO {
      * 是否敏感参数
      */
     private boolean secureParam;
+    /**
+     * Windows解释器路径
+     */
+    private String windowsInterpreter;
 }

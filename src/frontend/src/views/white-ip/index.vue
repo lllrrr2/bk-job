@@ -26,14 +26,15 @@
 -->
 
 <template>
-    <jb-router-view />
+  <jb-router-view />
 </template>
 <script>
-    import {
-        loadLanguage,
-    } from '@/i18n';
-    import Local from './local';
-    loadLanguage(Local);
+  import {
+    loadLanguage,
+  } from '@/i18n';
 
-    export default {};
+  import Language from './language';
+  loadLanguage(Language);
+
+  export default {};
 </script>

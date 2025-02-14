@@ -21,33 +21,34 @@
  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-def assemblyMode = System.getProperty("assemblyMode")
-def k8s = assemblyMode == "k8s"
-println("assembly mode: $assemblyMode")
-
 dependencies {
     api project(':commons:common')
+    api project(':commons:common-log')
+    api project(':commons:common-task')
     api project(':commons:common-security')
+    api project(':commons:common-otel')
     api 'org.hibernate.validator:hibernate-validator'
     api 'jakarta.validation:jakarta.validation-api'
     api 'org.springframework.boot:spring-boot-starter-actuator'
     api 'org.springframework.boot:spring-boot-starter-logging'
     api 'org.springframework.cloud:spring-cloud-starter-openfeign'
     api 'org.springframework.cloud:spring-cloud-starter-sleuth'
-    if (k8s) {
-        println("Compile with kubernetes mode")
+    api 'org.springframework.cloud:spring-cloud-loadbalancer'
+    api 'org.springframework.cloud:spring-cloud-starter-bus-amqp'
+    api 'org.springframework.cloud:spring-cloud-starter-stream-rabbit'
+    if (rootProject.ext.k8sMode) {
+        println("Compile module[common-service] with kubernetes mode")
         api project(":commons:common-k8s")
         api 'org.springframework.cloud:spring-cloud-starter-kubernetes-client-all'
-        api 'org.springframework.cloud:spring-cloud-starter-kubernetes-client-loadbalancer'
     } else {
+        println("Compile module[common-service] with binary mode")
         api project(":commons:common-consul")
         api 'org.springframework.cloud:spring-cloud-starter-config'
         api 'org.springframework.cloud:spring-cloud-starter-consul-discovery'
     }
     api 'ch.qos.logback:logback-core'
     api 'ch.qos.logback:logback-classic'
-    api 'io.springfox:springfox-swagger2'
-    api 'io.springfox:springfox-swagger-ui'
+    api 'io.springfox:springfox-boot-starter'
     api 'com.fasterxml.jackson.core:jackson-core'
     api 'com.fasterxml.jackson.core:jackson-databind'
     api 'com.fasterxml.jackson.core:jackson-annotations'
@@ -55,4 +56,5 @@ dependencies {
     api 'io.prometheus:simpleclient_pushgateway'
     api 'io.micrometer:micrometer-registry-prometheus'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.mockito:mockito-inline'
 }

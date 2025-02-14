@@ -24,16 +24,15 @@
 
 package com.tencent.bk.job.manage.api.tmp.impl;
 
+import com.tencent.bk.job.common.constant.AccountCategoryEnum;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.AlreadyExistsException;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.model.Response;
 import com.tencent.bk.job.common.util.Utils;
 import com.tencent.bk.job.common.util.json.JsonUtils;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
 import com.tencent.bk.job.manage.api.tmp.TmpAppAccountResource;
-import com.tencent.bk.job.manage.common.consts.account.AccountCategoryEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
 import com.tencent.bk.job.manage.model.dto.AccountDTO;
 import com.tencent.bk.job.manage.model.tmp.TmpAccountCreateUpdateReq;
 import com.tencent.bk.job.manage.service.AccountService;
@@ -46,13 +45,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 @RestController
 public class TmpAppAccountResourceImpl implements TmpAppAccountResource {
-    private AccountService accountService;
-    private MessageI18nService i18nService;
+    private final AccountService accountService;
 
     @Autowired
-    public TmpAppAccountResourceImpl(AccountService accountService, MessageI18nService i18nService) {
+    public TmpAppAccountResourceImpl(AccountService accountService) {
         this.accountService = accountService;
-        this.i18nService = i18nService;
     }
 
 
@@ -107,7 +104,6 @@ public class TmpAppAccountResourceImpl implements TmpAppAccountResource {
                 lastModifyTime = DateTimeUtils.currentTimeMillis();
             }
         }
-        accountCreateUpdateReq.setAppId(appId);
         if (!accountService.checkCreateParam(accountCreateUpdateReq, false, false)) {
             throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
@@ -115,7 +111,7 @@ public class TmpAppAccountResourceImpl implements TmpAppAccountResource {
         if (accountId != null) {
             AccountDTO accountDTO = accountService.getAccountById(accountId);
             if (accountDTO != null) {
-                if (accountDTO.getAppId().longValue() == accountCreateUpdateReq.getAppId().longValue()
+                if (accountDTO.getAppId().longValue() == appId
                     && accountDTO.getAccount().equals(accountCreateUpdateReq.getAccount())
                     && accountDTO.getAlias().equals(accountCreateUpdateReq.getAlias())
                 ) {
@@ -152,7 +148,7 @@ public class TmpAppAccountResourceImpl implements TmpAppAccountResource {
 
         AccountDTO newAccount = buildCreateAccountDTO(username, appId, createTime, lastModifyTime, lastModifyUser,
             accountCreateUpdateReq);
-        accountId = accountService.saveAccount(newAccount);
-        return Response.buildSuccessResp(accountId);
+        AccountDTO savedAccount = accountService.createAccount(newAccount);
+        return Response.buildSuccessResp(savedAccount.getId());
     }
 }

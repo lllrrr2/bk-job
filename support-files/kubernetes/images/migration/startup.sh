@@ -1,8 +1,5 @@
 #! /bin/sh
 
-mkdir -p $BK_JOB_LOGS_DIR
-chmod 777 $BK_JOB_LOGS_DIR
-
 pwd
 ls -ahl
 echo "===========SQL========="
@@ -13,7 +10,7 @@ echo "===========EXEC========"
 mysql --version
 
 function checkMysql(){
-  c=$(mysql -h $BK_JOB_MYSQL_HOST -P $BK_JOB_MYSQL_PORT -uroot -p$BK_JOB_MYSQL_ROOT_PASSWORD -e "select 1"|grep 1|wc -l)
+  c=$(mysql -h $BK_JOB_MYSQL_HOST -P $BK_JOB_MYSQL_PORT -u$BK_JOB_MYSQL_ADMIN_USERNAME -p$BK_JOB_MYSQL_ADMIN_PASSWORD -e "select 1"|grep 1|wc -l)
   echo "c=$c"
   if [[ "$c" == "2" ]];then
     return 0
@@ -33,7 +30,9 @@ function migrateMySQL(){
   done
 
   for sql in "${ALL_SQL[@]}"; do
-    mysql -h $BK_JOB_MYSQL_HOST -P $BK_JOB_MYSQL_PORT -uroot -p$BK_JOB_MYSQL_ROOT_PASSWORD < $sql
+    echo "migrate $sql"
+    mysql -h $BK_JOB_MYSQL_HOST -P $BK_JOB_MYSQL_PORT -u$BK_JOB_MYSQL_ADMIN_USERNAME -p$BK_JOB_MYSQL_ADMIN_PASSWORD < $sql
+    echo "migrate $sql done"
   done
 }
 
@@ -50,9 +49,13 @@ function migrateIamModel(){
 echo "BK_JOB_MIGRATION_MYSQL_SCHEMA_ENABLED=${BK_JOB_MIGRATION_MYSQL_SCHEMA_ENABLED}"
 if [[ "${BK_JOB_MIGRATION_MYSQL_SCHEMA_ENABLED}" == "true" ]];then
   migrateMySQL
+else
+  echo "skip migrateMySQL"
 fi
 
 echo "BK_JOB_MIGRATION_IAM_MODEL_ENABLED=${BK_JOB_MIGRATION_IAM_MODEL_ENABLED}"
 if [[ "${BK_JOB_MIGRATION_IAM_MODEL_ENABLED}" == "true" ]];then
   migrateIamModel
+else
+  echo "skip migrateIamModel"
 fi

@@ -25,16 +25,24 @@
 package com.tencent.bk.job.execute.model;
 
 import com.tencent.bk.job.common.constant.DuplicateHandlerEnum;
-import com.tencent.bk.job.common.model.dto.IpDTO;
-import com.tencent.bk.job.common.util.function.LambdasUtil;
+import com.tencent.bk.job.common.model.dto.Container;
+import com.tencent.bk.job.common.model.dto.HostDTO;
+import com.tencent.bk.job.execute.common.constants.StepExecuteTypeEnum;
+import com.tencent.bk.job.execute.model.inner.ServiceFileStepInstanceDTO;
+import com.tencent.bk.job.execute.model.inner.ServiceScriptStepInstanceDTO;
+import com.tencent.bk.job.execute.model.inner.ServiceStepInstanceDTO;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 import org.apache.commons.collections4.CollectionUtils;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -88,10 +96,8 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
 
     /**
      * 执行脚本的类型:1(shell脚本)、2(bat脚本)、3(perl脚本)、4(python脚本)、5(powershell脚本)
-     *
-     * @see com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum
      */
-    private Integer scriptType;
+    private ScriptTypeEnum scriptType;
     /**
      * 执行脚本的执行参数
      */
@@ -113,16 +119,16 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
     private Integer dbPort;
     private Integer dbType;
     private Long dbAccountId;
+    /**
+     * Windows解释器路径
+     */
+    private String windowsInterpreter;
 
     // --------------文件步骤字段--------------//
     /**
      * 文件传输的源文件
      */
     private List<FileSourceDTO> fileSourceList;
-    /**
-     * 变量解析之后的文件传输的源文件
-     */
-    private List<FileSourceDTO> resolvedFileSourceList;
     /**
      * 文件传输的目标目录
      */
@@ -177,16 +183,12 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
         this.startTime = stepInstanceBase.startTime;
         this.endTime = stepInstanceBase.endTime;
         this.totalTime = stepInstanceBase.totalTime;
-        this.totalIPNum = stepInstanceBase.totalIPNum;
-        this.badIPNum = stepInstanceBase.badIPNum;
-        this.runIPNum = stepInstanceBase.runIPNum;
-        this.failIPNum = stepInstanceBase.failIPNum;
-        this.successIPNum = stepInstanceBase.successIPNum;
         this.createTime = stepInstanceBase.createTime;
         this.ignoreError = stepInstanceBase.ignoreError;
-        this.targetServers = stepInstanceBase.targetServers;
-        this.badIpList = stepInstanceBase.badIpList;
-        this.ipList = stepInstanceBase.ipList;
+        this.targetExecuteObjects = stepInstanceBase.targetExecuteObjects;
+        this.rollingConfigId = stepInstanceBase.rollingConfigId;
+        this.batch = stepInstanceBase.getBatch();
+        this.stepOrder = stepInstanceBase.getStepOrder();
     }
 
     // -------------公共方法------------------//
@@ -210,6 +212,7 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
         this.scriptSource = scriptStepInstance.getScriptSource();
         this.resolvedScriptParam = scriptStepInstance.getResolvedScriptParam();
         this.secureParam = scriptStepInstance.isSecureParam();
+        this.windowsInterpreter = scriptStepInstance.getWindowsInterpreter();
     }
 
     public void fillFileStepInfo(FileStepInstanceDTO fileStepInstance) {
@@ -220,7 +223,6 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
         this.accountId = fileStepInstance.getAccountId();
         this.account = fileStepInstance.getAccount();
         this.fileSourceList = fileStepInstance.getFileSourceList();
-        this.resolvedFileSourceList = fileStepInstance.getResolvedFileSourceList();
         this.fileTargetPath = fileStepInstance.getFileTargetPath();
         this.fileTargetName = fileStepInstance.getFileTargetName();
         this.resolvedFileTargetPath = fileStepInstance.getResolvedFileTargetPath();
@@ -241,28 +243,114 @@ public class StepInstanceDTO extends StepInstanceBaseDTO {
         this.notifyChannels = confirmStepInstance.getNotifyChannels();
     }
 
-    /**
-     * 返回步骤中不合法的主机
-     *
-     * @return 不合法的主机
-     */
-    public Set<String> getInvalidIps() {
-        Set<String> invalidIpSet = new HashSet<>();
-        if (CollectionUtils.isNotEmpty(this.targetServers.getInvalidIpList())) {
-            invalidIpSet.addAll(this.targetServers.getInvalidIpList().stream().map(IpDTO::convertToStrIp)
-                .collect(Collectors.toSet()));
-        }
-        if (isFileStep() && CollectionUtils.isNotEmpty(this.fileSourceList)) {
-            this.fileSourceList.stream().filter(LambdasUtil.not(FileSourceDTO::isLocalUpload))
-                .forEach(fileSource -> {
-                    ServersDTO fileSourceServers = fileSource.getServers();
-                    if (fileSourceServers != null && CollectionUtils.isNotEmpty(fileSourceServers.getInvalidIpList())) {
-                        invalidIpSet.addAll(fileSourceServers.getInvalidIpList().stream().map(IpDTO::convertToStrIp)
-                            .collect(Collectors.toSet()));
-                    }
-                });
 
+    public List<Container> extractStaticContainerList() {
+        if (targetExecuteObjects == null) {
+            return Collections.emptyList();
         }
-        return invalidIpSet;
+
+        List<Container> containers = new ArrayList<>();
+        if (CollectionUtils.isNotEmpty(targetExecuteObjects.getStaticContainerList())) {
+            containers.addAll(targetExecuteObjects.getStaticContainerList());
+        }
+        if (isFileStep()) {
+            for (FileSourceDTO fileSource : fileSourceList) {
+                ExecuteTargetDTO executeTargetDTO = fileSource.getServers();
+                if (executeTargetDTO != null
+                    && CollectionUtils.isNotEmpty(executeTargetDTO.getStaticContainerList())) {
+                    containers.addAll(executeTargetDTO.getStaticContainerList());
+                }
+            }
+        }
+        return containers;
+    }
+
+    public Set<HostDTO> extractAllHosts() {
+        if (targetExecuteObjects == null) {
+            return Collections.emptySet();
+        }
+
+        Set<HostDTO> hosts = new HashSet<>(targetExecuteObjects.getHostsCompatibly());
+
+        if (CollectionUtils.isNotEmpty(fileSourceList)) {
+            fileSourceList.forEach(fileSource -> {
+                if (fileSource.getServers() != null) {
+                    List<HostDTO> fileSourceHosts = fileSource.getServers().getHostsCompatibly();
+                    if (CollectionUtils.isNotEmpty(fileSourceHosts)) {
+                        hosts.addAll(fileSourceHosts);
+                    }
+                }
+            });
+        }
+        return hosts;
+    }
+
+    /**
+     * 步骤包含的执行对象 ExecuteObjectsDTO 的最终处理
+     *
+     * @param isSupportExecuteObjectFeature 是否执行执行对象特性
+     */
+    public void buildStepFinalExecuteObjects(boolean isSupportExecuteObjectFeature) {
+        if (targetExecuteObjects != null) {
+            targetExecuteObjects.buildMergedExecuteObjects(isSupportExecuteObjectFeature);
+        }
+        if (CollectionUtils.isNotEmpty(fileSourceList)) {
+            fileSourceList.forEach(fileSource -> {
+                if (fileSource.getServers() != null) {
+                    fileSource.getServers().buildMergedExecuteObjects(isSupportExecuteObjectFeature);
+                }
+            });
+        }
+    }
+
+    /**
+     * 遍历步骤实例包含的所有执行目标（执行目标+文件分发源执行目标）
+     *
+     * @param consumer 消费者
+     */
+    public void forEachExecuteObjects(Consumer<ExecuteTargetDTO> consumer) {
+        if (targetExecuteObjects != null) {
+            consumer.accept(targetExecuteObjects);
+        }
+        if (isFileStep()) {
+            for (FileSourceDTO fileSource : fileSourceList) {
+                ExecuteTargetDTO fileSourceExecuteObjects = fileSource.getServers();
+                if (fileSourceExecuteObjects != null) {
+                    consumer.accept(fileSourceExecuteObjects);
+                }
+            }
+        }
+    }
+
+    public ServiceStepInstanceDTO toServiceStepInstanceDTO() {
+        ServiceStepInstanceDTO serviceStepInstanceDTO = new ServiceStepInstanceDTO();
+        serviceStepInstanceDTO.setId(id);
+        serviceStepInstanceDTO.setName(name);
+        serviceStepInstanceDTO.setExecuteType(executeType.getValue());
+        serviceStepInstanceDTO.setStatus(status.getValue());
+        serviceStepInstanceDTO.setCreateTime(createTime);
+        if (executeType == StepExecuteTypeEnum.EXECUTE_SCRIPT || executeType == StepExecuteTypeEnum.EXECUTE_SQL) {
+            ServiceScriptStepInstanceDTO scriptStepInstance = new ServiceScriptStepInstanceDTO();
+            scriptStepInstance.setStepInstanceId(id);
+            scriptStepInstance.setScriptType(scriptType.getValue());
+            scriptStepInstance.setScriptContent(scriptContent);
+            scriptStepInstance.setScriptParam(scriptParam);
+            scriptStepInstance.setSecureParam(secureParam);
+            serviceStepInstanceDTO.setScriptStepInstance(scriptStepInstance);
+        } else if (executeType == StepExecuteTypeEnum.SEND_FILE) {
+            ServiceFileStepInstanceDTO fileStepInstance = new ServiceFileStepInstanceDTO();
+            if (fileSourceList != null) {
+                fileStepInstance.setFileSourceList(
+                    fileSourceList.stream()
+                        .map(FileSourceDTO::toServiceFileSourceDTO)
+                        .collect(Collectors.toList())
+                );
+            }
+            if (targetExecuteObjects != null) {
+                fileStepInstance.setTargetExecuteObjects(targetExecuteObjects.toServiceExecuteTargetDTO());
+            }
+            serviceStepInstanceDTO.setFileStepInstance(fileStepInstance);
+        }
+        return serviceStepInstanceDTO;
     }
 }

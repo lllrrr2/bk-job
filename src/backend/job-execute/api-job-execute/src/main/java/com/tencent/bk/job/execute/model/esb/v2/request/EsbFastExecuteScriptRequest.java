@@ -26,9 +26,11 @@ package com.tencent.bk.job.execute.model.esb.v2.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tencent.bk.job.common.constant.JobConstants;
-import com.tencent.bk.job.common.esb.model.EsbReq;
+import com.tencent.bk.job.common.constant.MySQLTextDataType;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeReq;
 import com.tencent.bk.job.common.esb.model.job.EsbIpDTO;
 import com.tencent.bk.job.common.esb.model.job.EsbServerDTO;
+import com.tencent.bk.job.common.validation.NotExceedMySQLTextFieldLength;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.validator.constraints.Range;
@@ -40,12 +42,7 @@ import java.util.List;
  */
 @Getter
 @Setter
-public class EsbFastExecuteScriptRequest extends EsbReq {
-    /**
-     * 业务ID
-     */
-    @JsonProperty("bk_biz_id")
-    private Long appId;
+public class EsbFastExecuteScriptRequest extends EsbAppScopeReq {
 
     /**
      * 脚本执行任务名称
@@ -57,6 +54,11 @@ public class EsbFastExecuteScriptRequest extends EsbReq {
      * "脚本内容，BASE64编码
      */
     @JsonProperty("script_content")
+    @NotExceedMySQLTextFieldLength(
+        fieldName = "script_content",
+        fieldType = MySQLTextDataType.MEDIUMTEXT,
+        base64 = true
+    )
     private String content;
 
     /**
@@ -74,13 +76,18 @@ public class EsbFastExecuteScriptRequest extends EsbReq {
      * 脚本参数， BASE64编码
      */
     @JsonProperty("script_param")
+    @NotExceedMySQLTextFieldLength(
+        fieldName = "script_param",
+        fieldType = MySQLTextDataType.TEXT,
+        base64 = true
+    )
     private String scriptParam;
 
     /**
-     * 脚本ID
+     * 脚本版本ID
      */
     @JsonProperty("script_id")
-    private Long scriptId;
+    private Long scriptVersionId;
 
     /**
      * 是否敏感参数
@@ -92,7 +99,7 @@ public class EsbFastExecuteScriptRequest extends EsbReq {
      * 执行超时时间,单位秒
      */
     @JsonProperty("script_timeout")
-    @Range(min = JobConstants.MIN_JOB_TIMEOUT_SECONDS, max= JobConstants.MAX_JOB_TIMEOUT_SECONDS,
+    @Range(min = JobConstants.MIN_JOB_TIMEOUT_SECONDS, max = JobConstants.MAX_JOB_TIMEOUT_SECONDS,
         message = "{validation.constraints.InvalidJobTimeout_outOfRange.message}")
     private Integer timeout;
 

@@ -24,11 +24,14 @@
 
 package com.tencent.bk.job.manage.model.query;
 
+import com.tencent.bk.job.common.model.BaseSearchCondition;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 
@@ -64,7 +67,7 @@ public class ScriptQuery {
     /**
      * 是否公共脚本
      */
-    private Boolean publicScript;
+    private boolean publicScript;
     /**
      * 业务ID
      */
@@ -81,12 +84,23 @@ public class ScriptQuery {
     /**
      * 脚本状态
      *
-     * @see com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum
+     * @see JobResourceStatusEnum
      */
     private Integer status;
 
+    /**
+     * 脚本内容检索关键字
+     */
+    private String contentKeyword;
+
+    private BaseSearchCondition baseSearchCondition;
+
     public boolean isExistTagCondition() {
         return this.untaggedScript || CollectionUtils.isNotEmpty(this.tagIds);
+    }
+
+    public boolean hasScriptVersionQueryCondition() {
+        return StringUtils.isNotEmpty(contentKeyword);
     }
 
 }

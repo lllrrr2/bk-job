@@ -25,47 +25,52 @@
 package com.tencent.bk.job.execute.service.impl;
 
 import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.constant.Order;
 import com.tencent.bk.job.common.exception.FailedPreconditionException;
 import com.tencent.bk.job.common.exception.NotFoundException;
-import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
-import com.tencent.bk.job.common.iam.model.AuthResult;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
-import com.tencent.bk.job.common.model.dto.IpDTO;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
 import com.tencent.bk.job.execute.common.constants.StepExecuteTypeEnum;
+import com.tencent.bk.job.execute.common.constants.StepRunModeEnum;
 import com.tencent.bk.job.execute.common.converter.StepTypeExecuteTypeConverter;
 import com.tencent.bk.job.execute.common.util.TaskCostCalculator;
 import com.tencent.bk.job.execute.constants.UserOperationEnum;
-import com.tencent.bk.job.execute.dao.FileSourceTaskLogDAO;
-import com.tencent.bk.job.execute.dao.GseTaskIpLogDAO;
 import com.tencent.bk.job.execute.dao.StepInstanceDAO;
 import com.tencent.bk.job.execute.dao.TaskInstanceDAO;
-import com.tencent.bk.job.execute.engine.consts.IpStatus;
-import com.tencent.bk.job.execute.model.AgentTaskExecutionDTO;
+import com.tencent.bk.job.execute.engine.consts.ExecuteObjectTaskStatusEnum;
+import com.tencent.bk.job.execute.engine.model.ExecuteObject;
 import com.tencent.bk.job.execute.model.ConfirmStepInstanceDTO;
-import com.tencent.bk.job.execute.model.ExecutionResultGroupDTO;
+import com.tencent.bk.job.execute.model.ExecuteObjectCompositeKey;
+import com.tencent.bk.job.execute.model.ExecuteObjectTask;
 import com.tencent.bk.job.execute.model.FileSourceTaskLogDTO;
-import com.tencent.bk.job.execute.model.GseTaskIpLogDTO;
-import com.tencent.bk.job.execute.model.GseTaskLogDTO;
 import com.tencent.bk.job.execute.model.OperationLogDTO;
 import com.tencent.bk.job.execute.model.ResultGroupBaseDTO;
+import com.tencent.bk.job.execute.model.ResultGroupDTO;
+import com.tencent.bk.job.execute.model.RollingConfigDTO;
 import com.tencent.bk.job.execute.model.StepExecutionDTO;
 import com.tencent.bk.job.execute.model.StepExecutionDetailDTO;
 import com.tencent.bk.job.execute.model.StepExecutionRecordDTO;
 import com.tencent.bk.job.execute.model.StepExecutionResultQuery;
 import com.tencent.bk.job.execute.model.StepInstanceBaseDTO;
+import com.tencent.bk.job.execute.model.StepInstanceRollingTaskDTO;
 import com.tencent.bk.job.execute.model.TaskExecuteResultDTO;
 import com.tencent.bk.job.execute.model.TaskExecutionDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceQuery;
 import com.tencent.bk.job.execute.model.inner.CronTaskExecuteResult;
 import com.tencent.bk.job.execute.model.inner.ServiceCronTaskExecuteResultStatistics;
-import com.tencent.bk.job.execute.service.ExecuteAuthService;
-import com.tencent.bk.job.execute.service.GseTaskLogService;
+import com.tencent.bk.job.execute.service.FileExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.FileSourceTaskLogService;
 import com.tencent.bk.job.execute.service.LogService;
-import com.tencent.bk.job.execute.service.ServerService;
+import com.tencent.bk.job.execute.service.RollingConfigService;
+import com.tencent.bk.job.execute.service.ScriptExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceRollingTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceService;
+import com.tencent.bk.job.execute.service.TaskInstanceAccessProcessor;
+import com.tencent.bk.job.execute.service.TaskInstanceService;
 import com.tencent.bk.job.execute.service.TaskOperationLogService;
 import com.tencent.bk.job.execute.service.TaskResultService;
 import lombok.extern.slf4j.Slf4j;
@@ -82,6 +87,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -95,65 +101,72 @@ import static com.tencent.bk.job.common.constant.Order.DESCENDING;
 public class TaskResultServiceImpl implements TaskResultService {
     private final TaskInstanceDAO taskInstanceDAO;
     private final StepInstanceDAO stepInstanceDAO;
-    private final GseTaskLogService gseTaskLogService;
-    private final FileSourceTaskLogDAO fileSourceTaskLogDAO;
-    private final GseTaskIpLogDAO gseTaskIpLogDAO;
-    private final ServerService serverService;
+    private final TaskInstanceService taskInstanceService;
+    private final FileSourceTaskLogService fileSourceTaskLogService;
+    private final ScriptExecuteObjectTaskService scriptExecuteObjectTaskService;
+    private final FileExecuteObjectTaskService fileExecuteObjectTaskService;
     private final LogService logService;
-    private final ExecuteAuthService executeAuthService;
     private final TaskOperationLogService operationLogService;
+    private final RollingConfigService rollingConfigService;
+    private final StepInstanceRollingTaskService stepInstanceRollingTaskService;
+    private final TaskInstanceAccessProcessor taskInstanceAccessProcessor;
+    private final StepInstanceService stepInstanceService;
 
     @Autowired
-    public TaskResultServiceImpl(TaskInstanceDAO taskInstanceDAO, StepInstanceDAO stepInstanceDAO,
-                                 GseTaskLogService gseTaskLogService, FileSourceTaskLogDAO fileSourceTaskLogDAO,
-                                 GseTaskIpLogDAO gseTaskIpLogDAO,
-                                 ServerService serverService, LogService logService,
-                                 ExecuteAuthService executeAuthService,
-                                 TaskOperationLogService operationLogService) {
+    public TaskResultServiceImpl(TaskInstanceDAO taskInstanceDAO,
+                                 StepInstanceDAO stepInstanceDAO,
+                                 TaskInstanceService taskInstanceService,
+                                 FileSourceTaskLogService fileSourceTaskLogService,
+                                 ScriptExecuteObjectTaskService scriptExecuteObjectTaskService,
+                                 FileExecuteObjectTaskService fileExecuteObjectTaskService,
+                                 LogService logService,
+                                 TaskOperationLogService operationLogService,
+                                 RollingConfigService rollingConfigService,
+                                 StepInstanceRollingTaskService stepInstanceRollingTaskService,
+                                 TaskInstanceAccessProcessor taskInstanceAccessProcessor,
+                                 StepInstanceService stepInstanceService) {
         this.taskInstanceDAO = taskInstanceDAO;
         this.stepInstanceDAO = stepInstanceDAO;
-        this.gseTaskLogService = gseTaskLogService;
-        this.fileSourceTaskLogDAO = fileSourceTaskLogDAO;
-        this.gseTaskIpLogDAO = gseTaskIpLogDAO;
-        this.serverService = serverService;
+        this.taskInstanceService = taskInstanceService;
+        this.fileSourceTaskLogService = fileSourceTaskLogService;
+        this.scriptExecuteObjectTaskService = scriptExecuteObjectTaskService;
+        this.fileExecuteObjectTaskService = fileExecuteObjectTaskService;
         this.logService = logService;
-        this.executeAuthService = executeAuthService;
         this.operationLogService = operationLogService;
+        this.rollingConfigService = rollingConfigService;
+        this.stepInstanceRollingTaskService = stepInstanceRollingTaskService;
+        this.taskInstanceAccessProcessor = taskInstanceAccessProcessor;
+        this.stepInstanceService = stepInstanceService;
     }
 
     @Override
     public PageData<TaskInstanceDTO> listPageTaskInstance(TaskInstanceQuery taskQuery,
                                                           BaseSearchCondition baseSearchCondition) {
         PageData<TaskInstanceDTO> pageData = taskInstanceDAO.listPageTaskInstance(taskQuery, baseSearchCondition);
-        if (pageData != null && pageData.getData() != null && !pageData.getData().isEmpty()) {
-            pageData.getData().forEach(taskInstanceDTO -> {
+        computeTotalTime(pageData.getData());
+        return pageData;
+    }
+
+    private void computeTotalTime(List<TaskInstanceDTO> pageData) {
+        if (CollectionUtils.isNotEmpty(pageData)) {
+            pageData.forEach(taskInstanceDTO -> {
                 if (taskInstanceDTO.getTotalTime() == null) {
-                    if (taskInstanceDTO.getStatus().equals(RunStatusEnum.RUNNING.getValue())
-                        || taskInstanceDTO.getStatus().equals(RunStatusEnum.WAITING.getValue())
-                        || taskInstanceDTO.getStatus().equals(RunStatusEnum.STOPPING.getValue())) {
+                    RunStatusEnum status = taskInstanceDTO.getStatus();
+                    if (status == RunStatusEnum.RUNNING || status == RunStatusEnum.WAITING_USER
+                        || status == RunStatusEnum.STOPPING) {
                         taskInstanceDTO.setTotalTime((TaskCostCalculator.calculate(taskInstanceDTO.getStartTime(),
                             taskInstanceDTO.getEndTime(), taskInstanceDTO.getTotalTime())));
                     }
                 }
             });
         }
-        return pageData;
     }
 
     @Override
-    public TaskExecuteResultDTO getTaskExecutionResult(String username, Long appId,
-                                                       Long taskInstanceId) throws ServiceException {
-        TaskInstanceDTO taskInstance = taskInstanceDAO.getTaskInstance(taskInstanceId);
-        if (taskInstance == null) {
-            log.warn("Task instance is not exist, taskInstanceId={}", taskInstanceId);
-            throw new NotFoundException(ErrorCode.TASK_INSTANCE_NOT_EXIST);
-        }
-        if (!taskInstance.getAppId().equals(appId)) {
-            log.warn("Task instance is not in application, taskInstanceId={}, appId={}", taskInstanceId, appId);
-            throw new NotFoundException(ErrorCode.TASK_INSTANCE_NOT_EXIST);
-        }
-
-        authViewTaskInstance(username, appId, taskInstance);
+    public TaskExecuteResultDTO getTaskExecutionResult(String username,
+                                                       Long appId,
+                                                       Long taskInstanceId) {
+        TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(username, appId, taskInstanceId);
 
         TaskExecutionDTO taskExecution = buildTaskExecutionDTO(taskInstance);
 
@@ -165,10 +178,7 @@ public class TaskResultServiceImpl implements TaskResultService {
         }
 
         TaskExecuteResultDTO taskExecuteResult = new TaskExecuteResultDTO();
-        boolean isFinish = (!taskInstance.getStatus().equals(RunStatusEnum.BLANK.getValue())
-            && !taskInstance.getStatus().equals(RunStatusEnum.RUNNING.getValue())
-            && !taskInstance.getStatus().equals(RunStatusEnum.STOPPING.getValue()));
-        taskExecuteResult.setFinished(isFinish);
+        taskExecuteResult.setFinished(RunStatusEnum.isFinishedStatus(taskInstance.getStatus()));
         taskExecuteResult.setTaskInstanceExecutionResult(taskExecution);
         taskExecuteResult.setStepInstanceExecutionResults(stepExecutionList);
 
@@ -180,15 +190,15 @@ public class TaskResultServiceImpl implements TaskResultService {
         taskExecution.setTaskInstanceId(taskInstance.getId());
         taskExecution.setName(taskInstance.getName());
         taskExecution.setType(taskInstance.getType());
-        taskExecution.setStatus(taskInstance.getStatus());
+        taskExecution.setStatus(taskInstance.getStatus().getValue());
         taskExecution.setTotalTime(TaskCostCalculator.calculate(taskInstance.getStartTime(),
             taskInstance.getEndTime(), taskInstance.getTotalTime()));
         taskExecution.setStartTime(taskInstance.getStartTime());
         taskExecution.setEndTime(taskInstance.getEndTime());
-        taskExecution.setTaskId(taskInstance.getTaskId());
+        taskExecution.setTaskId(taskInstance.getPlanId());
         taskExecution.setTaskTemplateId(taskInstance.getTaskTemplateId());
         taskExecution.setDebugTask(taskInstance.isDebugTask());
-        taskExecution.setCurrentStepInstanceId(taskInstance.getCurrentStepId());
+        taskExecution.setCurrentStepInstanceId(taskInstance.getCurrentStepInstanceId());
         return taskExecution;
     }
 
@@ -197,16 +207,17 @@ public class TaskResultServiceImpl implements TaskResultService {
         stepExecution.setStepInstanceId(stepInstance.getId());
         stepExecution.setName(stepInstance.getName());
         stepExecution.setExecuteCount(stepInstance.getExecuteCount());
-        stepExecution.setStatus(stepInstance.getStatus());
-        stepExecution.setType(StepTypeExecuteTypeConverter.convertToStepType(stepInstance.getExecuteType()));
+        stepExecution.setStatus(stepInstance.getStatus().getValue());
+        stepExecution.setType(StepTypeExecuteTypeConverter.convertToStepType(stepInstance.getExecuteType()).getValue());
         stepExecution.setStartTime(stepInstance.getStartTime());
         stepExecution.setEndTime(stepInstance.getEndTime());
         stepExecution.setOperator(stepInstance.getOperator());
         stepExecution.setTotalTime(TaskCostCalculator.calculate(stepInstance.getStartTime(),
             stepInstance.getEndTime(), stepInstance.getTotalTime()));
         stepExecution.setLastStep(stepInstance.isLastStep());
-        if (stepInstance.getExecuteType().equals(StepExecuteTypeEnum.MANUAL_CONFIRM.getValue())) {
-            ConfirmStepInstanceDTO confirmStepInstance = stepInstanceDAO.getConfirmStepInstance(stepInstance.getId());
+        if (stepInstance.getExecuteType() == StepExecuteTypeEnum.MANUAL_CONFIRM) {
+            ConfirmStepInstanceDTO confirmStepInstance = stepInstanceDAO.getConfirmStepInstance(
+                stepInstance.getTaskInstanceId(), stepInstance.getId());
             if (confirmStepInstance != null) {
                 stepExecution.setConfirmMessage(confirmStepInstance.getConfirmMessage());
                 stepExecution.setConfirmReason(confirmStepInstance.getConfirmReason());
@@ -218,74 +229,39 @@ public class TaskResultServiceImpl implements TaskResultService {
         return stepExecution;
     }
 
-    private void authViewTaskInstance(String username, Long appId, TaskInstanceDTO taskInstance) {
-        AuthResult authResult = executeAuthService.authViewTaskInstance(username, appId, taskInstance);
-        if (!authResult.isPass()) {
-            throw new PermissionDeniedException(authResult);
-        }
-    }
-
-    private void authViewStepInstance(String username, Long appId, StepInstanceBaseDTO stepInstance) {
-        String operator = stepInstance.getOperator();
-        if (username.equals(operator)) {
-            return;
-        }
-        AuthResult authResult = executeAuthService.authViewTaskInstance(username, appId,
-            stepInstance.getTaskInstanceId());
-        if (!authResult.isPass()) {
-            throw new PermissionDeniedException(authResult);
-        }
-    }
-
     /**
-     * 融入文件源文件拉取所使用的时间
+     * 加入文件源文件拉取所使用的时间
      *
-     * @param stepExecutionDetailDTO
-     * @param fileSourceTaskLog
+     * @param stepExecutionDetail 步骤执行详情
+     * @param fileSourceTaskLog   第三方文件源任务
      */
-    private void involveFileSourceTaskLog(StepExecutionDetailDTO stepExecutionDetailDTO,
+    private void involveFileSourceTaskLog(StepExecutionDetailDTO stepExecutionDetail,
                                           FileSourceTaskLogDTO fileSourceTaskLog) {
-        List<ExecutionResultGroupDTO> resultGroups = stepExecutionDetailDTO.getResultGroups();
-        for (ExecutionResultGroupDTO resultGroup : resultGroups) {
+        List<ResultGroupDTO> resultGroups = stepExecutionDetail.getResultGroups();
+        for (ResultGroupDTO resultGroup : resultGroups) {
             if (resultGroup == null) {
                 continue;
             }
-            List<AgentTaskExecutionDTO> agentTaskExecutionDetailList = resultGroup.getAgentTaskExecutionDetail();
-            if (agentTaskExecutionDetailList == null) {
+            List<ExecuteObjectTask> executeObjectTasks = resultGroup.getExecuteObjectTasks();
+            if (executeObjectTasks == null) {
                 continue;
             }
-            for (AgentTaskExecutionDTO agentTaskDetail : agentTaskExecutionDetailList) {
-                if (agentTaskDetail == null) {
+            for (ExecuteObjectTask executeObjectTask : executeObjectTasks) {
+                if (executeObjectTask == null) {
                     continue;
                 }
-                agentTaskDetail.setStartTime(fileSourceTaskLog.getStartTime());
-                if (agentTaskDetail.getEndTime() == null || agentTaskDetail.getEndTime() == 0) {
-                    agentTaskDetail.setEndTime(stepExecutionDetailDTO.getEndTime());
+                executeObjectTask.setStartTime(fileSourceTaskLog.getStartTime());
+                if (executeObjectTask.getEndTime() == null || executeObjectTask.getEndTime() == 0) {
+                    executeObjectTask.setEndTime(stepExecutionDetail.getEndTime());
                 }
-                agentTaskDetail.calculateTotalTime();
+                executeObjectTask.calculateTotalTime();
             }
         }
     }
 
-    private StepInstanceBaseDTO checkGetStepExecutionDetail(String username, long appId, long stepInstanceId) {
-        StepInstanceBaseDTO stepInstance = stepInstanceDAO.getStepInstanceBase(stepInstanceId);
-        if (stepInstance == null) {
-            log.warn("Step instance is not exist, stepInstanceId={}", stepInstanceId);
-            throw new NotFoundException(ErrorCode.STEP_INSTANCE_NOT_EXIST);
-        }
-
-        authViewStepInstance(username, appId, stepInstance);
-
-        if (stepInstance.getExecuteType().equals(StepExecuteTypeEnum.MANUAL_CONFIRM.getValue())) {
-            log.warn("Manual confirm step does not support get-step-detail operation");
-            throw new FailedPreconditionException(ErrorCode.UNSUPPORTED_OPERATION);
-        }
-        return stepInstance;
-    }
-
-    private boolean isMatchResultGroup(ExecutionResultGroupDTO resultGroup, Integer resultType, String tag) {
+    private boolean isMatchResultGroup(ResultGroupDTO resultGroup, Integer resultType, String tag) {
         String matchTag = tag == null ? "" : tag;
-        return resultType.equals(resultGroup.getResultType()) && matchTag.equals(resultGroup.getTag());
+        return resultType.equals(resultGroup.getStatus()) && matchTag.equals(resultGroup.getTag());
     }
 
     private <T> List<T> getLimitedSizedList(List<T> list, Integer maxSize) {
@@ -300,308 +276,253 @@ public class TaskResultServiceImpl implements TaskResultService {
         }
     }
 
-    private StepExecutionDetailDTO buildStepExecutionDetailDTO(StepInstanceBaseDTO stepInstance,
-                                                               GseTaskLogDTO gseTaskLog, Integer executeCount) {
-        StepExecutionDetailDTO executeDetail = new StepExecutionDetailDTO();
-        executeDetail.setStepInstanceId(stepInstance.getId());
-        executeDetail.setExecuteCount(executeCount);
+    private void preProcessViewStepExecutionResult(String username, Long appId, StepInstanceBaseDTO stepInstance)
+        throws NotFoundException, PermissionDeniedException {
+        // 查看步骤执行结果预处理，包括鉴权、审计等
+        taskInstanceAccessProcessor.processBeforeAccess(username, appId, stepInstance.getTaskInstanceId());
 
-        executeDetail.setName(stepInstance.getName());
-
-        executeDetail.setFinished(!stepInstance.getStatus().equals(RunStatusEnum.BLANK.getValue())
-            && !stepInstance.getStatus().equals(RunStatusEnum.RUNNING.getValue())
-            && !stepInstance.getStatus().equals(RunStatusEnum.STOPPING.getValue()));
-        executeDetail.setStatus(stepInstance.getStatus());
-        executeDetail.setStartTime(gseTaskLog.getStartTime());
-        executeDetail.setEndTime(gseTaskLog.getEndTime());
-        executeDetail.setTotalTime(TaskCostCalculator.calculate(gseTaskLog.getStartTime(), gseTaskLog.getEndTime(),
-            gseTaskLog.getTotalTime()));
-        executeDetail.setLastStep(stepInstance.isLastStep());
-        executeDetail.setStepType(stepInstance.getStepType());
-        executeDetail.setGseTaskId(gseTaskLog.getGseTaskId());
-        return executeDetail;
+        if (stepInstance.getExecuteType() == StepExecuteTypeEnum.MANUAL_CONFIRM) {
+            log.warn("Manual confirm step does not support get-step-detail operation");
+            throw new FailedPreconditionException(ErrorCode.UNSUPPORTED_OPERATION);
+        }
     }
 
-    @Override
-    public StepExecutionDetailDTO getFastTaskStepExecutionResult(String username, Long appId, Long taskInstanceId,
-                                                                 StepExecutionResultQuery query) {
-        List<StepInstanceBaseDTO> stepInstanceList =
-            stepInstanceDAO.listStepInstanceBaseByTaskInstanceId(taskInstanceId);
-        StepInstanceBaseDTO stepInstance = stepInstanceList.get(0);
-        if (stepInstance == null) {
-            log.warn("Step instance is not exist, taskInstanceId={}", taskInstanceId);
-            throw new NotFoundException(ErrorCode.STEP_INSTANCE_NOT_EXIST);
-        }
-        if (!stepInstance.getAppId().equals(appId)) {
-            log.warn("Step instance is not in application, stepInstanceId={}, appId={}", stepInstance.getId(), appId);
-            throw new NotFoundException(ErrorCode.STEP_INSTANCE_NOT_EXIST);
-        }
-
-        return getStepExecutionResult(username, appId, query);
-    }
-
-    private void setAgentTasksForSpecifiedResultType(List<ExecutionResultGroupDTO> resultGroups,
-                                                     long appId, Integer resultType, String tag,
-                                                     List<GseTaskIpLogDTO> ipLogsForResultType) {
-        for (ExecutionResultGroupDTO resultGroup : resultGroups) {
-            if (resultType.equals(resultGroup.getResultType()) && (
+    private void setExecuteObjectTasksForSpecifiedResultType(List<ResultGroupDTO> resultGroups,
+                                                             Integer status,
+                                                             String tag,
+                                                             List<ExecuteObjectTask> executeObjectTasksForResultType) {
+        for (ResultGroupDTO resultGroup : resultGroups) {
+            if (status.equals(resultGroup.getStatus()) && (
                 (StringUtils.isEmpty(tag) ? StringUtils.isEmpty(resultGroup.getTag()) :
                     tag.equals(resultGroup.getTag())))) {
-                fillAgentTasksForResultGroup(resultGroup, appId, ipLogsForResultType);
+                resultGroup.setExecuteObjectTasks(executeObjectTasksForResultType);
             }
         }
     }
 
-    private List<ExecutionResultGroupDTO> getExecutionResultGroupsFromDB(long stepInstanceId, int executeCount) {
-        List<ResultGroupBaseDTO> baseResultGroups = gseTaskIpLogDAO.getResultGroups(stepInstanceId, executeCount);
-        return baseResultGroups.stream().map(this::buildExecutionResultGroup)
-            .collect(Collectors.toList());
-    }
-
-    private void setAgentTasksForAnyResultType(List<ExecutionResultGroupDTO> resultGroups,
-                                               long appId, long stepInstanceId,
-                                               int executeCount, Integer maxAgentTasksForResultGroup) {
+    private void setAgentTasksForAnyResultType(List<ResultGroupDTO> resultGroups,
+                                               StepInstanceBaseDTO stepInstance,
+                                               int executeCount,
+                                               Integer batch,
+                                               Integer maxAgentTasksForResultGroup,
+                                               boolean fetchAllGroupData) {
         boolean isAgentTaskSet = false;
-        for (ExecutionResultGroupDTO resultGroup : resultGroups) {
-            if (!isAgentTaskSet) {
-                isAgentTaskSet = fillAgentTasksForResultGroup(resultGroup, appId, stepInstanceId, executeCount,
-                    resultGroup.getResultType(), resultGroup.getTag(), maxAgentTasksForResultGroup);
+        for (ResultGroupDTO resultGroup : resultGroups) {
+            if (!isAgentTaskSet || fetchAllGroupData) {
+                isAgentTaskSet = fillAgentTasksForResultGroup(resultGroup, stepInstance, executeCount,
+                    batch, resultGroup.getStatus(), resultGroup.getTag(), maxAgentTasksForResultGroup);
             } else {
                 return;
             }
         }
     }
 
-    private ExecutionResultGroupDTO buildExecutionResultGroup(ResultGroupBaseDTO baseResultGroup) {
-        ExecutionResultGroupDTO resultGroup = new ExecutionResultGroupDTO();
-        resultGroup.setResultType(baseResultGroup.getResultType());
-        resultGroup.setTag(baseResultGroup.getTag());
-        resultGroup.setAgentTaskSize(baseResultGroup.getAgentTaskCount());
-        return resultGroup;
-    }
-
-    private boolean fillAgentTasksForResultGroup(ExecutionResultGroupDTO resultGroup, long appId, long stepInstanceId,
+    private boolean fillAgentTasksForResultGroup(ResultGroupDTO resultGroup,
+                                                 StepInstanceBaseDTO stepInstance,
                                                  int executeCount,
-                                                 Integer resultType, String tag, Integer maxAgentTasksForResultGroup) {
-        List<GseTaskIpLogDTO> ipLogGroupByResultType = gseTaskIpLogDAO.getIpLogByResultType(stepInstanceId,
-            executeCount, resultType, tag, maxAgentTasksForResultGroup, null, null);
-        return fillAgentTasksForResultGroup(resultGroup, appId, ipLogGroupByResultType);
-    }
-
-    private boolean fillAgentTasksForResultGroup(ExecutionResultGroupDTO resultGroup, long appId,
-                                                 List<GseTaskIpLogDTO> ipLogGroupByResultType) {
-        if (CollectionUtils.isEmpty(ipLogGroupByResultType)) {
+                                                 Integer batch,
+                                                 Integer status,
+                                                 String tag,
+                                                 Integer maxAgentTasksForResultGroup) {
+        List<ExecuteObjectTask> executeObjectTasks = listExecuteObjectTaskByResultGroup(stepInstance,
+            executeCount, batch, status, tag, maxAgentTasksForResultGroup, null, null);
+        if (CollectionUtils.isEmpty(executeObjectTasks)) {
             return false;
         }
-        List<AgentTaskExecutionDTO> agentTaskExecutions = ipLogGroupByResultType.stream()
-            .map(gseTaskIpLog -> buildAgentTaskExecutionDTO(appId, gseTaskIpLog)).collect(Collectors.toList());
-        resultGroup.setAgentTaskExecutionDetail(agentTaskExecutions);
+        resultGroup.setExecuteObjectTasks(executeObjectTasks);
         return true;
     }
 
-    private AgentTaskExecutionDTO buildAgentTaskExecutionDTO(long appId, GseTaskIpLogDTO gseTaskIpLog) {
-        AgentTaskExecutionDTO agentTaskExecution = new AgentTaskExecutionDTO();
-        agentTaskExecution.setCloudIp(gseTaskIpLog.getCloudAreaAndIp());
-        long cloudAreaId = Long.parseLong(gseTaskIpLog.getCloudAreaAndIp().split(":")[0]);
-        agentTaskExecution.setCloudAreaId(cloudAreaId);
-        agentTaskExecution.setCloudAreaName(serverService.getCloudAreaName(appId, cloudAreaId));
-        agentTaskExecution.setDisplayIp(gseTaskIpLog.getDisplayIp());
-        agentTaskExecution.setStatus(gseTaskIpLog.getStatus());
-        agentTaskExecution.setTag(gseTaskIpLog.getTag());
-        agentTaskExecution.setErrorCode(gseTaskIpLog.getErrCode());
-        agentTaskExecution.setExitCode(gseTaskIpLog.getExitCode());
-        agentTaskExecution.setStartTime(gseTaskIpLog.getStartTime());
-        agentTaskExecution.setEndTime(gseTaskIpLog.getEndTime());
-        agentTaskExecution.setTotalTime(gseTaskIpLog.getTotalTime());
-        agentTaskExecution.setExecuteCount(gseTaskIpLog.getExecuteCount());
-        return agentTaskExecution;
-    }
-
-    private List<AgentTaskExecutionDTO> buildAgentTaskExecutionDTOList(long appId,
-                                                                       List<GseTaskIpLogDTO> gseTaskIpLogs) {
-        return gseTaskIpLogs.stream().map(gseTaskIpLog -> buildAgentTaskExecutionDTO(appId, gseTaskIpLog))
-            .collect(Collectors.toList());
-    }
-
-    /*
-     * 任务未下发到gse的情况下，构造步骤执行返回结果
+    /**
+     * 步骤未启动，AgentTask数据还未在DB初始化，构造初始任务结果
+     *
+     * @param stepInstance                步骤实例
+     * @param queryExecuteCount           执行次数
+     * @param batch                       滚动批次
+     * @param maxAgentTasksForResultGroup 任务分组下最大返回的AgentTask数量
+     * @param fuzzySearchIp               模糊查询IP
+     * @return 步骤执行结果
      */
-    private StepExecutionDetailDTO buildNotStartStepExecutionResult(long appId, StepInstanceBaseDTO stepInstance,
-                                                                    Integer executeCount,
+    private StepExecutionDetailDTO buildNotStartStepExecutionResult(StepInstanceBaseDTO stepInstance,
+                                                                    Integer queryExecuteCount,
+                                                                    Integer batch,
                                                                     Integer maxAgentTasksForResultGroup,
                                                                     String fuzzySearchIp) {
-        long stepInstanceId = stepInstance.getId();
-        int retry = executeCount == null ? stepInstance.getExecuteCount() : executeCount;
 
-        StepExecutionDetailDTO executeDetail = new StepExecutionDetailDTO();
-        executeDetail.setStepInstanceId(stepInstanceId);
-        executeDetail.setExecuteCount(retry);
+        StepExecutionDetailDTO stepExecuteDetail = new StepExecutionDetailDTO(stepInstance);
+        stepExecuteDetail.setExecuteCount(queryExecuteCount);
 
-        executeDetail.setName(stepInstance.getName());
-
-        executeDetail.setFinished(false);
-        executeDetail.setStatus(stepInstance.getStatus());
-        executeDetail.setStartTime(stepInstance.getStartTime());
-        executeDetail.setEndTime(stepInstance.getEndTime());
-        executeDetail.setTotalTime(0L);
-        executeDetail.setLastStep(stepInstance.isLastStep());
-        executeDetail.setStepType(stepInstance.getStepType());
-
-        List<ExecutionResultGroupDTO> resultGroups = new ArrayList<>();
-        ExecutionResultGroupDTO resultGroup = new ExecutionResultGroupDTO();
-        resultGroup.setResultType(IpStatus.WAITING.getValue());
+        List<ResultGroupDTO> resultGroups = new ArrayList<>();
+        ResultGroupDTO resultGroup = new ResultGroupDTO();
+        resultGroup.setStatus(ExecuteObjectTaskStatusEnum.WAITING.getValue());
         resultGroup.setTag(null);
 
-        List<AgentTaskExecutionDTO> agentTaskExecutionDTOS = new ArrayList<>();
+        List<ExecuteObject> targetExecuteObjects = filterTargetExecuteObjectsByBatch(stepInstance, batch);
+
+        List<ExecuteObjectTask> executeObjectTasks = new ArrayList<>();
+        // 如果需要根据IP过滤，那么需要重新计算执行对象任务总数
         boolean fuzzyFilterByIp = StringUtils.isNotEmpty(fuzzySearchIp);
-        int agentTaskSize = stepInstance.getTargetServers().getIpList().size();
+        int executeObjectTaskSize = targetExecuteObjects.size();
         if (fuzzyFilterByIp) {
-            agentTaskSize = (int) stepInstance.getTargetServers().getIpList().stream()
-                .filter(ipDTO -> ipDTO.getIp().contains(fuzzySearchIp)).count();
+            executeObjectTaskSize = (int) targetExecuteObjects.stream()
+                .filter(executeObject -> isMatchByIp(executeObject, fuzzySearchIp)).count();
         }
-        if (stepInstance.getTargetServers().getIpList() != null) {
-            int maxAgentTasks = (maxAgentTasksForResultGroup != null ?
-                Math.min(maxAgentTasksForResultGroup, stepInstance.getTargetServers().getIpList().size())
-                : stepInstance.getTargetServers().getIpList().size());
-            for (IpDTO ipDTO : stepInstance.getTargetServers().getIpList()) {
-                String ip = ipDTO.getIp();
-                if (fuzzyFilterByIp && !ip.contains(fuzzySearchIp)) {
+        resultGroup.setTotal(executeObjectTaskSize);
+
+        if (CollectionUtils.isNotEmpty(targetExecuteObjects)) {
+            int maxExecuteObjectTasks = (maxAgentTasksForResultGroup != null ?
+                Math.min(maxAgentTasksForResultGroup, targetExecuteObjects.size()) : targetExecuteObjects.size());
+            for (ExecuteObject targetExecuteObject : targetExecuteObjects) {
+                if (fuzzyFilterByIp && !isMatchByIp(targetExecuteObject, fuzzySearchIp)) {
+                    // 如果需要根据IP过滤，那么过滤掉不匹配的任务
                     continue;
                 }
-                if (maxAgentTasks-- > 0) {
-                    AgentTaskExecutionDTO agentTaskExecutionDTO = new AgentTaskExecutionDTO();
-                    agentTaskExecutionDTO.setCloudIp(ipDTO.getCloudAreaId() + ":" + ipDTO.getIp());
-                    Long cloudAreaId = ipDTO.getCloudAreaId();
-                    agentTaskExecutionDTO.setCloudAreaId(cloudAreaId);
-                    agentTaskExecutionDTO.setCloudAreaName(serverService.getCloudAreaName(appId, cloudAreaId));
-                    agentTaskExecutionDTO.setDisplayIp(ipDTO.getIp());
-                    agentTaskExecutionDTO.setStatus(IpStatus.WAITING.getValue());
-                    agentTaskExecutionDTO.setTag(null);
-                    agentTaskExecutionDTO.setErrorCode(0);
-                    agentTaskExecutionDTO.setExitCode(0);
-                    agentTaskExecutionDTO.setTotalTime(0L);
-                    agentTaskExecutionDTOS.add(agentTaskExecutionDTO);
+                if (maxExecuteObjectTasks-- > 0) {
+                    ExecuteObjectTask executeObjectTask = new ExecuteObjectTask();
+                    executeObjectTask.setExecuteObject(targetExecuteObject);
+                    executeObjectTask.setExecuteObjectId(targetExecuteObject.getId());
+                    executeObjectTask.setStatus(ExecuteObjectTaskStatusEnum.WAITING);
+                    executeObjectTask.setTag(null);
+                    executeObjectTask.setErrorCode(0);
+                    executeObjectTask.setExitCode(0);
+                    executeObjectTask.setTotalTime(0L);
+                    executeObjectTasks.add(executeObjectTask);
                 }
             }
         }
-        resultGroup.setAgentTaskExecutionDetail(agentTaskExecutionDTOS);
-        resultGroup.setAgentTaskSize(agentTaskSize);
+        resultGroup.setExecuteObjectTasks(executeObjectTasks);
         resultGroups.add(resultGroup);
+        stepExecuteDetail.setResultGroups(resultGroups);
 
-        executeDetail.setResultGroups(resultGroups);
-        return executeDetail;
+        if (stepInstance.isRollingStep()) {
+            setRollingInfoForStep(stepInstance, stepExecuteDetail);
+        } else {
+            stepExecuteDetail.setRunMode(StepRunModeEnum.RUN_ALL);
+        }
+
+        return stepExecuteDetail;
+    }
+
+    private List<ExecuteObject> filterTargetExecuteObjectsByBatch(StepInstanceBaseDTO stepInstance, Integer batch) {
+        List<ExecuteObject> executeObjects;
+        if (stepInstance.isRollingStep()) {
+            executeObjects = rollingConfigService.getRollingServers(stepInstance, batch);
+        } else {
+            executeObjects = stepInstance.getTargetExecuteObjects().getExecuteObjectsCompatibly();
+        }
+
+        return executeObjects;
     }
 
     @Override
-    public StepExecutionDetailDTO getStepExecutionResult(String username, Long appId,
-                                                         StepExecutionResultQuery query) throws ServiceException {
-        Long stepInstanceId = query.getStepInstanceId();
+    public StepExecutionDetailDTO getStepExecutionResult(String username,
+                                                         Long appId,
+                                                         StepExecutionResultQuery query) {
         StopWatch watch = new StopWatch("getStepExecutionResult");
-        watch.start("checkGetStepExecutionDetail");
-        StepInstanceBaseDTO stepInstance = checkGetStepExecutionDetail(username, appId, stepInstanceId);
-        int finalExecuteCount = query.getExecuteCount() == null ? stepInstance.getExecuteCount() :
-            query.getExecuteCount();
-        query.setExecuteCount(finalExecuteCount);
-        watch.stop();
+        try {
+            Long stepInstanceId = query.getStepInstanceId();
 
-        GseTaskLogDTO gseTaskLog = gseTaskLogService.getGseTaskLog(stepInstance.getId(), finalExecuteCount);
-        if (gseTaskLog == null) {
-            return buildNotStartStepExecutionResult(appId, stepInstance, finalExecuteCount,
-                query.getMaxAgentTasksForResultGroup(), query.getSearchIp());
+            watch.start("getAndCheckStepInstance");
+            StepInstanceBaseDTO stepInstance = stepInstanceService.getBaseStepInstance(
+                appId, query.getTaskInstanceId(), stepInstanceId);
+            preProcessViewStepExecutionResult(username, appId, stepInstance);
+
+            int queryExecuteCount = query.getExecuteCount() == null ? stepInstance.getExecuteCount() :
+                query.getExecuteCount();
+            query.setExecuteCount(queryExecuteCount);
+            if (stepInstance.isRollingStep() && query.isFilterByLatestBatch()) {
+                query.setBatch(stepInstance.getBatch());
+            }
+            watch.stop();
+
+            if (stepInstance.getStatus() == RunStatusEnum.BLANK) {
+                // 步骤未启动，AgentTask数据还未在DB初始化，构造初始任务结果
+                return buildNotStartStepExecutionResult(stepInstance, queryExecuteCount, query.getBatch(),
+                    query.getMaxTasksForResultGroup(), query.getSearchIp());
+            }
+
+            StepExecutionDetailDTO stepExecutionDetail;
+            // 如果步骤的目标服务器数量<100,或者通过IP匹配的方式过滤执行对象任务，为了提升性能，直接全量从DB查询数据，在内存进行处理
+            if ((stepInstance.getTargetExecuteObjectCount() <= 100) || query.hasExecuteObjectFilterCondition()) {
+                stepExecutionDetail = loadAllTasksFromDBAndBuildExecutionResultInMemory(watch, stepInstance, query);
+            } else {
+                stepExecutionDetail = filterAndSortExecutionResultInDB(watch, stepInstance, query);
+            }
+
+            if (stepInstance.isRollingStep()) {
+                watch.start("setRollingTasksForStep");
+                setRollingInfoForStep(stepInstance, stepExecutionDetail);
+                watch.stop();
+            } else {
+                stepExecutionDetail.setRunMode(StepRunModeEnum.RUN_ALL);
+            }
+
+            if (stepInstance.isFileStep()) {
+                watch.start("involveFileSourceTaskLog");
+                FileSourceTaskLogDTO fileSourceTaskLog =
+                    fileSourceTaskLogService.getFileSourceTaskLog(
+                        stepInstance.getTaskInstanceId(),
+                        stepInstance.getId(),
+                        queryExecuteCount
+                    );
+                if (fileSourceTaskLog != null) {
+                    involveFileSourceTaskLog(stepExecutionDetail, fileSourceTaskLog);
+                }
+                watch.stop();
+            }
+
+            return stepExecutionDetail;
+        } finally {
+            if (watch.isRunning()) {
+                watch.stop();
+            }
+            if (watch.getTotalTimeMillis() > 1000L) {
+                log.info("Get step execution detail is slow, watch: {}", watch.prettyPrint());
+            }
         }
 
-        StepExecutionDetailDTO stepExecutionDetail;
-        // 如果步骤的目标服务器数量<100,或者通过IP匹配的方式过滤agent任务，为了提升性能，直接全量从DB查询数据，在内存进行处理
-        if ((stepInstance.getTargetServerTotalCount() <= 100) || query.hasIpCondition()) {
-            stepExecutionDetail = loadAllTasksFromDBAndBuildExecutionResultInMemory(watch, stepInstance, gseTaskLog,
-                query);
-        } else {
-            stepExecutionDetail = filterAndSortExecutionResultInDB(watch, stepInstance, gseTaskLog, query);
-        }
-
-        stepExecutionDetail.setStartTime(stepInstance.getStartTime());
-        if (stepInstance.getEndTime() != null) {
-            stepExecutionDetail.setEndTime(stepInstance.getEndTime());
-            stepExecutionDetail.calculateTotalTime();
-        }
-
-        watch.start("involveFileSourceTaskLog");
-        FileSourceTaskLogDTO fileSourceTaskLog = fileSourceTaskLogDAO.getFileSourceTaskLog(stepInstance.getId(),
-            finalExecuteCount);
-        if (fileSourceTaskLog != null) {
-            involveFileSourceTaskLog(stepExecutionDetail, fileSourceTaskLog);
-        }
-        watch.stop();
-
-        if (watch.getTotalTimeMillis() > 1000L) {
-            log.info("Get step execution detail is slow, watch: {}", watch.prettyPrint());
-        }
-
-        return stepExecutionDetail;
     }
 
     private StepExecutionDetailDTO loadAllTasksFromDBAndBuildExecutionResultInMemory(StopWatch watch,
                                                                                      StepInstanceBaseDTO stepInstance,
-                                                                                     GseTaskLogDTO gseTaskLog,
                                                                                      StepExecutionResultQuery query) {
         try {
-            long stepInstanceId = query.getStepInstanceId();
-            int executeCount = query.getExecuteCount();
-            long appId = stepInstance.getAppId();
+            StepExecutionDetailDTO executeDetail = new StepExecutionDetailDTO(stepInstance);
+            executeDetail.setExecuteCount(query.getExecuteCount());
 
-            if (query.hasIpCondition()) {
-                watch.start("getMatchIps");
-                Set<String> matchIps = getMatchIps(query);
-                if (CollectionUtils.isEmpty(matchIps)) {
+            if (query.hasExecuteObjectFilterCondition()) {
+                watch.start("getMatchExecuteObjectCompositeKeys");
+                Set<ExecuteObjectCompositeKey> matchKeys = getMatchExecuteObjectCompositeKeys(stepInstance, query);
+                if (CollectionUtils.isEmpty(matchKeys)) {
                     watch.stop();
-                    return buildExecutionDetailWhenTaskAreEmpty(stepInstance, gseTaskLog);
+                    executeDetail.setResultGroups(buildEmptyResultGroups(stepInstance, query.getBatch()));
+                    return executeDetail;
                 } else {
-                    query.setMatchIps(matchIps);
+                    query.setMatchExecuteObjectCompositeKeys(matchKeys);
                 }
                 watch.stop();
             }
 
-            watch.start("loadAllTasksFromDb");
-            List<GseTaskIpLogDTO> tasks = gseTaskLogService.getIpLog(stepInstanceId, executeCount, true);
-            log.debug("tasks.size={}", tasks.size());
-            watch.stop();
-            watch.start("buildResultGroupsFromTasks");
-            List<ExecutionResultGroupDTO> resultGroups = buildResultGroupsFromTasks(appId, tasks);
-            watch.stop();
+            watch.start("loadAllTasksFromDbAndGroup");
+            List<ResultGroupDTO> resultGroups = listAndGroupExecuteObjectTasks(stepInstance,
+                query.getExecuteCount(), query.getBatch());
 
-            if (CollectionUtils.isNotEmpty(query.getMatchIps())) {
-                watch.start("filterExecutionResultByMatchIp");
-                filterExecutionResultByMatchIp(resultGroups, query.getMatchIps());
-                watch.stop();
+            if (CollectionUtils.isNotEmpty(query.getMatchExecuteObjectCompositeKeys())) {
+                filterExecuteObjectTasksByMatchKeys(resultGroups, query.getMatchExecuteObjectCompositeKeys());
             }
 
-            watch.start("removeAgentTasksExecutionDetail");
-            removeAgentTasksExecutionDetail(resultGroups, query.getResultType(), query.getTag());
+            if (!query.isFetchAllGroupData()) {
+                removeAgentTasksForNotSpecifiedResultGroup(resultGroups, query.getStatus(), query.getTag());
+            }
             watch.stop();
 
-            ExecutionResultGroupDTO resultGroupWithTasks = resultGroups.stream()
-                .filter(resultGroup -> CollectionUtils.isNotEmpty(resultGroup.getAgentTaskExecutionDetail()))
-                .findFirst().orElse(null);
-            if (resultGroupWithTasks == null) {
-                StepExecutionDetailDTO executeDetail = buildStepExecutionDetailDTO(stepInstance, gseTaskLog,
-                    executeCount);
-                executeDetail.setResultGroups(resultGroups);
-                return executeDetail;
-            }
 
             watch.start("sortAndLimitTasks");
-            sortAgentTasks(resultGroupWithTasks, query);
+            sortExecuteObjectTasksAndLimitSize(resultGroups, query);
+            watch.stop();
 
-            if (query.getMaxAgentTasksForResultGroup() != null) {
-                resultGroupWithTasks.setAgentTaskExecutionDetail(
-                    getLimitedSizedList(resultGroupWithTasks.getAgentTaskExecutionDetail(),
-                        query.getMaxAgentTasksForResultGroup()));
-            }
-
-            StepExecutionDetailDTO executeDetail = buildStepExecutionDetailDTO(stepInstance, gseTaskLog, executeCount);
             executeDetail.setResultGroups(resultGroups);
 
-            watch.stop();
             return executeDetail;
         } finally {
             if (watch.isRunning()) {
@@ -611,191 +532,330 @@ public class TaskResultServiceImpl implements TaskResultService {
 
     }
 
-    private void sortAgentTasks(ExecutionResultGroupDTO resultGroupWithTasks, StepExecutionResultQuery query) {
-        if (StringUtils.isNotEmpty(query.getOrderField())) {
-            List<AgentTaskExecutionDTO> taskList = resultGroupWithTasks.getAgentTaskExecutionDetail();
-            if (StepExecutionResultQuery.ORDER_FIELD_TOTAL_TIME.equals(query.getOrderField())) {
-                taskList.sort(Comparator.comparingLong(task -> task.getTotalTime() == null ? 0L : task.getTotalTime()));
-                if (query.getOrder() == DESCENDING) {
-                    Collections.reverse(taskList);
-                }
-            } else if (StepExecutionResultQuery.ORDER_FIELD_EXIT_CODE.equals(query.getOrderField())) {
-                taskList.sort((o1, o2) -> {
-                    if (o1.getExitCode() != null && o2.getExitCode() != null) {
-                        if (o1.getExitCode().equals(o2.getExitCode())) {
-                            return 0;
-                        } else {
-                            return o1.getExitCode() > o2.getExitCode() ? 1 : -1;
-                        }
-                    } else if (o1.getExitCode() == null) {
-                        return -1;
-                    } else if (o2.getExitCode() == null) {
-                        return 1;
-                    } else {
-                        return 0;
-                    }
-                });
-                if (query.getOrder() == DESCENDING) {
-                    Collections.reverse(taskList);
-                }
-            } else if (StepExecutionResultQuery.ORDER_FIELD_CLOUD_AREA_ID.equals(query.getOrderField())) {
-                taskList.sort(Comparator.comparing(AgentTaskExecutionDTO::getCloudIp));
-                if (query.getOrder() == DESCENDING) {
-                    Collections.reverse(taskList);
-                }
-            }
+    private List<ResultGroupDTO> listAndGroupExecuteObjectTasks(StepInstanceBaseDTO stepInstance,
+                                                                int executeCount,
+                                                                Integer batch) {
+        List<ResultGroupDTO> resultGroups = null;
+        if (stepInstance.isScriptStep()) {
+            resultGroups = scriptExecuteObjectTaskService.listAndGroupTasks(stepInstance, executeCount, batch);
+        } else if (stepInstance.isFileStep()) {
+            resultGroups = fileExecuteObjectTaskService.listAndGroupTasks(stepInstance, executeCount, batch);
         }
+        return resultGroups;
+    }
+
+    private List<ResultGroupBaseDTO> listResultGroups(StepInstanceBaseDTO stepInstance,
+                                                      int executeCount,
+                                                      Integer batch) {
+        List<ResultGroupBaseDTO> resultGroups = null;
+        if (stepInstance.isScriptStep()) {
+            resultGroups = scriptExecuteObjectTaskService.listResultGroups(stepInstance, executeCount, batch);
+        } else if (stepInstance.isFileStep()) {
+            resultGroups = fileExecuteObjectTaskService.listResultGroups(stepInstance, executeCount, batch);
+        }
+        return resultGroups;
     }
 
 
-    private Set<String> getMatchIps(StepExecutionResultQuery query) {
-        long stepInstanceId = query.getStepInstanceId();
-        int executeCount = query.getExecuteCount();
+    private void sortExecuteObjectTasksAndLimitSize(List<ResultGroupDTO> resultGroups,
+                                                    StepExecutionResultQuery query) {
+        resultGroups.stream()
+            .filter(resultGroup -> CollectionUtils.isNotEmpty(resultGroup.getExecuteObjectTasks()))
+            .forEach(resultGroup -> {
+                // 排序
+                if (StringUtils.isNotEmpty(query.getOrderField())) {
+                    List<ExecuteObjectTask> executeObjectTasks = resultGroup.getExecuteObjectTasks();
+                    if (StepExecutionResultQuery.ORDER_FIELD_TOTAL_TIME.equals(query.getOrderField())) {
+                        executeObjectTasks.sort(Comparator.comparingLong(task -> task.getTotalTime() == null ? 0L :
+                            task.getTotalTime()));
+                        if (query.getOrder() == DESCENDING) {
+                            Collections.reverse(executeObjectTasks);
+                        }
+                    } else if (StepExecutionResultQuery.ORDER_FIELD_EXIT_CODE.equals(query.getOrderField())) {
+                        executeObjectTasks.sort((o1, o2) -> {
+                            if (o1.getExitCode() != null && o2.getExitCode() != null) {
+                                if (o1.getExitCode().equals(o2.getExitCode())) {
+                                    return 0;
+                                } else {
+                                    return o1.getExitCode() > o2.getExitCode() ? 1 : -1;
+                                }
+                            } else if (o1.getExitCode() == null) {
+                                return -1;
+                            } else if (o2.getExitCode() == null) {
+                                return 1;
+                            } else {
+                                return 0;
+                            }
+                        });
+                        if (query.getOrder() == DESCENDING) {
+                            Collections.reverse(executeObjectTasks);
+                        }
+                    }
+                }
 
-        Set<String> matchIpsByLogKeywordSearch = null;
+                // 截断
+                if (query.getMaxTasksForResultGroup() != null) {
+                    resultGroup.setExecuteObjectTasks(
+                        getLimitedSizedList(resultGroup.getExecuteObjectTasks(),
+                            query.getMaxTasksForResultGroup()));
+                }
+            });
+    }
+
+
+    private Set<ExecuteObjectCompositeKey> getMatchExecuteObjectCompositeKeys(StepInstanceBaseDTO stepInstance,
+                                                                              StepExecutionResultQuery query) {
+        List<ExecuteObjectCompositeKey> matchKeysByLogKeywordSearch = null;
         if (StringUtils.isNotBlank(query.getLogKeyword())) {
-            List<IpDTO> matchHosts = getHostsByLogContentKeyword(stepInstanceId, executeCount, query.getLogKeyword());
-            if (CollectionUtils.isNotEmpty(matchHosts)) {
-                matchIpsByLogKeywordSearch = matchHosts.stream().map(IpDTO::convertToStrIp).collect(Collectors.toSet());
-            }
+            matchKeysByLogKeywordSearch = getExecuteObjectCompositeKeysByLogContentKeyword(stepInstance,
+                query.getExecuteCount(), query.getBatch(), query.getLogKeyword());
         }
-        Set<String> matchIpsByIpSearch = null;
+        List<ExecuteObjectCompositeKey> matchKeysByIpSearch = null;
         if (StringUtils.isNotBlank(query.getSearchIp())) {
-            List<IpDTO> matchHosts = fuzzySearchHostsByIp(stepInstanceId, executeCount, query.getSearchIp());
-            if (CollectionUtils.isNotEmpty(matchHosts)) {
-                matchIpsByIpSearch = matchHosts.stream().map(IpDTO::convertToStrIp).collect(Collectors.toSet());
-            }
+            matchKeysByIpSearch = fuzzySearchHostsByIp(stepInstance, query.getSearchIp());
         }
 
-        log.info("matchIpsByLogKeywordSearch: {}, matchIpsByIpSearch: {}", matchIpsByLogKeywordSearch,
-            matchIpsByIpSearch);
-
-        if (matchIpsByLogKeywordSearch != null && matchIpsByIpSearch != null) {
-            return new HashSet<>(CollectionUtils.intersection(matchIpsByLogKeywordSearch, matchIpsByIpSearch));
-        } else if (matchIpsByLogKeywordSearch != null) {
-            return matchIpsByLogKeywordSearch;
-        } else if (matchIpsByIpSearch != null) {
-            return matchIpsByIpSearch;
+        if (matchKeysByLogKeywordSearch != null && matchKeysByIpSearch != null) {
+            return new HashSet<>(CollectionUtils.intersection(matchKeysByLogKeywordSearch, matchKeysByIpSearch));
+        } else if (matchKeysByLogKeywordSearch != null) {
+            return new HashSet<>(matchKeysByLogKeywordSearch);
+        } else if (matchKeysByIpSearch != null) {
+            return new HashSet<>(matchKeysByIpSearch);
         } else {
             return Collections.emptySet();
         }
     }
 
-    private StepExecutionDetailDTO buildExecutionDetailWhenTaskAreEmpty(StepInstanceBaseDTO stepInstance,
-                                                                        GseTaskLogDTO gseTaskLog) {
-        List<ResultGroupBaseDTO> baseResultGroups = gseTaskIpLogDAO
-            .getResultGroups(stepInstance.getId(), stepInstance.getExecuteCount());
-        StepExecutionDetailDTO executeDetail = buildStepExecutionDetailDTO(stepInstance,
-            gseTaskLog, stepInstance.getExecuteCount());
-        List<ExecutionResultGroupDTO> resultGroups = new ArrayList<>();
-        for (ResultGroupBaseDTO baseResultGroup : baseResultGroups) {
-            ExecutionResultGroupDTO resultGroup = buildExecutionResultGroup(baseResultGroup);
-            resultGroup.setAgentTaskSize(0);
-            resultGroups.add(resultGroup);
-        }
-        executeDetail.setResultGroups(resultGroups);
-        return executeDetail;
+    private List<ResultGroupDTO> buildEmptyResultGroups(StepInstanceBaseDTO stepInstance,
+                                                        Integer batch) {
+        List<ResultGroupBaseDTO> resultGroups = listResultGroups(stepInstance,
+            stepInstance.getExecuteCount(), batch);
+        return resultGroups.stream().map(resultGroupBase -> {
+            ResultGroupDTO resultGroup = new ResultGroupDTO(resultGroupBase);
+            resultGroup.setTotal(0);
+            return resultGroup;
+        }).collect(Collectors.toList());
     }
 
-    private void filterExecutionResultByMatchIp(List<ExecutionResultGroupDTO> resultGroups, Set<String> matchIps) {
-        for (ExecutionResultGroupDTO resultGroup : resultGroups) {
-            List<AgentTaskExecutionDTO> agentTaskExecutions = resultGroup.getAgentTaskExecutionDetail();
-            if (CollectionUtils.isNotEmpty(agentTaskExecutions)) {
-                agentTaskExecutions = agentTaskExecutions.stream().filter(
-                    agentTaskExecution -> matchIps.contains(agentTaskExecution.getCloudIp())).collect(
-                    Collectors.toList());
-                resultGroup.setAgentTaskExecutionDetail(agentTaskExecutions);
-                resultGroup.setAgentTaskSize(agentTaskExecutions.size());
+    private void filterExecuteObjectTasksByMatchKeys(List<ResultGroupDTO> resultGroups,
+                                                     Set<ExecuteObjectCompositeKey> matchExecuteObjectCompositeKeys) {
+        ExecuteObjectCompositeKey.CompositeKeyType compositeKeyType =
+            getCompositeKeyType(matchExecuteObjectCompositeKeys);
+        for (ResultGroupDTO resultGroup : resultGroups) {
+            List<ExecuteObjectTask> executeObjectTasks = resultGroup.getExecuteObjectTasks();
+            if (CollectionUtils.isNotEmpty(executeObjectTasks)) {
+                executeObjectTasks = executeObjectTasks.stream()
+                    .filter(executeObjectTask -> isExecuteObjectMatch(executeObjectTask.getExecuteObject(),
+                        matchExecuteObjectCompositeKeys, compositeKeyType))
+                    .collect(Collectors.toList());
+                resultGroup.setExecuteObjectTasks(executeObjectTasks);
+                resultGroup.setTotal(executeObjectTasks.size());
             }
         }
     }
 
-    private void removeAgentTasksExecutionDetail(List<ExecutionResultGroupDTO> resultGroups, Integer resultType,
-                                                 String tag) {
-        if (resultType != null && resultGroups.contains(new ExecutionResultGroupDTO(resultType, tag))) {
+    private ExecuteObjectCompositeKey.CompositeKeyType getCompositeKeyType(
+        Set<ExecuteObjectCompositeKey> matchExecuteObjectCompositeKeys) {
+        return Objects.requireNonNull(matchExecuteObjectCompositeKeys.stream().findFirst().orElse(null))
+            .getCompositeKeyType();
+    }
+
+    private boolean isExecuteObjectMatch(ExecuteObject executeObject,
+                                         Set<ExecuteObjectCompositeKey> matchExecuteObjectCompositeKeys,
+                                         ExecuteObjectCompositeKey.CompositeKeyType compositeKeyType) {
+        return matchExecuteObjectCompositeKeys.contains(executeObject.toExecuteObjectCompositeKey(compositeKeyType));
+    }
+
+    private void removeAgentTasksForNotSpecifiedResultGroup(List<ResultGroupDTO> resultGroups, Integer status,
+                                                            String tag) {
+        if (status != null && resultGroups.contains(new ResultGroupDTO(status, tag))) {
             resultGroups.forEach(resultGroup -> {
-                if (!isMatchResultGroup(resultGroup, resultType, tag)) {
-                    resultGroup.setAgentTaskExecutionDetail(Collections.emptyList());
+                if (!isMatchResultGroup(resultGroup, status, tag)) {
+                    resultGroup.setExecuteObjectTasks(Collections.emptyList());
                 }
             });
         } else {
             int i = 0;
-            for (ExecutionResultGroupDTO resultGroup : resultGroups) {
+            for (ResultGroupDTO resultGroup : resultGroups) {
                 i++;
                 if (i != 1) {
-                    resultGroup.setAgentTaskExecutionDetail(Collections.emptyList());
+                    resultGroup.setExecuteObjectTasks(Collections.emptyList());
                 }
             }
         }
     }
 
-    private List<ExecutionResultGroupDTO> buildResultGroupsFromTasks(long appId, List<GseTaskIpLogDTO> tasks) {
-        Map<ExecutionResultGroupDTO, List<GseTaskIpLogDTO>> resultGroups = new HashMap<>();
-        // 对执行结果按状态status与标签tag进行分组
-        tasks.forEach(task -> resultGroups.computeIfAbsent(task.getExecutionResultGroup(),
-            resultGroup -> new ArrayList<>()).add(task));
-        resultGroups.forEach((resultGroup, taskList) -> {
-            List<AgentTaskExecutionDTO> agentTasks = buildAgentTaskExecutionDTOList(appId, taskList);
-            resultGroup.setAgentTaskExecutionDetail(agentTasks);
-            resultGroup.setAgentTaskSize(agentTasks.size());
-        });
-        return new ArrayList<>(resultGroups.keySet());
-    }
-
     private StepExecutionDetailDTO filterAndSortExecutionResultInDB(StopWatch watch,
                                                                     StepInstanceBaseDTO stepInstance,
-                                                                    GseTaskLogDTO gseTaskLog,
                                                                     StepExecutionResultQuery query) {
         query.transformOrderFieldToDbField();
-        long stepInstanceId = query.getStepInstanceId();
-        int executeCount = query.getExecuteCount();
-        Integer resultType = query.getResultType();
+        int queryExecuteCount = query.getExecuteCount();
+        Integer status = query.getStatus();
         String tag = query.getTag();
-        long appId = stepInstance.getAppId();
 
-        StepExecutionDetailDTO executeDetail = buildStepExecutionDetailDTO(stepInstance, gseTaskLog, executeCount);
+        StepExecutionDetailDTO executeDetail = new StepExecutionDetailDTO(stepInstance);
+        executeDetail.setExecuteCount(queryExecuteCount);
 
         watch.start("getBaseResultGroups");
-        List<ExecutionResultGroupDTO> resultGroups = getExecutionResultGroupsFromDB(stepInstanceId, executeCount);
+        List<ResultGroupBaseDTO> baseResultGroups = listBaseResultGroups(stepInstance,
+            queryExecuteCount, query.getBatch());
         watch.stop();
-        if (resultType != null) {
-            watch.start("loadTasksFromDbForResultType");
-            List<GseTaskIpLogDTO> tasks = gseTaskIpLogDAO.getIpLogByResultType(stepInstanceId, executeCount,
-                resultType, tag, query.getMaxAgentTasksForResultGroup(), query.getOrderField(), query.getOrder());
-            watch.stop();
+
+        watch.start("setExecuteObjectTasks");
+        List<ResultGroupDTO> resultGroups = baseResultGroups.stream()
+            .map(ResultGroupDTO::new)
+            .collect(Collectors.toList());
+        if (status != null) {
+            List<ExecuteObjectTask> tasks = listExecuteObjectTaskByResultGroup(stepInstance, queryExecuteCount,
+                query.getBatch(), status, tag, query.getMaxTasksForResultGroup(), query.getOrderField(),
+                query.getOrder());
             if (CollectionUtils.isNotEmpty(tasks)) {
-                watch.start("setAgentTasksForSpecifiedResultType");
-                setAgentTasksForSpecifiedResultType(resultGroups, appId, resultType, tag, tasks);
-                watch.stop();
+                setExecuteObjectTasksForSpecifiedResultType(resultGroups, status, tag, tasks);
             } else {
-                watch.start("setAgentTasksForAnyResultType");
-                setAgentTasksForAnyResultType(resultGroups, appId, stepInstanceId, executeCount,
-                    query.getMaxAgentTasksForResultGroup());
-                watch.stop();
+                setAgentTasksForAnyResultType(resultGroups, stepInstance, queryExecuteCount,
+                    query.getBatch(), query.getMaxTasksForResultGroup(), query.isFetchAllGroupData());
             }
         } else {
-            watch.start("setAgentTasksForAnyResultType");
-            setAgentTasksForAnyResultType(resultGroups, appId, stepInstanceId, executeCount,
-                query.getMaxAgentTasksForResultGroup());
-            watch.stop();
+            setAgentTasksForAnyResultType(resultGroups, stepInstance, queryExecuteCount,
+                query.getBatch(), query.getMaxTasksForResultGroup(), query.isFetchAllGroupData());
         }
+        watch.stop();
+
 
         executeDetail.setResultGroups(resultGroups);
         return executeDetail;
     }
 
-    private List<IpDTO> getHostsByLogContentKeyword(long stepInstanceId, int executeCount, String keyword) {
-        String searchKey = keyword.replaceAll("'", "").replaceAll("\\$", "")
-            .replaceAll("&", "").replaceAll("$", "")
-            .replaceAll("\\|", "").replaceAll("`", "")
-            .replaceAll(";", "");
-
-        return logService.getIpsByContentKeyword(stepInstanceId, executeCount, searchKey);
+    private List<ResultGroupBaseDTO> listBaseResultGroups(StepInstanceBaseDTO stepInstance,
+                                                          int executeCount,
+                                                          Integer batch) {
+        List<ResultGroupBaseDTO> resultGroups = null;
+        if (stepInstance.isScriptStep()) {
+            resultGroups = scriptExecuteObjectTaskService.listResultGroups(stepInstance, executeCount, batch);
+        } else if (stepInstance.isFileStep()) {
+            resultGroups = fileExecuteObjectTaskService.listResultGroups(stepInstance, executeCount, batch);
+        }
+        return resultGroups;
     }
 
-    private List<IpDTO> fuzzySearchHostsByIp(long stepInstanceId, int executeCount, String searchIp) {
-        return gseTaskIpLogDAO.fuzzySearchTargetIpsByIp(stepInstanceId, executeCount, searchIp)
-            .stream().map(IpDTO::fromCloudAreaIdAndIpStr).collect(Collectors.toList());
+    private List<ExecuteObjectTask> listExecuteObjectTaskByResultGroup(StepInstanceBaseDTO stepInstance,
+                                                                       int queryExecuteCount,
+                                                                       Integer batch,
+                                                                       Integer status,
+                                                                       String tag,
+                                                                       Integer maxAgentTasksForResultGroup,
+                                                                       String orderField,
+                                                                       Order order) {
+        List<ExecuteObjectTask> tasks = null;
+        if (stepInstance.isScriptStep()) {
+            tasks = scriptExecuteObjectTaskService.listTaskByResultGroup(stepInstance, queryExecuteCount,
+                batch, status, tag, maxAgentTasksForResultGroup, orderField, order);
+        } else if (stepInstance.isFileStep()) {
+            tasks = fileExecuteObjectTaskService.listTaskByResultGroup(stepInstance, queryExecuteCount,
+                batch, status, tag, maxAgentTasksForResultGroup, orderField, order);
+        }
+        return tasks;
+    }
+
+    private List<ExecuteObjectTask> listExecuteObjectTaskByResultGroup(StepInstanceBaseDTO stepInstance,
+                                                                       int queryExecuteCount,
+                                                                       Integer batch,
+                                                                       Integer status,
+                                                                       String tag) {
+        List<ExecuteObjectTask> tasks = null;
+        if (stepInstance.isScriptStep()) {
+            tasks = scriptExecuteObjectTaskService.listTaskByResultGroup(stepInstance, queryExecuteCount,
+                batch, status, tag);
+        } else if (stepInstance.isFileStep()) {
+            tasks = fileExecuteObjectTaskService.listTaskByResultGroup(stepInstance, queryExecuteCount,
+                batch, status, tag);
+        }
+        return tasks;
+    }
+
+    private void setRollingInfoForStep(StepInstanceBaseDTO stepInstance,
+                                       StepExecutionDetailDTO stepExecutionDetail) {
+        RollingConfigDTO rollingConfig =
+            rollingConfigService.getRollingConfig(stepInstance.getTaskInstanceId(), stepInstance.getRollingConfigId());
+
+        Map<Integer, StepInstanceRollingTaskDTO> latestStepInstanceRollingTasks =
+            stepInstanceRollingTaskService.listLatestRollingTasks(
+                stepInstance.getTaskInstanceId(),
+                stepExecutionDetail.getStepInstanceId(),
+                stepExecutionDetail.getExecuteCount())
+                .stream()
+                .collect(Collectors.toMap(StepInstanceRollingTaskDTO::getBatch,
+                    stepInstanceRollingTask -> stepInstanceRollingTask, (oldValue, newValue) -> newValue));
+
+        // 如果滚动任务还未调度，那么需要在结果中补充
+        int totalBatch = rollingConfig.getConfigDetail().getTotalBatch();
+        List<StepInstanceRollingTaskDTO> stepInstanceRollingTasks = new ArrayList<>();
+        for (int batch = 1; batch <= totalBatch; batch++) {
+            StepInstanceRollingTaskDTO stepInstanceRollingTask = latestStepInstanceRollingTasks.get(batch);
+            if (stepInstanceRollingTask == null) {
+                stepInstanceRollingTask = new StepInstanceRollingTaskDTO();
+                stepInstanceRollingTask.setStepInstanceId(stepExecutionDetail.getStepInstanceId());
+                stepInstanceRollingTask.setExecuteCount(stepInstance.getExecuteCount());
+                stepInstanceRollingTask.setBatch(batch);
+                stepInstanceRollingTask.setStatus(RunStatusEnum.BLANK);
+                if (RunStatusEnum.WAITING_USER == stepInstance.getStatus()
+                    && stepInstance.getBatch() + 1 == batch) {
+                    // 如果当前步骤状态为"等待用户"，那么需要设置下一批次的滚动任务状态为WAITING_USER
+                    stepInstanceRollingTask.setStatus(RunStatusEnum.WAITING_USER);
+                } else {
+                    stepInstanceRollingTask.setStatus(RunStatusEnum.BLANK);
+                }
+            }
+            stepInstanceRollingTasks.add(stepInstanceRollingTask);
+        }
+
+        stepExecutionDetail.setRollingTasks(stepInstanceRollingTasks);
+        stepExecutionDetail.setLatestBatch(stepInstance.getBatch());
+        stepExecutionDetail.setRunMode(rollingConfig.isBatchRollingStep(stepInstance.getId()) ?
+            StepRunModeEnum.ROLLING_IN_BATCH : StepRunModeEnum.ROLLING_ALL);
+    }
+
+    private List<ExecuteObjectCompositeKey> getExecuteObjectCompositeKeysByLogContentKeyword(
+        StepInstanceBaseDTO stepInstance,
+        int executeCount,
+        Integer batch,
+        String keyword
+    ) {
+        return logService.getExecuteObjectsCompositeKeysByContentKeyword(stepInstance, executeCount, batch, keyword);
+    }
+
+    private List<ExecuteObjectCompositeKey> fuzzySearchHostsByIp(StepInstanceBaseDTO stepInstance, String searchIp) {
+        List<ExecuteObject> matchExecuteObjects =
+            stepInstance.getTargetExecuteObjects().getExecuteObjectsCompatibly().stream()
+                .filter(executeObject -> isMatchByIp(executeObject, searchIp))
+                .collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(matchExecuteObjects)) {
+            return null;
+        }
+        if (stepInstance.isSupportExecuteObjectFeature()) {
+            return matchExecuteObjects.stream()
+                .map(executeObject -> ExecuteObjectCompositeKey.ofExecuteObjectId(executeObject.getId()))
+                .collect(Collectors.toList());
+        } else {
+            return matchExecuteObjects.stream()
+                .map(executeObject -> ExecuteObjectCompositeKey.ofHostId(executeObject.getResourceId()))
+                .collect(Collectors.toList());
+        }
+    }
+
+    private boolean isMatchByIp(ExecuteObject executeObject, String searchIp) {
+        boolean isMatch = false;
+        if (!executeObject.isHostExecuteObject()) {
+            return false;
+        }
+        HostDTO host = executeObject.getHost();
+        if (StringUtils.isNotBlank(host.getIp())) {
+            isMatch = host.getIp().contains(searchIp);
+        }
+        if (!isMatch && StringUtils.isNotBlank(host.getIpv6())) {
+            isMatch = host.getIpv6().contains(searchIp);
+        }
+        return isMatch;
     }
 
     @Override
@@ -815,8 +875,8 @@ public class TaskResultServiceImpl implements TaskResultService {
             // 已执行完成任务计数
             int doneTaskCount = 0;
             for (TaskInstanceDTO taskInstance : last24HourTaskInstances) {
-                if (!taskInstance.getStatus().equals(RunStatusEnum.RUNNING.getValue())
-                    && !taskInstance.getStatus().equals(RunStatusEnum.STOPPING.getValue())) {
+                if (taskInstance.getStatus() != RunStatusEnum.RUNNING
+                    && taskInstance.getStatus() != RunStatusEnum.STOPPING) {
                     doneTaskCount++;
                 }
                 if (doneTaskCount >= 10) {
@@ -854,93 +914,115 @@ public class TaskResultServiceImpl implements TaskResultService {
         return taskInstances.stream().map(taskInstance -> {
             CronTaskExecuteResult cronTaskExecuteResult = new CronTaskExecuteResult();
             cronTaskExecuteResult.setCronTaskId(taskInstance.getCronTaskId());
-            cronTaskExecuteResult.setPlanId(taskInstance.getTaskId());
-            cronTaskExecuteResult.setStatus(taskInstance.getStatus());
+            cronTaskExecuteResult.setPlanId(taskInstance.getPlanId());
+            cronTaskExecuteResult.setStatus(taskInstance.getStatus().getValue());
             cronTaskExecuteResult.setExecuteTime(taskInstance.getCreateTime());
             return cronTaskExecuteResult;
         }).collect(Collectors.toList());
     }
 
     @Override
-    public List<IpDTO> getHostsByResultType(String username, Long appId, Long stepInstanceId, Integer executeCount,
-                                            Integer resultType, String tag, String keyword) {
-        StepInstanceBaseDTO stepInstance = checkGetStepExecutionDetail(username, appId, stepInstanceId);
+    public List<ExecuteObject> getExecuteObjectsByResultType(String username,
+                                                             Long appId,
+                                                             Long taskInstanceId,
+                                                             Long stepInstanceId,
+                                                             Integer executeCount,
+                                                             Integer batch,
+                                                             Integer resultType,
+                                                             String tag,
+                                                             String keyword) {
+        StepInstanceBaseDTO stepInstance = stepInstanceService.getBaseStepInstance(
+            appId, taskInstanceId, stepInstanceId);
+        preProcessViewStepExecutionResult(username, appId, stepInstance);
 
-        if (!stepInstance.getAppId().equals(appId)) {
-            log.warn("Step instance is not in application, stepInstanceId={}, appId={}", stepInstanceId, appId);
-            throw new NotFoundException(ErrorCode.STEP_INSTANCE_NOT_EXIST);
-        }
+        StepExecutionResultQuery query = StepExecutionResultQuery.builder()
+            .taskInstanceId(taskInstanceId)
+            .stepInstanceId(stepInstanceId)
+            .executeCount(executeCount)
+            .batch(batch)
+            .logKeyword(keyword)
+            .build();
 
-        StepExecutionResultQuery query = new StepExecutionResultQuery();
-        query.setStepInstanceId(stepInstanceId);
-        query.setExecuteCount(executeCount);
-        query.setLogKeyword(keyword);
-
-        Set<String> matchIps = null;
+        Set<ExecuteObjectCompositeKey> matchExecuteObjectCompositeKeys = null;
         boolean filterByKeyword = StringUtils.isNotEmpty(keyword);
         if (filterByKeyword) {
-            matchIps = getMatchIps(query);
-            if (CollectionUtils.isEmpty(matchIps)) {
+            matchExecuteObjectCompositeKeys = getMatchExecuteObjectCompositeKeys(stepInstance, query);
+            if (CollectionUtils.isEmpty(matchExecuteObjectCompositeKeys)) {
                 return Collections.emptyList();
             }
         }
 
-        GseTaskLogDTO gseTaskLog = gseTaskLogService.getGseTaskLog(stepInstance.getId(),
-            stepInstance.getExecuteCount());
-        if (gseTaskLog == null) {
-            if (stepInstance.getTargetServers().getIpList() != null) {
-                return stepInstance.getTargetServers().getIpList();
-            } else {
-                return Collections.emptyList();
-            }
+        if (stepInstance.getStatus() == RunStatusEnum.BLANK) {
+            // 步骤未启动，ExecuteObjectTask数据还未在DB初始化，构造初始任务结果
+            return filterTargetExecuteObjectsByBatch(stepInstance, query.getBatch());
         }
 
-        List<GseTaskIpLogDTO> ipLogGroupByResultType = gseTaskIpLogDAO.getIpLogByResultType(stepInstanceId,
-            executeCount, resultType, tag);
-        if (CollectionUtils.isEmpty(ipLogGroupByResultType)) {
+        List<ExecuteObjectTask> executeObjectTaskGroupByResultType = listExecuteObjectTaskByResultGroup(stepInstance,
+            executeCount, batch, resultType, tag);
+        if (CollectionUtils.isEmpty(executeObjectTaskGroupByResultType)) {
             return Collections.emptyList();
         }
-        List<IpDTO> hosts = ipLogGroupByResultType.stream()
-            .map(gseTaskIpLog -> new IpDTO(gseTaskIpLog.getCloudAreaId(), gseTaskIpLog.getIp()))
+        List<ExecuteObject> executeObjects = executeObjectTaskGroupByResultType.stream()
+            .map(ExecuteObjectTask::getExecuteObject)
             .collect(Collectors.toList());
-        if (filterByKeyword && CollectionUtils.isNotEmpty(matchIps)) {
-            List<IpDTO> finalHosts = new ArrayList<>();
-            for (IpDTO host : hosts) {
-                if (matchIps.contains(host.convertToStrIp())) {
-                    finalHosts.add(host);
+        if (filterByKeyword && CollectionUtils.isNotEmpty(matchExecuteObjectCompositeKeys)) {
+            ExecuteObjectCompositeKey.CompositeKeyType compositeKeyType =
+                getCompositeKeyType(matchExecuteObjectCompositeKeys);
+            List<ExecuteObject> finalExecuteObject = new ArrayList<>();
+            for (ExecuteObject executeObject : executeObjects) {
+                if (isExecuteObjectMatch(executeObject, matchExecuteObjectCompositeKeys, compositeKeyType)) {
+                    finalExecuteObject.add(executeObject);
                 }
             }
-            return finalHosts;
+            return finalExecuteObject;
         } else {
-            return hosts;
+            return executeObjects;
         }
     }
 
+
     @Override
-    public List<StepExecutionRecordDTO> listStepExecutionHistory(String username, Long appId, Long stepInstanceId) {
-        StepInstanceBaseDTO stepInstance = checkGetStepExecutionDetail(username, appId, stepInstanceId);
-        int latestExecuteCount = stepInstance.getExecuteCount();
-        if (latestExecuteCount == 0) {
+    public List<StepExecutionRecordDTO> listStepExecutionHistory(String username,
+                                                                 Long appId,
+                                                                 Long taskInstanceId,
+                                                                 Long stepInstanceId,
+                                                                 Integer batch) {
+        StepInstanceBaseDTO stepInstance = stepInstanceService.getBaseStepInstance(
+            appId, taskInstanceId, stepInstanceId);
+        preProcessViewStepExecutionResult(username, appId, stepInstance);
+
+        // 步骤没有重试执行过
+        if (stepInstance.getExecuteCount() == 0) {
             StepExecutionRecordDTO record = new StepExecutionRecordDTO();
             record.setStepInstanceId(stepInstanceId);
-            record.setRetryCount(latestExecuteCount);
+            record.setRetryCount(0);
             record.setCreateTime(stepInstance.getCreateTime());
             return Collections.singletonList(record);
         }
 
-        List<OperationLogDTO> operationLogs = operationLogService.listOperationLog(stepInstance.getTaskInstanceId());
-        List<StepExecutionRecordDTO> records = new ArrayList<>();
-        if (CollectionUtils.isEmpty(operationLogs)) {
-            for (int executeCount = latestExecuteCount; executeCount >= 0; executeCount--) {
-                StepExecutionRecordDTO record = new StepExecutionRecordDTO();
-                record.setStepInstanceId(stepInstanceId);
-                record.setRetryCount(executeCount);
-                record.setCreateTime(stepInstance.getCreateTime());
-                records.add(record);
-            }
-            return records;
+        List<StepExecutionRecordDTO> records;
+        if (batch == null || batch == 0) {
+            // 获取步骤维度的重试记录
+            records = queryStepRetryRecords(stepInstance);
+        } else {
+            // 获取滚动任务维度的重试记录
+            records = queryStepRollingTaskRetryRecords(stepInstance.getTaskInstanceId(), stepInstanceId, batch);
         }
 
+        records.sort(Comparator.comparingInt(StepExecutionRecordDTO::getRetryCount).reversed());
+
+        return records;
+    }
+
+    private List<StepExecutionRecordDTO> queryStepRetryRecords(StepInstanceBaseDTO stepInstance) {
+        Long stepInstanceId = stepInstance.getId();
+        // 步骤最新的重试次数
+        int latestExecuteCount = stepInstance.getExecuteCount();
+        List<OperationLogDTO> operationLogs =
+            operationLogService.listOperationLog(stepInstance.getTaskInstanceId());
+
+
+        List<StepExecutionRecordDTO> records = new ArrayList<>();
         Map<Integer, Long> executeCountAndCreateTimeMap = new HashMap<>();
         operationLogs.forEach(opLog -> {
             UserOperationEnum operation = opLog.getOperationEnum();
@@ -960,6 +1042,23 @@ public class TaskResultServiceImpl implements TaskResultService {
             record.setCreateTime(executeCountAndCreateTimeMap.get(executeCount));
             records.add(record);
         }
+
+        return records;
+    }
+
+    private List<StepExecutionRecordDTO> queryStepRollingTaskRetryRecords(Long taskInstanceId,
+                                                                          long stepInstanceId,
+                                                                          int batch) {
+        List<StepExecutionRecordDTO> records = new ArrayList<>();
+        List<StepInstanceRollingTaskDTO> rollingTasks =
+            stepInstanceRollingTaskService.listRollingTasksByBatch(taskInstanceId, stepInstanceId, batch);
+        rollingTasks.forEach(rollingTask -> {
+            StepExecutionRecordDTO record = new StepExecutionRecordDTO();
+            record.setStepInstanceId(stepInstanceId);
+            record.setRetryCount(rollingTask.getExecuteCount());
+            record.setCreateTime(rollingTask.getStartTime());
+            records.add(record);
+        });
         return records;
     }
 }

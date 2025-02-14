@@ -24,41 +24,36 @@
 
 package com.tencent.bk.job.execute.engine.listener;
 
+import com.tencent.bk.job.common.gse.v2.model.ExecuteObjectGseKey;
+import com.tencent.bk.job.common.util.FilePathUtils;
 import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
-import com.tencent.bk.job.execute.config.StorageSystemConfig;
-import com.tencent.bk.job.execute.engine.TaskExecuteControlMsgSender;
-import com.tencent.bk.job.execute.engine.consts.FileDirTypeConf;
-import com.tencent.bk.job.execute.engine.consts.IpStatus;
-import com.tencent.bk.job.execute.engine.exception.ExceptionStatusManager;
-import com.tencent.bk.job.execute.engine.message.TaskResultHandleResumeProcessor;
+import com.tencent.bk.job.execute.config.FileDistributeConfig;
+import com.tencent.bk.job.execute.config.JobExecuteConfig;
+import com.tencent.bk.job.execute.engine.EngineDependentServiceHolder;
+import com.tencent.bk.job.execute.engine.listener.event.JobMessage;
+import com.tencent.bk.job.execute.engine.listener.event.ResultHandleTaskResumeEvent;
 import com.tencent.bk.job.execute.engine.model.FileDest;
 import com.tencent.bk.job.execute.engine.model.JobFile;
-import com.tencent.bk.job.execute.engine.model.StepControlMessage;
 import com.tencent.bk.job.execute.engine.model.TaskVariableDTO;
 import com.tencent.bk.job.execute.engine.model.TaskVariablesAnalyzeResult;
 import com.tencent.bk.job.execute.engine.result.FileResultHandleTask;
 import com.tencent.bk.job.execute.engine.result.ResultHandleManager;
 import com.tencent.bk.job.execute.engine.result.ScriptResultHandleTask;
-import com.tencent.bk.job.execute.engine.result.ha.ResultHandleTaskKeepaliveManager;
-import com.tencent.bk.job.execute.engine.util.FilePathUtils;
 import com.tencent.bk.job.execute.engine.util.JobSrcFileUtils;
-import com.tencent.bk.job.execute.engine.util.NFSUtils;
-import com.tencent.bk.job.execute.model.GseTaskIpLogDTO;
-import com.tencent.bk.job.execute.model.GseTaskLogDTO;
+import com.tencent.bk.job.execute.model.ExecuteObjectTask;
+import com.tencent.bk.job.execute.model.GseTaskDTO;
 import com.tencent.bk.job.execute.model.StepInstanceDTO;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
-import com.tencent.bk.job.execute.service.AgentService;
-import com.tencent.bk.job.execute.service.GseTaskLogService;
-import com.tencent.bk.job.execute.service.LogService;
-import com.tencent.bk.job.execute.service.StepInstanceVariableValueService;
+import com.tencent.bk.job.execute.service.FileExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.GseTaskService;
+import com.tencent.bk.job.execute.service.ScriptExecuteObjectTaskService;
+import com.tencent.bk.job.execute.service.StepInstanceService;
 import com.tencent.bk.job.execute.service.TaskInstanceService;
 import com.tencent.bk.job.execute.service.TaskInstanceVariableService;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cloud.stream.annotation.EnableBinding;
-import org.springframework.cloud.stream.annotation.StreamListener;
+import org.springframework.messaging.Message;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -66,135 +61,89 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * 执行引擎流程处理-任务结果处理-恢复
+ * 执行引擎事件处理-任务恢复
  */
 @Component
-@EnableBinding({TaskResultHandleResumeProcessor.class})
 @Slf4j
-public class ResultHandleResumeListener {
+public class ResultHandleResumeListener extends BaseJobMqListener {
+
+    private final EngineDependentServiceHolder engineDependentServiceHolder;
     private final TaskInstanceService taskInstanceService;
 
     private final ResultHandleManager resultHandleManager;
 
     private final TaskInstanceVariableService taskInstanceVariableService;
 
-    private final GseTaskLogService gseTaskLogService;
+    private final GseTaskService gseTaskService;
 
-    private final StorageSystemConfig storageSystemConfig;
+    private final FileDistributeConfig fileDistributeConfig;
 
-    private final AgentService agentService;
+    private final ScriptExecuteObjectTaskService scriptExecuteObjectTaskService;
 
-    private final LogService logService;
+    private final FileExecuteObjectTaskService fileExecuteObjectTaskService;
 
-    private final StepInstanceVariableValueService stepInstanceVariableValueService;
+    private final StepInstanceService stepInstanceService;
 
-    private final TaskExecuteControlMsgSender taskExecuteControlMsgSender;
-
-    private final ResultHandleTaskKeepaliveManager resultHandleTaskKeepaliveManager;
-
-    private final ExceptionStatusManager exceptionStatusManager;
+    private final JobExecuteConfig jobExecuteConfig;
 
     @Autowired
-    public ResultHandleResumeListener(
-        TaskInstanceService taskInstanceService,
-        ResultHandleManager resultHandleManager,
-        TaskInstanceVariableService taskInstanceVariableService,
-        GseTaskLogService gseTaskLogService,
-        StorageSystemConfig storageSystemConfig,
-        AgentService agentService,
-        LogService logService,
-        StepInstanceVariableValueService stepInstanceVariableValueService,
-        TaskExecuteControlMsgSender taskExecuteControlMsgSender,
-        ResultHandleTaskKeepaliveManager resultHandleTaskKeepaliveManager,
-        ExceptionStatusManager exceptionStatusManager
-    ) {
+    public ResultHandleResumeListener(EngineDependentServiceHolder engineDependentServiceHolder,
+                                      TaskInstanceService taskInstanceService,
+                                      ResultHandleManager resultHandleManager,
+                                      TaskInstanceVariableService taskInstanceVariableService,
+                                      GseTaskService gseTaskService,
+                                      FileDistributeConfig fileDistributeConfig,
+                                      ScriptExecuteObjectTaskService scriptExecuteObjectTaskService,
+                                      FileExecuteObjectTaskService fileExecuteObjectTaskService,
+                                      StepInstanceService stepInstanceService,
+                                      JobExecuteConfig jobExecuteConfig) {
+        this.engineDependentServiceHolder = engineDependentServiceHolder;
         this.taskInstanceService = taskInstanceService;
         this.resultHandleManager = resultHandleManager;
         this.taskInstanceVariableService = taskInstanceVariableService;
-        this.gseTaskLogService = gseTaskLogService;
-        this.storageSystemConfig = storageSystemConfig;
-        this.agentService = agentService;
-        this.logService = logService;
-
-        this.stepInstanceVariableValueService = stepInstanceVariableValueService;
-        this.taskExecuteControlMsgSender = taskExecuteControlMsgSender;
-        this.resultHandleTaskKeepaliveManager = resultHandleTaskKeepaliveManager;
-        this.exceptionStatusManager = exceptionStatusManager;
+        this.gseTaskService = gseTaskService;
+        this.fileDistributeConfig = fileDistributeConfig;
+        this.scriptExecuteObjectTaskService = scriptExecuteObjectTaskService;
+        this.fileExecuteObjectTaskService = fileExecuteObjectTaskService;
+        this.stepInstanceService = stepInstanceService;
+        this.jobExecuteConfig = jobExecuteConfig;
     }
 
 
     /**
      * 恢复被中断的作业结果处理任务
      */
-    @StreamListener(TaskResultHandleResumeProcessor.INPUT)
-    public void handleMessage(StepControlMessage stepControlMessage) {
-        log.info("Receive result handle task resume control message, action: {}, stepInstanceId: {}, executeCount: {}, requestId: {}, msgSendTime={}",
-            stepControlMessage.getAction(), stepControlMessage.getStepInstanceId(),
-            stepControlMessage.getExecuteCount(),
-            stepControlMessage.getRequestId(), stepControlMessage.getTime());
-        long stepInstanceId = stepControlMessage.getStepInstanceId();
-        int executeCount = stepControlMessage.getExecuteCount();
-        String requestId = StringUtils.isNotEmpty(stepControlMessage.getRequestId()) ? stepControlMessage.getRequestId()
+    public void handleEvent(Message<? extends JobMessage> message) {
+        ResultHandleTaskResumeEvent event = (ResultHandleTaskResumeEvent) message.getPayload();
+        log.info("Receive gse task result handle task resume event: {}, duration: {}ms", event, event.duration());
+        GseTaskDTO gseTask = gseTaskService.getGseTask(event.getJobInstanceId(), event.getGseTaskId());
+        long stepInstanceId = gseTask.getStepInstanceId();
+        String requestId = StringUtils.isNotEmpty(event.getRequestId()) ? event.getRequestId()
             : UUID.randomUUID().toString();
-        try {
-            StepInstanceDTO stepInstance = taskInstanceService.getStepInstanceDetail(stepInstanceId);
-            TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(stepInstance.getTaskInstanceId());
-            GseTaskLogDTO gseTaskLog = gseTaskLogService.getGseTaskLog(stepInstanceId, executeCount);
 
-            if (!checkIsTaskResumeable(stepInstance, gseTaskLog)) {
+        try {
+            StepInstanceDTO stepInstance = stepInstanceService.getStepInstanceDetail(
+                event.getJobInstanceId(), stepInstanceId);
+            TaskInstanceDTO taskInstance = taskInstanceService.getTaskInstance(stepInstance.getTaskInstanceId());
+
+            if (!checkIsTaskResumeable(stepInstance, gseTask)) {
                 log.warn("Task can not resume, stepStatus: {}, gseTaskStatus: {}",
-                    stepInstance.getStatus(), gseTaskLog.getStatus());
+                    stepInstance.getStatus(), gseTask.getStatus());
                 return;
             }
-
-            Map<String, GseTaskIpLogDTO> ipLogMap = new HashMap<>();
-            List<GseTaskIpLogDTO> gseTaskIpLogs = gseTaskLogService.getIpLog(stepInstanceId, executeCount, false);
-            if (CollectionUtils.isNotEmpty(gseTaskIpLogs)) {
-                gseTaskIpLogs.stream().filter(gseTaskIpLog ->
-                    IpStatus.LAST_SUCCESS.getValue() != gseTaskIpLog.getStatus())
-                    .forEach(gseTaskIpLog -> ipLogMap.put(gseTaskIpLog.getCloudAreaAndIp(), gseTaskIpLog));
-            }
-
 
             List<TaskVariableDTO> taskVariables =
                 taskInstanceVariableService.getByTaskInstanceId(stepInstance.getTaskInstanceId());
             TaskVariablesAnalyzeResult taskVariablesAnalyzeResult = new TaskVariablesAnalyzeResult(taskVariables);
 
             if (stepInstance.isScriptStep()) {
-                ScriptResultHandleTask scriptResultHandleTask = new ScriptResultHandleTask(taskInstance, stepInstance,
-                    taskVariablesAnalyzeResult, ipLogMap, gseTaskLog, ipLogMap.keySet(),
-                    requestId);
-                scriptResultHandleTask.initDependentService(taskInstanceService, gseTaskLogService, logService,
-                    taskInstanceVariableService, stepInstanceVariableValueService, taskExecuteControlMsgSender,
-                    resultHandleTaskKeepaliveManager, exceptionStatusManager);
-                resultHandleManager.handleDeliveredTask(scriptResultHandleTask);
+                resumeScriptTask(taskInstance, stepInstance, taskVariablesAnalyzeResult, gseTask, requestId);
             } else if (stepInstance.isFileStep()) {
-                Set<JobFile> sendFiles = JobSrcFileUtils.parseSendFileList(stepInstance,
-                    agentService.getLocalAgentBindIp(),
-                    storageSystemConfig.getJobStorageRootPath());
-                String targetDir = FilePathUtils.standardizedDirPath(stepInstance.getResolvedFileTargetPath());
-                Map<String, FileDest> srcAndDestMap = JobSrcFileUtils.buildSourceDestPathMapping(
-                    sendFiles, targetDir, stepInstance.getFileTargetName());
-                Map<String, String> sourceDestPathMap = buildSourceDestPathMap(srcAndDestMap);
-                // 初始化显示名称映射Map
-                Map<String, String> sourceFileDisplayMap = JobSrcFileUtils.buildSourceFileDisplayMapping(sendFiles,
-                    NFSUtils.getFileDir(storageSystemConfig.getJobStorageRootPath(), FileDirTypeConf.UPLOAD_FILE_DIR));
-
-                Set<String> targetIps = gseTaskIpLogs.stream().filter(GseTaskIpLogDTO::isTargetServer)
-                    .map(GseTaskIpLogDTO::getCloudAreaAndIp).collect(Collectors.toSet());
-                FileResultHandleTask fileResultHandleTask = new FileResultHandleTask(taskInstance, stepInstance,
-                    taskVariablesAnalyzeResult, ipLogMap, gseTaskLog, targetIps, sendFiles,
-                    storageSystemConfig.getJobStorageRootPath(), sourceDestPathMap, sourceFileDisplayMap,
-                    requestId);
-                fileResultHandleTask.initDependentService(taskInstanceService, gseTaskLogService, logService,
-                    taskInstanceVariableService, stepInstanceVariableValueService, taskExecuteControlMsgSender,
-                    resultHandleTaskKeepaliveManager, exceptionStatusManager);
-                resultHandleManager.handleDeliveredTask(fileResultHandleTask);
+                resumeFileTask(taskInstance, stepInstance, taskVariablesAnalyzeResult, gseTask, requestId);
             } else {
-                log.warn("Not support resume step type! stepType: {}", stepInstance.getExecuteType());
+                log.error("Not support resume step type! stepType: {}", stepInstance.getExecuteType());
             }
         } catch (Exception e) {
             String errorMsg = "Handling task control message error,stepInstanceId=" + stepInstanceId;
@@ -202,19 +151,80 @@ public class ResultHandleResumeListener {
         }
     }
 
-    private Map<String, String> buildSourceDestPathMap(Map<String, FileDest> srcAndDestMap) {
-        Map<String, String> sourceDestPathMap = new HashMap<>();
-        srcAndDestMap.forEach((fileKey, dest) -> {
-            sourceDestPathMap.put(fileKey, dest.getDestPath());
-        });
-        return sourceDestPathMap;
+    private void resumeScriptTask(TaskInstanceDTO taskInstance,
+                                  StepInstanceDTO stepInstance,
+                                  TaskVariablesAnalyzeResult taskVariablesAnalyzeResult,
+                                  GseTaskDTO gseTask,
+                                  String requestId) {
+        Map<ExecuteObjectGseKey, ExecuteObjectTask> executeObjectTaskMap = new HashMap<>();
+        List<ExecuteObjectTask> executeObjectTasks
+            = scriptExecuteObjectTaskService.listTasksByGseTaskId(stepInstance, gseTask.getId());
+        executeObjectTasks.stream()
+            .filter(executeObjectTask -> !executeObjectTask.getExecuteObject().isAgentIdEmpty())
+            .forEach(executeObjectTask -> executeObjectTaskMap.put(
+                executeObjectTask.getExecuteObject().toExecuteObjectGseKey(), executeObjectTask));
+
+        ScriptResultHandleTask scriptResultHandleTask = new ScriptResultHandleTask(
+            engineDependentServiceHolder,
+            scriptExecuteObjectTaskService,
+            jobExecuteConfig,
+            taskInstance,
+            stepInstance,
+            taskVariablesAnalyzeResult,
+            executeObjectTaskMap,
+            gseTask,
+            requestId,
+            executeObjectTasks);
+        resultHandleManager.handleDeliveredTask(scriptResultHandleTask);
     }
 
-    private boolean checkIsTaskResumeable(StepInstanceDTO stepInstance, GseTaskLogDTO gseTaskLog) {
-        RunStatusEnum stepStatus = RunStatusEnum.valueOf(stepInstance.getStatus());
-        RunStatusEnum gseTaskStatus = RunStatusEnum.valueOf(gseTaskLog.getStatus());
-        return (stepStatus == RunStatusEnum.WAITING || stepStatus == RunStatusEnum.RUNNING
-            || stepStatus == RunStatusEnum.STOPPING) && (gseTaskStatus == RunStatusEnum.WAITING
+    private void resumeFileTask(TaskInstanceDTO taskInstance,
+                                StepInstanceDTO stepInstance,
+                                TaskVariablesAnalyzeResult taskVariablesAnalyzeResult,
+                                GseTaskDTO gseTask,
+                                String requestId) {
+        Set<JobFile> sendFiles = JobSrcFileUtils.parseSrcFiles(stepInstance,
+            fileDistributeConfig.getJobDistributeRootPath());
+        String targetDir = FilePathUtils.standardizedDirPath(stepInstance.getResolvedFileTargetPath());
+        Map<JobFile, FileDest> srcAndDestMap = JobSrcFileUtils.buildSourceDestPathMapping(
+            sendFiles, targetDir, stepInstance.getFileTargetName());
+
+        Map<ExecuteObjectGseKey, ExecuteObjectTask> sourceAgentTaskMap = new HashMap<>();
+        Map<ExecuteObjectGseKey, ExecuteObjectTask> targetAgentTaskMap = new HashMap<>();
+        List<ExecuteObjectTask> executeObjectTasks
+            = fileExecuteObjectTaskService.listTasksByGseTaskId(stepInstance, gseTask.getId());
+        executeObjectTasks.stream()
+            .filter(executeObjectTask -> !executeObjectTask.getExecuteObject().isAgentIdEmpty())
+            .forEach(executeObjectTask -> {
+                if (executeObjectTask.isTarget()) {
+                    targetAgentTaskMap.put(
+                        executeObjectTask.getExecuteObject().toExecuteObjectGseKey(), executeObjectTask);
+                } else {
+                    sourceAgentTaskMap.put(
+                        executeObjectTask.getExecuteObject().toExecuteObjectGseKey(), executeObjectTask);
+                }
+            });
+
+        FileResultHandleTask fileResultHandleTask = new FileResultHandleTask(
+            engineDependentServiceHolder,
+            fileExecuteObjectTaskService,
+            taskInstance,
+            stepInstance,
+            taskVariablesAnalyzeResult,
+            targetAgentTaskMap,
+            sourceAgentTaskMap,
+            gseTask,
+            srcAndDestMap,
+            requestId,
+            executeObjectTasks);
+        resultHandleManager.handleDeliveredTask(fileResultHandleTask);
+    }
+
+    private boolean checkIsTaskResumeable(StepInstanceDTO stepInstance, GseTaskDTO gseTask) {
+        RunStatusEnum stepStatus = stepInstance.getStatus();
+        RunStatusEnum gseTaskStatus = RunStatusEnum.valueOf(gseTask.getStatus());
+        return (stepStatus == RunStatusEnum.WAITING_USER || stepStatus == RunStatusEnum.RUNNING
+            || stepStatus == RunStatusEnum.STOPPING) && (gseTaskStatus == RunStatusEnum.WAITING_USER
             || gseTaskStatus == RunStatusEnum.RUNNING || gseTaskStatus == RunStatusEnum.STOPPING);
     }
 }

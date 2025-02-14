@@ -1,4 +1,4 @@
-{{- if .Values.frontendConfig }}
+{{- if .Values.frontendConfig.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -28,13 +28,23 @@ data:
       access_log  /dev/stdout  main;
       server {
         listen                  80;
+        listen                  [::]:80;
         server_name             {{ .Values.job.web.domain }};
         gzip on;
+        gzip_min_length  1k;
+        gzip_buffers     4 16k;
+        gzip_http_version 1.1;
+        gzip_comp_level  2;
+        gzip_types  text/plain text/css text/javascript application/javascript;
+        gzip_disable "MSIE [1-6]\.";
+        gzip_vary on;
         client_max_body_size 5120M;
         root /data/job/job-frontend;
         index index.html;
 
         location / {
+          add_header Cache-Control no-cache;
+          expires 0;
           try_files $uri $uri/ @rewrites;
         }
 
@@ -141,4 +151,4 @@ data:
       }
       default_type application/octet-stream;
     }
-{{- end}}
+{{- end }}

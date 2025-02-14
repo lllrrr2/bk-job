@@ -26,11 +26,11 @@ package com.tencent.bk.job.manage.dao;
 
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.model.dto.ScriptBasicDTO;
 import com.tencent.bk.job.manage.model.dto.ScriptDTO;
 import com.tencent.bk.job.manage.model.query.ScriptQuery;
-import org.jooq.DSLContext;
 
 import java.util.Collection;
 import java.util.List;
@@ -61,6 +61,14 @@ public interface ScriptDAO {
      * @return
      */
     ScriptDTO getScriptByScriptId(String scriptId);
+
+    /**
+     * 根据scriptIds批量获取脚本基础信息
+     *
+     * @param scriptIds 脚本ID集合
+     * @return 脚本基础信息列表
+     */
+    List<ScriptBasicDTO> listScriptBasicInfoByScriptIds(Collection<String> scriptIds);
 
     /**
      * 通过id查询脚本版本
@@ -94,75 +102,33 @@ public interface ScriptDAO {
     String saveScript(ScriptDTO script);
 
     /**
-     * 新增脚本
+     * 更新脚本最新更新人、更新时间
      *
-     * @param script
-     * @
+     * @param scriptId 脚本 ID
+     * @param lastModifyUser 更新人
+     * @param lastModifyTime 最后更新时间
      */
-    String saveScript(ScriptDTO script, long createTime, long lastModifyTime);
-
-    /**
-     * 新增脚本
-     *
-     * @param script
-     * @
-     */
-    String saveScript(DSLContext dslContext, ScriptDTO script, long createTime, long lastModifyTime);
-
-    /**
-     * 更新脚本
-     *
-     * @param script
-     */
-    void updateScript(ScriptDTO script);
-
-    /**
-     * 更新脚本
-     *
-     * @param script
-     */
-    void updateScript(ScriptDTO script, long lastModifyTime);
-
-    /**
-     * 更新脚本
-     *
-     * @param script
-     */
-    void updateScript(DSLContext dslContext, ScriptDTO script, long lastModifyTime);
+    void updateScriptLastModify(String scriptId, String lastModifyUser, Long lastModifyTime);
 
     /**
      * 删除脚本
      *
-     * @param scriptId
+     * @param scriptId 脚本 ID
      */
     void deleteScript(String scriptId);
 
     /**
      * 新增脚本版本
      *
-     * @param scriptVersion
+     * @param scriptVersion 脚本版本
      */
     Long saveScriptVersion(ScriptDTO scriptVersion);
 
     /**
-     * 新增脚本版本
-     *
-     * @param scriptVersion
-     */
-    Long saveScriptVersion(ScriptDTO scriptVersion, long createTime, long lastModifyTime);
-
-    /**
-     * 新增脚本版本
-     *
-     * @param scriptVersion
-     */
-    Long saveScriptVersion(DSLContext dslContext, ScriptDTO scriptVersion, long createTime, long lastModifyTime);
-
-    /**
      * 根据脚本ID查询所有的版本
      *
-     * @param scriptId
-     * @return
+     * @param scriptId 脚本 ID
+     * @return 脚本版本列表
      */
     List<ScriptDTO> listScriptVersionsByScriptId(String scriptId);
 
@@ -279,11 +245,10 @@ public interface ScriptDAO {
     /**
      * 分页查询脚本版本
      *
-     * @param scriptQuery
-     * @param baseSearchCondition
-     * @return
+     * @param scriptQuery 查询条件
+     * @return 脚本版本分页
      */
-    PageData<ScriptDTO> listPageScriptVersion(ScriptQuery scriptQuery, BaseSearchCondition baseSearchCondition);
+    PageData<ScriptDTO> listPageScriptVersion(ScriptQuery scriptQuery);
 
     /**
      * 获取脚本已上线版本信息
@@ -380,4 +345,6 @@ public interface ScriptDAO {
      * @return Map<ScriptId, List < TagId>>
      */
     Map<String, List<Long>> listAllScriptTagsCompatible();
+
+    Map<Long, JobResourceStatusEnum> batchGetScriptVersionStatus(Collection<Long> scriptVersionIds);
 }

@@ -23,29 +23,31 @@
  * IN THE SOFTWARE.
 */
 
+import Entry from '@views/white-ip/index.vue';
+
 import I18n from '@/i18n';
 
 export default {
-    path: 'white_ip',
-    name: 'whiteIp',
-    component: () => import('@views/white-ip/'),
-    meta: {
+  path: 'white_ip',
+  name: 'whiteIp',
+  component: Entry,
+  meta: {
+    title: I18n.t('IP 白名单'),
+    skeleton: 'list',
+    group: 'manage',
+  },
+  redirect: {
+    name: 'whiteIpIndex',
+  },
+  children: [
+    {
+      path: 'index',
+      name: 'whiteIpIndex',
+      component: () => import('@views/white-ip/index/index'),
+      meta: {
         title: I18n.t('IP 白名单'),
         skeleton: 'list',
-        group: 'manage',
+      },
     },
-    redirect: {
-        name: 'whiteIpIndex',
-    },
-    children: [
-        {
-            path: 'index',
-            name: 'whiteIpIndex',
-            component: () => import('@views/white-ip/index/index'),
-            meta: {
-                title: I18n.t('IP 白名单'),
-                skeleton: 'list',
-            },
-        },
-    ],
+  ],
 };

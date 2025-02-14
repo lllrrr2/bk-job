@@ -24,9 +24,6 @@
 
 package com.tencent.bk.job.manage.service;
 
-import org.springframework.data.util.Pair;
-
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -47,21 +44,13 @@ public interface SyncService {
 
     Long getLastFinishTimeSyncAgentStatus();
 
-    ThreadPoolExecutor getSyncAppExecutor();
-
     ThreadPoolExecutor getSyncHostExecutor();
 
-    ThreadPoolExecutor getSyncAgentStatusExecutor();
+    Boolean syncBizHosts(Long bizId);
 
-    Boolean syncAppHosts(Long appId);
+    Boolean enableBizWatch();
 
-    boolean addExtraSyncAppHostsTask(Long appId);
-
-    Future<Pair<Long, Long>> arrangeSyncAppHostsTask(Long appId);
-
-    Boolean enableAppWatch();
-
-    Boolean disableAppWatch();
+    Boolean disableBizWatch();
 
     Boolean enableHostWatch();
 

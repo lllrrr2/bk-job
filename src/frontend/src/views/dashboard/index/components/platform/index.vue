@@ -26,235 +26,252 @@
 -->
 
 <template>
-    <div
-        class="platform-dashboard"
-        v-bkloading="{ isLoading: isLoading, opacity: 0.8 }">
-        <card-layout title="Linux OS">
-            <div class="container">
-                <div class="nums">{{ data.LINUX | formatNumber }}</div>
-                <div
-                    ref="LINUX"
-                    class="dashboard"
-                    v-bk-tooltips.right="calcPercentage(data.LINUX)"
-                    style="width: 24px; height: 24px;" />
-            </div>
-            <Icon
-                type="linux"
-                class="platform-flag"
-                style="font-size: 38px;" />
-        </card-layout>
-        <card-layout title="Windows OS">
-            <div class="container">
-                <div class="nums">{{ data.WINDOWS | formatNumber }}</div>
-                <div
-                    ref="WINDOWS"
-                    class="dashboard"
-                    v-bk-tooltips.right="calcPercentage(data.WINDOWS)"
-                    style="width: 24px; height: 24px;" />
-            </div>
-            <Icon
-                type="windows"
-                class="platform-flag"
-                style="font-size: 28px;" />
-        </card-layout>
-        <card-layout title="AIX OS">
-            <div class="container">
-                <div class="nums">{{ data.AIX | formatNumber }}</div>
-                <div
-                    ref="AIX"
-                    class="dashboard"
-                    v-bk-tooltips.right="calcPercentage(data.AIX)"
-                    style="width: 24px; height: 24px;" />
-            </div>
-            <Icon
-                type="aix"
-                class="platform-flag"
-                style="font-size: 24px;" />
-        </card-layout>
-        <card-layout :title="$t('dashboard.未知 OS')">
-            <div class="container">
-                <div class="nums">{{ data.OTHERS | formatNumber }}</div>
-                <div
-                    ref="OTHERS"
-                    class="dashboard"
-                    v-bk-tooltips.right="calcPercentage(data.OTHERS)"
-                    style="width: 24px; height: 24px;" />
-            </div>
-            <Icon
-                type="others"
-                class="platform-flag"
-                style="font-size: 28px;" />
-        </card-layout>
-    </div>
+  <div
+    v-bkloading="{ isLoading: isLoading, opacity: 0.8 }"
+    class="platform-dashboard">
+    <template v-for="item in systemList">
+      <card-layout
+        :key="item.key"
+        :title="item.name">
+        <div class="container">
+          <div class="nums">
+            {{ data[item.key] | formatNumber }}
+          </div>
+          <div
+            :ref="item.key"
+            v-bk-tooltips.right="calcPercentage(data[item.key])"
+            class="dashboard"
+            style="width: 24px; height: 24px;" />
+        </div>
+        <icon
+          class="platform-flag"
+          style="font-size: 38px;"
+          :type="item.icon" />
+      </card-layout>
+    </template>
+  </div>
 </template>
 <script>
-    import echarts from 'lib/echarts.min.js';
-    import StatisticsService from '@service/statistics';
-    import {
-        formatNumber,
-    } from '@utils/assist';
+  import * as echarts from 'echarts';
+  import _ from 'lodash';
 
-    import CardLayout from '../card-layout';
+  import StatisticsService from '@service/statistics';
 
-    export default {
-        name: '',
-        components: {
-            CardLayout,
+  import {
+    formatNumber,
+  } from '@utils/assist';
+
+  import I18n from '@/i18n';
+
+  import CardLayout from '../card-layout';
+
+  const getOtherTotal = (data, curKey) => {
+    const other = { ...data };
+    delete other[curKey];
+    return _.sum(Object.values(other));
+  };
+
+  export default {
+    name: '',
+    components: {
+      CardLayout,
+    },
+    filters: {
+      formatNumber(value) {
+        return formatNumber(value);
+      },
+    },
+    props: {
+      date: {
+        type: String,
+        required: true,
+      },
+    },
+    data() {
+      return {
+        isLoading: true,
+        data: {
+          AIX: 0,
+          FREEBSD: 0,
+          LINUX: 0,
+          OTHERS: 0,
+          SOLARIS: 0,
+          UNIX: 0,
+          WINDOWS: 0,
+          MACOS: 0,
         },
-        filters: {
-            formatNumber (value) {
-                return formatNumber(value);
-            },
+      };
+    },
+    watch: {
+      date() {
+        this.fetchData();
+      },
+    },
+    created() {
+      this.systemList = [
+        {
+          name: I18n.t('dashboard.Linux 数量'),
+          key: 'LINUX',
+          icon: 'os-linux',
         },
-        props: {
-            date: {
-                type: String,
-                required: true,
-            },
+        {
+          name: I18n.t('dashboard.Windows 数量'),
+          key: 'WINDOWS',
+          icon: 'os-win',
         },
-        data () {
-            return {
-                isLoading: true,
-                data: {
-                    AIX: 0,
-                    LINUX: 0,
-                    OTHERS: 0,
-                    WINDOWS: 0,
+        {
+          name: I18n.t('dashboard.AIX 数量'),
+          key: 'AIX',
+          icon: 'os-aix',
+        },
+        {
+          name: I18n.t('dashboard.UNIX 数量'),
+          key: 'UNIX',
+          icon: 'os-unix',
+        },
+        {
+          name: I18n.t('dashboard.Solaris 数量'),
+          key: 'SOLARIS',
+          icon: 'os-solaris',
+        },
+        {
+          name: I18n.t('dashboard.Free BSD 数量'),
+          key: 'FREEBSD',
+          icon: 'os-freebsd',
+        },
+        {
+          name: I18n.t('dashboard.MacOS 数量'),
+          key: 'MACOS',
+          icon: 'os-macos',
+        },
+        {
+          name: I18n.t('dashboard.未知数量'),
+          key: 'OTHERS',
+          icon: 'os-unknown',
+        },
+      ];
+    },
+    mounted() {
+      this.fetchData();
+    },
+    methods: {
+      fetchData() {
+        this.isLoading = true;
+        StatisticsService.fetchDistributionMetrics({
+          date: this.date,
+          metric: 'HOST_SYSTEM_TYPE',
+        }).then((data) => {
+          this.data = Object.assign({}, this.data, data.labelAmountMap);
+          this.init();
+        })
+          .finally(() => {
+            this.isLoading = false;
+          });
+      },
+      init() {
+        this.systemList.forEach((systemItem) => {
+          if (!this.$refs.LINUX) {
+            return;
+          }
+
+          const other = getOtherTotal(this.data, systemItem.key);
+          if (!this.$refs[systemItem.key]) {
+            return;
+          }
+          const myChart = echarts.init(this.$refs[systemItem.key][0]);
+          myChart.setOption({
+            series: [
+              {
+                type: 'pie',
+                radius: [
+                  '8',
+                  '12',
+                ],
+                hoverOffset: 0,
+                label: {
+                  show: false,
                 },
-            };
-        },
-        watch: {
-            date () {
-                this.fetchData();
-            },
-        },
-        mounted () {
-            this.fetchData();
-        },
-        methods: {
-            fetchData () {
-                this.isLoading = true;
-                StatisticsService.fetchDistributionMetrics({
-                    date: this.date,
-                    metric: 'HOST_SYSTEM_TYPE',
-                }).then((data) => {
-                    this.data = data.labelAmountMap;
-                    this.init();
-                })
-                    .finally(() => {
-                        this.isLoading = false;
-                    });
-            },
-            init () {
-                const typeList = [
-                    'LINUX',
-                    'WINDOWS',
-                    'AIX',
-                    'OTHERS',
-                ];
-                
-                typeList.forEach((typeItem) => {
-                    if (!this.$refs.LINUX) {
-                        return;
-                    }
-                    const other = typeList.reduce((result, item) => {
-                        if (item === typeItem) {
-                            return result;
-                        }
-                        return result + this.data[item];
-                    }, 0);
-                    const myChart = echarts.init(this.$refs[typeItem]);
-                    myChart.setOption({
-                        series: [
-                            {
-                                type: 'pie',
-                                radius: [
-                                    '8',
-                                    '12',
-                                ],
-                                hoverOffset: 0,
-                                label: {
-                                    show: false,
-                                },
-                                data: [
-                                    {
-                                        value: this.data[typeItem],
-                                        itemStyle: {
-                                            color: '#85CCA8',
-                                        },
-                                    },
-                                    {
-                                        value: other,
-                                        itemStyle: {
-                                            color: '#EBECF0',
-                                        },
-                                        emphasis: {
-                                            itemStyle: {
-                                                color: '#F0F1F5',
-                                            },
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                    });
-                });
-            },
-            calcPercentage (value) {
-                const {
-                    AIX,
-                    LINUX,
-                    OTHERS,
-                    WINDOWS,
-                } = this.data;
-                const total = parseInt(AIX, 10) + parseInt(LINUX, 10) + parseInt(OTHERS, 10) + parseInt(WINDOWS, 10);
-                if (!total) {
-                    return '0 %';
-                }
-                return `${Math.round(value / total * 100).toFixed(2)} %`;
-            },
-        },
-    };
+                data: [
+                  {
+                    value: this.data[systemItem.key],
+                    itemStyle: {
+                      color: '#85CCA8',
+                    },
+                  },
+                  {
+                    value: other,
+                    itemStyle: {
+                      color: '#EBECF0',
+                    },
+                    emphasis: {
+                      itemStyle: {
+                        color: '#F0F1F5',
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          });
+        });
+      },
+      calcPercentage(value) {
+        const total = _.sum(Object.values(this.data));
+        if (!total) {
+          return '0 %';
+        }
+        return `${(value / total * 100).toFixed(2)} %`;
+      },
+    },
+  };
 </script>
 <style lang='postcss'>
-    .platform-dashboard {
-        display: flex;
-        height: 100%;
-        color: #e5e6eb;
+  .platform-dashboard {
+    display: flex;
+    height: 100%;
+    color: #e5e6eb;
+    flex-wrap: wrap;
 
-        .dashboard-card-layout {
-            position: relative;
-            flex: 1;
-            border: none;
+    .dashboard-card-layout {
+      position: relative;
+      padding: 12px 16px;
+      border: none;
+      border-bottom: 1px solid #f0f1f5;
+      flex: 0 0 25%;
 
-            &:nth-child(n+2) {
-                border-left: 1px solid #f0f1f5;
-            }
+      &:nth-child(n+2) {
+        border-left: 1px solid #f0f1f5;
+      }
 
-            .card-title {
-                color: #979ba5;
-            }
-        }
+      &:nth-child(n+5) {
+        border-bottom-color: transparent;
+      }
 
-        .container {
-            display: flex;
-            align-items: center;
-
-            .dashboard {
-                margin-left: 10px;
-            }
-        }
-
-        .nums {
-            font-size: 24px;
-            font-weight: bold;
-            color: #63656e;
-        }
-
-        .platform-flag {
-            position: absolute;
-            bottom: 24px;
-            left: 20px;
-        }
+      .card-title {
+        margin-bottom: 12px;
+        color: #979ba5;
+      }
     }
+
+    .container {
+      display: flex;
+      align-items: center;
+
+      .dashboard {
+        margin-left: 10px;
+      }
+    }
+
+    .nums {
+      font-size: 24px;
+      font-weight: bold;
+      color: #63656e;
+    }
+
+    .platform-flag {
+      position: absolute;
+      top: 14px;
+      right: 12px;
+    }
+  }
 </style>

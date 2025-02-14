@@ -24,9 +24,13 @@
 */
 
 export const chartsOptionsBase = {
-    tooltip: {
-        trigger: 'item',
-        formatter: '{b}: {c} ({d}%)',
-        backgroundColor: 'rgba(0,0,0,0.8)',
+  tooltip: {
+    trigger: 'item',
+    formatter: '{b}: {c} ({d}%)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    borderColor: 'transparent',
+    textStyle: {
+      color: '#fff',
     },
+  },
 };

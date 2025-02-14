@@ -41,27 +41,25 @@ import com.tencent.bk.job.analysis.task.analysis.enums.AnalysisResourceEnum;
 import com.tencent.bk.job.analysis.task.analysis.task.pojo.AnalysisTaskResultData;
 import com.tencent.bk.job.analysis.task.analysis.task.pojo.AnalysisTaskResultItem;
 import com.tencent.bk.job.analysis.task.analysis.task.pojo.AnalysisTaskResultVO;
-import com.tencent.bk.job.common.constant.AppTypeEnum;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.common.util.Counter;
 import com.tencent.bk.job.common.util.json.JsonUtils;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskScriptSourceEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskStepTypeEnum;
-import com.tencent.bk.job.manage.model.inner.ServiceApplicationDTO;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskScriptSourceEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskStepTypeEnum;
 import com.tencent.bk.job.manage.model.inner.ServiceScriptDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskPlanDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskStepDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskTemplateDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
-import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -84,14 +82,14 @@ public class ForbiddenScriptFinder extends BaseAnalysisTask {
 
     @Autowired
     public ForbiddenScriptFinder(
-        DSLContext dslContext, AnalysisTaskDAO analysisTaskDAO,
+        AnalysisTaskDAO analysisTaskDAO,
         AnalysisTaskInstanceDAO analysisTaskInstanceDAO,
         ApplicationService applicationService,
         TaskPlanService taskPlanService,
         TaskTemplateService templateService,
         ScriptService scriptService
     ) {
-        super(dslContext, analysisTaskDAO, analysisTaskInstanceDAO, applicationService);
+        super(analysisTaskDAO, analysisTaskInstanceDAO, applicationService);
         this.taskPlanService = taskPlanService;
         this.templateService = templateService;
         this.scriptService = scriptService;
@@ -103,7 +101,7 @@ public class ForbiddenScriptFinder extends BaseAnalysisTask {
         List<BadTplPlanInfo> badTplPlanInfoList
     ) {
         Long appId = taskTemplateInfoDTO.getAppId();
-        if (taskStepDTO.getType() == TaskStepTypeEnum.SCRIPT.getType()) {
+        if (taskStepDTO.getType() == TaskStepTypeEnum.SCRIPT.getValue()) {
             if (taskStepDTO.getScriptStepInfo().getScriptSource()
                 == TaskScriptSourceEnum.CITING.getType()) {
                 ServiceScriptDTO scriptVersion = null;
@@ -156,7 +154,7 @@ public class ForbiddenScriptFinder extends BaseAnalysisTask {
         List<BadTplPlanInfo> badTplPlanInfoList
     ) {
         Long appId = taskTemplateInfoDTO.getAppId();
-        if (taskStepDTO.getType() == TaskStepTypeEnum.SCRIPT.getType()) {
+        if (taskStepDTO.getType() == TaskStepTypeEnum.SCRIPT.getValue()) {
             if (taskStepDTO.getScriptStepInfo().getScriptSource()
                 == TaskScriptSourceEnum.CITING.getType()) {
                 ServiceScriptDTO scriptVersion = null;
@@ -266,7 +264,7 @@ public class ForbiddenScriptFinder extends BaseAnalysisTask {
             List<ServiceApplicationDTO> appInfoList = getAppInfoList();
             AnalysisTaskDTO analysisTask = getAnalysisTask();
             for (ServiceApplicationDTO applicationInfoDTO : appInfoList) {
-                if (applicationInfoDTO.getAppType() != AppTypeEnum.NORMAL.getValue()) {
+                if (!applicationInfoDTO.isBiz()) {
                     continue;
                 }
                 Long appId = applicationInfoDTO.getId();
@@ -328,7 +326,7 @@ public class ForbiddenScriptFinder extends BaseAnalysisTask {
     }
 
     @Override
-    public AnalysisTaskResultVO generateResultVO(String descriptionTpl, String itemTpl, String data) {
+    public AnalysisTaskResultVO renderResultVO(String descriptionTpl, String itemTpl, String data) {
         AnalysisTaskResultData<BadTplPlanInfo> resultData = JsonUtils.fromJson(data,
             new TypeReference<AnalysisTaskResultData<BadTplPlanInfo>>() {
             });

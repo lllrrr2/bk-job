@@ -54,7 +54,7 @@ public interface TaskVariableDAO {
      * 根据执行方案 ID 和 变量名称查询变量信息
      *
      * @param parentId 父资源ID
-     * @param varName 变量名称
+     * @param varName  变量名称
      * @return 变量信息
      */
     TaskVariableDTO getVariableByName(long parentId, String varName);
@@ -91,6 +91,14 @@ public interface TaskVariableDAO {
      * @return 是否删除成功
      */
     boolean deleteVariableById(long parentId, long id);
+
+    /**
+     * 根据 父资源ID 删除变量信息
+     *
+     * @param parentId 父资源ID
+     * @return 是否删除成功
+     */
+    int deleteVariableByParentId(long parentId);
 
     /**
      * 保留变量 ID 批量插入变量信息

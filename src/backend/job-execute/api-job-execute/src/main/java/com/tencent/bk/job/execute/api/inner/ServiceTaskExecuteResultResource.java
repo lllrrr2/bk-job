@@ -30,6 +30,7 @@ import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.execute.model.inner.ServiceCronTaskExecuteResultStatistics;
 import com.tencent.bk.job.execute.model.inner.ServiceTaskInstanceDTO;
 import com.tencent.bk.job.execute.model.inner.request.ServiceGetCronTaskExecuteStatisticsRequest;
+import com.tentent.bk.job.common.api.feign.annotation.SmartFeignClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -37,9 +38,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
@@ -47,8 +46,7 @@ import java.util.Map;
  * 作业执行结果API-服务内部调用
  */
 @Api(tags = {"job-execute:service:Task_Execution_Result"})
-@RequestMapping("/service/execution")
-@RestController
+@SmartFeignClient(value = "job-execute", contextId = "taskExecuteResultResource")
 @InternalAPI
 public interface ServiceTaskExecuteResultResource {
     /**
@@ -56,12 +54,12 @@ public interface ServiceTaskExecuteResultResource {
      * @return Map<定时任务ID, 统计信息>
      */
     @ApiOperation(value = "获取定时作业执行结果统计", produces = "application/json")
-    @PostMapping("/task-execution-history/execute-result-statistics/cron")
+    @PostMapping("/service/execution/task-execution-history/execute-result-statistics/cron")
     InternalResponse<Map<Long, ServiceCronTaskExecuteResultStatistics>> getCronTaskExecuteResultStatistics(
         @ApiParam("获取定时作业执行结果统计") @RequestBody ServiceGetCronTaskExecuteStatisticsRequest request);
 
     @ApiOperation(value = "获取作业执行历史列表", produces = "application/json")
-    @GetMapping("/app/{appId}/task-execution-history/list")
+    @GetMapping("/service/execution/app/{appId}/task-execution-history/list")
     InternalResponse<PageData<ServiceTaskInstanceDTO>> getTaskExecuteResult(
         @ApiParam(value = "业务ID", required = true, example = "1") @PathVariable("appId") Long appId,
         @ApiParam(value = "任务名称", name = "taskName", required = false) @RequestParam(value = "taskName",

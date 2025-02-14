@@ -24,12 +24,48 @@
 
 package com.tencent.bk.job.execute.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.annotation.PersistenceObject;
 import lombok.Data;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.List;
 
+/**
+ * 作业-全局变量-命名空间-主机变量
+ */
+@PersistenceObject
 @Data
 public class HostVariableValuesDTO {
-    private String ip;
+    /**
+     * 主机云区域ID:IPv4
+     */
+    @JsonProperty("ip")
+    private String cloudIpv4;
+    /**
+     * 主机云区域ID:ipv6
+     */
+    @JsonProperty("ipv6")
+    private String cloudIpv6;
+    /**
+     * 主机ID
+     */
+    @JsonProperty("hostId")
+    private Long hostId;
+    /**
+     * 变量值
+     */
+    @JsonProperty("values")
     private List<VariableValueDTO> values;
+
+    /**
+     * 获取主机的ip，优先返回ipv4
+     *
+     * @return 主机ipv4/ipv6, ipv4 优先
+     */
+    @JsonIgnore
+    public String getPrimaryCloudIp() {
+        return StringUtils.isNotEmpty(cloudIpv4) ? cloudIpv4 : cloudIpv6;
+    }
 }

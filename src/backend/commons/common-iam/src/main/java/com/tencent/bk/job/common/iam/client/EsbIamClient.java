@@ -25,9 +25,16 @@
 package com.tencent.bk.job.common.iam.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.constant.HttpMethodEnum;
+import com.tencent.bk.job.common.esb.config.AppProperties;
+import com.tencent.bk.job.common.esb.config.EsbProperties;
+import com.tencent.bk.job.common.esb.model.BkApiAuthorization;
 import com.tencent.bk.job.common.esb.model.EsbReq;
 import com.tencent.bk.job.common.esb.model.EsbResp;
-import com.tencent.bk.job.common.esb.sdk.AbstractEsbSdkClient;
+import com.tencent.bk.job.common.esb.model.OpenApiRequestInfo;
+import com.tencent.bk.job.common.esb.sdk.BkApiClient;
+import com.tencent.bk.job.common.exception.InternalIamException;
 import com.tencent.bk.job.common.iam.dto.AuthByPathReq;
 import com.tencent.bk.job.common.iam.dto.BatchAuthByPathReq;
 import com.tencent.bk.job.common.iam.dto.EsbIamAction;
@@ -40,22 +47,24 @@ import com.tencent.bk.job.common.iam.dto.GetApplyUrlRequest;
 import com.tencent.bk.job.common.iam.dto.GetApplyUrlResponse;
 import com.tencent.bk.job.common.iam.dto.RegisterResourceRequest;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
-import com.tencent.bk.job.common.util.JobContextUtil;
-import com.tencent.bk.job.common.util.json.JsonUtils;
+import com.tencent.bk.job.common.util.http.HttpHelperFactory;
+import com.tencent.bk.job.common.util.http.HttpMetricUtil;
 import com.tencent.bk.sdk.iam.constants.SystemId;
 import com.tencent.bk.sdk.iam.dto.action.ActionDTO;
 import com.tencent.bk.sdk.iam.dto.resource.ResourceDTO;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.http.client.methods.HttpPost;
 
 import java.util.List;
 
+import static com.tencent.bk.job.common.metrics.CommonMetricNames.IAM_API;
+
 /**
- * @since 16/6/2020 21:37
+ * IAM API 调用客户端
  */
 @Slf4j
-public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
+public class EsbIamClient extends BkApiClient implements IIamClient {
 
     private static final String API_GET_APPLY_URL = "/api/c/compapi/v2/iam/application/";
     private static final String API_REGISTER_RESOURCE_URL =
@@ -65,26 +74,30 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
     private static final String API_BATCH_AUTH_BY_PATH_URL =
         "/api/c/compapi/v2/iam/authorization/batch_path/";
 
-    public EsbIamClient(String esbHostUrl, String appCode, String appSecret, boolean useEsbTestEnv) {
-        super(esbHostUrl, appCode, appSecret, null, useEsbTestEnv);
-    }
+    private final BkApiAuthorization authorization;
 
-    public EsbIamClient(String esbHostUrl, String appCode, String appSecret, String lang, boolean useEsbTestEnv) {
-        super(esbHostUrl, appCode, appSecret, lang, useEsbTestEnv);
+    public EsbIamClient(MeterRegistry meterRegistry,
+                        AppProperties appProperties,
+                        EsbProperties esbProperties) {
+        super(
+            meterRegistry,
+            IAM_API,
+            esbProperties.getService().getUrl(),
+            HttpHelperFactory.createHttpHelper(
+                httpClientBuilder -> httpClientBuilder.addInterceptorLast(getLogBkApiRequestIdInterceptor())
+            )
+        );
+        this.authorization = BkApiAuthorization.appAuthorization(appProperties.getCode(),
+            appProperties.getSecret(), "admin");
     }
 
     @Override
     public String getApplyUrl(List<ActionDTO> actionList) {
-        GetApplyUrlRequest getApplyUrlRequest = makeBaseReqByWeb(
-            GetApplyUrlRequest.class,
-            null,
-            "admin",
-            "superadmin"
-        );
+        GetApplyUrlRequest getApplyUrlRequest = EsbReq.buildRequest(GetApplyUrlRequest.class, null);
         getApplyUrlRequest.setSystem(SystemId.JOB);
         getApplyUrlRequest.setAction(actionList);
         EsbResp<GetApplyUrlResponse> esbResp = requestIamApi(
-            HttpPost.METHOD_NAME,
+            HttpMethodEnum.POST,
             API_GET_APPLY_URL,
             getApplyUrlRequest,
             new TypeReference<EsbResp<GetApplyUrlResponse>>() {
@@ -99,8 +112,7 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
 
     @Override
     public boolean registerResource(String id, String name, String type, String creator, List<ResourceDTO> ancestor) {
-        RegisterResourceRequest registerResourceRequest =
-            makeBaseReqByWeb(RegisterResourceRequest.class, null, creator, "0");
+        RegisterResourceRequest registerResourceRequest = EsbReq.buildRequest(RegisterResourceRequest.class, null);
         registerResourceRequest.setSystem(SystemId.JOB);
         registerResourceRequest.setId(id);
         registerResourceRequest.setName(name);
@@ -110,7 +122,7 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
             registerResourceRequest.setAncestor(ancestor);
         }
         EsbResp<List<EsbIamBatchAuthedPolicy>> esbResp = requestIamApi(
-            HttpPost.METHOD_NAME,
+            HttpMethodEnum.POST,
             API_REGISTER_RESOURCE_URL,
             registerResourceRequest,
             new TypeReference<EsbResp<List<EsbIamBatchAuthedPolicy>>>() {
@@ -124,14 +136,13 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
         EsbIamSubject esbIamSubject,
         List<EsbIamResource> esbIamResources
     ) {
-        AuthByPathReq authByPathReq =
-            makeBaseReqByWeb(AuthByPathReq.class, null, "admin", "superadmin");
+        AuthByPathReq authByPathReq = EsbReq.buildRequest(AuthByPathReq.class, null);
         authByPathReq.setAction(esbIamAction);
         authByPathReq.setSubject(esbIamSubject);
         authByPathReq.setResources(esbIamResources);
 
         EsbResp<EsbIamAuthedPolicy> esbResp = requestIamApi(
-            HttpPost.METHOD_NAME,
+            HttpMethodEnum.POST,
             API_AUTH_BY_PATH_URL,
             authByPathReq,
             new TypeReference<EsbResp<EsbIamAuthedPolicy>>() {
@@ -147,13 +158,13 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
         Long expiredAt
     ) {
         BatchAuthByPathReq batchAuthByPathReq =
-            makeBaseReqByWeb(BatchAuthByPathReq.class, null, "admin", "superadmin");
+            EsbReq.buildRequest(BatchAuthByPathReq.class, null);
         batchAuthByPathReq.setActions(esbIamActions);
         batchAuthByPathReq.setSubject(esbIamSubject);
         batchAuthByPathReq.setResources(esbIamBatchPathResources);
         batchAuthByPathReq.setExpiredAt(expiredAt);
         EsbResp<List<EsbIamBatchAuthedPolicy>> esbResp = requestIamApi(
-            HttpPost.METHOD_NAME,
+            HttpMethodEnum.POST,
             API_BATCH_AUTH_BY_PATH_URL,
             batchAuthByPathReq,
             new TypeReference<EsbResp<List<EsbIamBatchAuthedPolicy>>>() {
@@ -171,21 +182,25 @@ public class EsbIamClient extends AbstractEsbSdkClient implements IIamClient {
      * @param <R>           泛型：返回值类型
      * @return 返回值类型实例
      */
-    private <R> EsbResp<R> requestIamApi(String method,
+    private <R> EsbResp<R> requestIamApi(HttpMethodEnum method,
                                          String uri,
                                          EsbReq reqBody,
                                          TypeReference<EsbResp<R>> typeReference) {
         try {
-            JobContextUtil.setHttpMetricName(CommonMetricNames.ESB_IAM_API_HTTP);
-            JobContextUtil.addHttpMetricTag(Tag.of("api_name", uri));
-            return getEsbRespByReq(method, uri, reqBody, typeReference);
+            HttpMetricUtil.setHttpMetricName(CommonMetricNames.IAM_API_HTTP);
+            HttpMetricUtil.addTagForCurrentMetric(Tag.of("api_name", uri));
+            OpenApiRequestInfo<Object> requestInfo = OpenApiRequestInfo
+                .builder()
+                .method(method)
+                .uri(uri)
+                .body(reqBody)
+                .authorization(authorization)
+                .build();
+            return doRequest(requestInfo, typeReference);
+        } catch (Exception e) {
+            throw new InternalIamException(e, ErrorCode.IAM_API_DATA_ERROR, null);
         } finally {
-            JobContextUtil.clearHttpMetricTags();
+            HttpMetricUtil.clearHttpMetric();
         }
-    }
-
-    @Override
-    protected <T extends EsbReq> String buildPostBody(T params) {
-        return JsonUtils.toNonEmptyJson(params);
     }
 }

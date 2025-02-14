@@ -24,10 +24,14 @@
 
 package com.tencent.bk.job.execute.service;
 
-import com.tencent.bk.job.execute.model.ServersDTO;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 
+/**
+ * Agent 相关服务
+ */
 public interface AgentService {
-    String getLocalAgentBindIp();
-
-    ServersDTO getLocalServersDTO();
+    /**
+     * 获取本地主机的Agent
+     */
+    HostDTO getLocalAgentHost();
 }

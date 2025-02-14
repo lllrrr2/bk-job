@@ -24,18 +24,27 @@
 
 package com.tencent.bk.job.common.util.ip;
 
-import com.google.common.collect.Lists;
-import com.tencent.bk.job.common.model.dto.IpDTO;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.exception.InvalidIpv6Exception;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.math.NumberUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.validator.routines.InetAddressValidator;
 import org.springframework.util.CollectionUtils;
 
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.UnknownHostException;
-import java.util.*;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,36 +53,36 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 public class IpUtils {
+    public static final String PROTOCOL_IP_V4 = "v4";
+    public static final String PROTOCOL_IP_V6 = "v6";
     public static final String COLON = ":";
-    public static final String SEMICOLON = ",";
-    /*
+
+    /**
      * 直连云区域
      */
     public static final long DEFAULT_CLOUD_ID = 0;
     private static final Pattern IP_PATTERN = Pattern.compile(
-        "\\b((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\b");
-    private static final Pattern pattern = Pattern.compile(
-        "\\b((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\b");
+        "\\b((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.(" +
+            "(?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\.((?!\\d\\d\\d)\\d+|1\\d\\d|2[0-4]\\d|25[0-5])\\b");
 
     /**
      * 校验云区域:服务器IP
      *
-     * @param cloudAreaIdAndIp 云区域ID:服务器IP
-     * @return
+     * @param cloudIp 云区域ID:服务器IP
      */
-    public static boolean checkCloudAreaIdAndIpStr(String cloudAreaIdAndIp) {
-        if (StringUtils.isEmpty(cloudAreaIdAndIp)) {
+    public static boolean checkCloudIp(String cloudIp) {
+        if (StringUtils.isEmpty(cloudIp)) {
             return false;
         }
-        String[] ipProps = cloudAreaIdAndIp.split(":");
+        String[] ipProps = cloudIp.split(":");
         if (ipProps.length != 2) {
-            log.warn("Both cloudAreaId and ip is required, ip={}", cloudAreaIdAndIp);
+            log.warn("Both cloudAreaId and ip is required, ip={}", cloudIp);
             return false;
         }
         try {
             Integer.parseInt(ipProps[0]);
         } catch (NumberFormatException e) {
-            log.warn("CloudAreaId is illegal for ip:{}", cloudAreaIdAndIp);
+            log.warn("CloudAreaId is illegal for ip:{}", cloudIp);
             return false;
         }
         String ip = ipProps[1];
@@ -82,25 +91,9 @@ public class IpUtils {
     }
 
     /**
-     * 校验ip
-     *
-     * @param ipDTO IP
-     * @return
-     */
-    public static boolean checkIpDTO(IpDTO ipDTO) {
-        if (ipDTO == null || ipDTO.getCloudAreaId() == null || StringUtils.isEmpty(ipDTO.getIp().trim())) {
-            log.warn("Both cloudAreaId and ip is required, ip={}", ipDTO);
-            return false;
-        }
-        Matcher matcher = IP_PATTERN.matcher(ipDTO.getIp().trim());
-        return matcher.matches();
-    }
-
-    /**
      * 验证ip格式（不包含云区域ID)
      *
      * @param ipStr ip
-     * @return
      */
     public static boolean checkIp(String ipStr) {
         if (StringUtils.isEmpty(ipStr.trim())) {
@@ -111,57 +104,44 @@ public class IpUtils {
     }
 
     /**
-     * 转换ip列表(1:10.0.0.1,1:10.0.0.2)到 IpDTO 列表
+     * 验证ipv6格式
      *
-     * @param ipListStr
-     * @return
+     * @param ipv6Str ipv6字符串
      */
-    public static Collection<IpDTO> convertCloudAndIpListStrToIpDTOList(String ipListStr) {
-        if (StringUtils.isEmpty(ipListStr)) {
-            return Lists.newArrayList();
-        }
-        return convertCloudAndIpStrListToIpDTOList(Arrays.asList(ipListStr.split(SEMICOLON)));
+    public static boolean checkIpv6(String ipv6Str) {
+        InetAddressValidator validator = InetAddressValidator.getInstance();
+        return validator.isValidInet6Address(ipv6Str);
     }
 
     /**
-     * 转换ip列表到IpDTO 列表
+     * 验证ipv4格式
      *
-     * @param cloudAreaAndIpStrList ip列表
-     * @return IpDTO列表
+     * @param ipv4Str ipv4字符串
      */
-    public static Collection<IpDTO> convertCloudAndIpStrListToIpDTOList(Collection<String> cloudAreaAndIpStrList) {
-        List<IpDTO> ipDTOList = new ArrayList<>();
-        if (!CollectionUtils.isEmpty(cloudAreaAndIpStrList)) {
-            for (String cloudAreaAndIp : cloudAreaAndIpStrList) {
-                IpDTO ipDto = transform(cloudAreaAndIp);
-                if (ipDto != null) {
-                    ipDTOList.add(ipDto);
-                }
-            }
-        }
-        return ipDTOList;
+    public static boolean checkIpv4(String ipv4Str) {
+        InetAddressValidator validator = InetAddressValidator.getInstance();
+        return validator.isValidInet4Address(ipv4Str);
     }
 
     /**
      * 转换到IpDTO
      *
-     * @param cloudAreaAndIp
-     * @return
+     * @param cloudIp 云区域+IP
      */
-    public static IpDTO transform(String cloudAreaAndIp) {
-        IpDTO ipDTO = null;
-        if (cloudAreaAndIp != null) {
-            String[] split = cloudAreaAndIp.split(COLON);
+    public static HostDTO transform(String cloudIp) {
+        HostDTO hostDTO = null;
+        if (cloudIp != null) {
+            String[] split = cloudIp.split(COLON);
             if (split.length == 2) {
                 long cloudAreaId = optLong(split[0].trim(), DEFAULT_CLOUD_ID);
                 if (cloudAreaId == 1)
                     cloudAreaId = DEFAULT_CLOUD_ID;
-                ipDTO = new IpDTO(cloudAreaId, split[1].trim());
+                hostDTO = new HostDTO(cloudAreaId, split[1].trim());
             } else {
-                ipDTO = new IpDTO(DEFAULT_CLOUD_ID, cloudAreaAndIp.trim());
+                hostDTO = new HostDTO(DEFAULT_CLOUD_ID, cloudIp.trim());
             }
         }
-        return ipDTO;
+        return hostDTO;
     }
 
     private static long optLong(String str, long defaultValue) {
@@ -193,7 +173,7 @@ public class IpUtils {
     }
 
     /**
-     * 将long转换为ip
+     * 将数值转换为ip
      *
      * @return ip
      */
@@ -206,13 +186,13 @@ public class IpUtils {
     }
 
     /**
-     * 将long转换为ip
+     * 将数值转换为ip
      *
      * @return ip
      */
-    public static String revertIpFromLongStr(String longStr) {
+    public static String revertIpFromNumericalStr(String numericalStr) {
         try {
-            InetAddress addr = InetAddress.getByName(longStr);
+            InetAddress addr = InetAddress.getByName(numericalStr);
             return addr.getHostAddress();
         } catch (UnknownHostException e) {
             return "";
@@ -221,16 +201,79 @@ public class IpUtils {
 
 
     public static boolean compileIP(String ip) {
-        Matcher matcher = pattern.matcher(ip);
+        Matcher matcher = IP_PATTERN.matcher(ip);
         return matcher.matches();
     }
 
     /**
-     * 获取当前服务器IP地址
+     * 从网卡获取首个机器IP，优先获取IPv4地址
+     * 若获取到的值为v6协议的IP，默认提供完整无压缩的IPv6地址
      *
-     * @return 返回当前服务器的网卡对应IP的MAP。
+     * @return 首个机器IP地址
      */
-    public static Map<String, String> getMachineIP() {
+    public static String getFirstMachineIP() {
+        return getFirstMachineIpPreferV4();
+    }
+
+    private static String getFirstMachineIpPreferV4() {
+        Map<String, String> ipv4Map = getMachineIPv4Map();
+        if (!ipv4Map.isEmpty()) {
+            return ipv4Map.values().iterator().next();
+        }
+        Map<String, String> ipv6Map = getMachineIPv6Map();
+        if (!ipv6Map.isEmpty()) {
+            String ipv6 = ipv6Map.values().iterator().next();
+            /*
+             * 此处处理原因详情可见Inet6Address.getHostAddress()方法说明。
+             * Because link-local and site-local addresses are non-global, it is possible that
+             * different hosts may have the same destination address and may be reachable through
+             * different interfaces on the same originating system. In this case, the originating
+             * system is said to be connected to multiple zones of the same scope. In order to
+             * disambiguate which is the intended destination zone, it is possible to append a
+             * zone identifier (or scope_id) to an IPv6 address.
+             */
+            if (ipv6.contains("%")) {
+                ipv6 = ipv6.substring(0, ipv6.indexOf("%"));
+            }
+            return getFullIpv6ByCompressedOne(ipv6);
+        }
+        log.error("no available ip, plz check net interface");
+        return null;
+    }
+
+    interface IpExtracter {
+        String extractIpFromInetAddress(InetAddress inetAddress);
+    }
+
+    /**
+     * 获取当前服务器IPv4地址
+     *
+     * @return Map<网卡名称 ， IP>
+     */
+    private static Map<String, String> getMachineIPv4Map() {
+        return getMachineIP(inetAddress -> {
+            if (inetAddress instanceof Inet4Address && !inetAddress.isLoopbackAddress()) {
+                return inetAddress.getHostAddress();
+            }
+            return null;
+        });
+    }
+
+    /**
+     * 获取当前服务器IPv6地址
+     *
+     * @return Map<网卡名称 ， IP>
+     */
+    private static Map<String, String> getMachineIPv6Map() {
+        return getMachineIP(inetAddress -> {
+            if (inetAddress instanceof Inet6Address && !inetAddress.isLoopbackAddress()) {
+                return inetAddress.getHostAddress();
+            }
+            return null;
+        });
+    }
+
+    private static Map<String, String> getMachineIP(IpExtracter ipExtracter) {
         log.info("#####################Start getMachineIP");
         Map<String, String> allIp = new HashMap<>();
 
@@ -239,40 +282,232 @@ public class IpUtils {
             Enumeration<NetworkInterface> allNetInterfaces = NetworkInterface.getNetworkInterfaces();
             if (null == allNetInterfaces) {
                 log.error("#####################getMachineIP Can not get NetworkInterfaces");
-            } else {
-                // 循环网卡获取网卡的IP地址
-                while (allNetInterfaces.hasMoreElements()) {
-                    NetworkInterface netInterface = allNetInterfaces.nextElement();
-                    String netInterfaceName = netInterface.getName();
-                    // 过滤掉127.0.0.1的IP
-                    if (StringUtils.isBlank(netInterfaceName) || "lo".equalsIgnoreCase(netInterfaceName)) {
-                        log.info("loopback地址或网卡名称为空");
-                    } else {
-                        Enumeration<InetAddress> addresses = netInterface.getInetAddresses();
-                        while (addresses.hasMoreElements()) {
-                            InetAddress ip = addresses.nextElement();
-                            if (ip instanceof Inet4Address && !ip.isLoopbackAddress()) {
-                                String machineIp = ip.getHostAddress();
-                                log.info("###############" + "netInterfaceName=" + netInterfaceName
-                                    + " The Macheine IP=" + machineIp);
-                                allIp.put(netInterfaceName, machineIp);
-                            }
-                        }
+                return allIp;
+            }
+            // 循环网卡获取网卡的IP地址
+            while (allNetInterfaces.hasMoreElements()) {
+                NetworkInterface netInterface = allNetInterfaces.nextElement();
+                String netInterfaceName = netInterface.getName();
+                // 过滤掉127.0.0.1的IP
+                if (StringUtils.isBlank(netInterfaceName) || "lo".equalsIgnoreCase(netInterfaceName)) {
+                    log.info("loopback address or net interface name is blank");
+                    continue;
+                }
+                Enumeration<InetAddress> addresses = netInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress inetAddress = addresses.nextElement();
+                    String ip = ipExtracter.extractIpFromInetAddress(inetAddress);
+                    if (StringUtils.isBlank(ip)) {
+                        continue;
                     }
+                    log.info("NetInterfaceName={}, The Machine IP={}", netInterfaceName, ip);
+                    allIp.put(netInterfaceName, ip);
                 }
             }
         } catch (Exception e) {
-            log.error("获取网卡失败", e);
+            log.error("Fail to get network interfaces", e);
         }
-
         return allIp;
     }
 
-    public static String getFirstMachineIP() {
-        String ip = getMachineIP().values().iterator().next();
-        if (ip == null) {
-            ip = "no available ip";
+    /**
+     * 提取IP
+     *
+     * @param cloudIp bkCloudId:ip
+     * @return ip
+     */
+    public static String extractIp(String cloudIp) {
+        if (cloudIp == null) {
+            return null;
         }
-        return ip;
+        if (cloudIp.contains(":")) {
+            return cloudIp.substring(cloudIp.indexOf(":") + 1);
+        } else {
+            return cloudIp;
+        }
+    }
+
+    /**
+     * 将纯IPv4地址与含云区域的IPv4地址分离开，清洗掉其中的空白字符、中括号并去重
+     *
+     * @param ipv4OrCloudIpv4List ipv4/cloudIpv4列表
+     * @return <纯IPv4地址集合，含云区域IPv4地址集合>
+     */
+    public static Pair<Set<String>, Set<String>> parseCleanIpv4AndCloudIpv4s(List<String> ipv4OrCloudIpv4List) {
+        Set<String> ipv4Set = new HashSet<>();
+        Set<String> cloudIpv4Set = new HashSet<>();
+        if (CollectionUtils.isEmpty(ipv4OrCloudIpv4List)) {
+            return Pair.of(ipv4Set, cloudIpv4Set);
+        }
+        for (String ipv4OrCloudIpv4 : ipv4OrCloudIpv4List) {
+            if (ipv4OrCloudIpv4.contains(":")) {
+                String cloudIpStr = StringUtils.deleteWhitespace(ipv4OrCloudIpv4);
+                cloudIpv4Set.add(removeBrackets(cloudIpStr));
+            } else {
+                ipv4Set.add(StringUtils.deleteWhitespace(ipv4OrCloudIpv4));
+            }
+        }
+        return Pair.of(ipv4Set, cloudIpv4Set);
+    }
+
+    private static String removeBrackets(String s) {
+        if (StringUtils.isBlank(s)) {
+            return s;
+        }
+        return s.replace("[", "").replace("]", "");
+    }
+
+    /**
+     * 将纯IPv6地址与含云区域的IPv6地址分离开，清洗掉其中的空白字符、中括号、去重并转为完整无压缩的IPv6地址
+     *
+     * @param ipv6OrCloudIpv6List ipv6/cloudIpv6列表
+     * @return <纯IPv6地址集合，含云区域IPv6地址集合>
+     */
+    public static Pair<Set<String>, Set<Pair<Long, String>>> parseFullIpv6AndCloudIpv6s(
+        List<String> ipv6OrCloudIpv6List
+    ) {
+        Set<String> ipv6Set = new HashSet<>();
+        Set<Pair<Long, String>> cloudIpv6Set = new HashSet<>();
+        if (CollectionUtils.isEmpty(ipv6OrCloudIpv6List)) {
+            return Pair.of(ipv6Set, cloudIpv6Set);
+        }
+        for (String ipv6OrCloudIpv6 : ipv6OrCloudIpv6List) {
+            ipv6OrCloudIpv6 = StringUtils.deleteWhitespace(ipv6OrCloudIpv6);
+            if (ipv6OrCloudIpv6.contains(":[")) {
+                String[] cloudIpv6Arr = ipv6OrCloudIpv6.split(":\\[");
+                Long cloudId = Long.parseLong(cloudIpv6Arr[0]);
+                String ipv6 = removeBrackets(cloudIpv6Arr[1]);
+                if (!checkIpv6(ipv6)) {
+                    log.warn("{} is not a valid ipv6 addr, ignore", ipv6);
+                    continue;
+                }
+                if (StringUtils.isBlank(ipv6)) {
+                    log.warn("Ipv6 address is invalid:{}", ipv6OrCloudIpv6);
+                }
+                String fullIpv6 = getFullIpv6ByCompressedOne(ipv6);
+                cloudIpv6Set.add(Pair.of(cloudId, fullIpv6));
+            } else {
+                String ipv6 = removeBrackets(StringUtils.deleteWhitespace(ipv6OrCloudIpv6));
+                if (!checkIpv6(ipv6)) {
+                    log.warn("{} is not a valid ipv6 addr, ignore", ipv6);
+                    continue;
+                }
+                String fullIpv6 = getFullIpv6ByCompressedOne(ipv6);
+                ipv6Set.add(fullIpv6);
+            }
+        }
+        return Pair.of(ipv6Set, cloudIpv6Set);
+    }
+
+    /**
+     * 根据IP推断IP协议
+     *
+     * @param ip ip地址
+     * @return 协议号，常量值：PROTOCOL_IP_V6/PROTOCOL_IP_V4
+     */
+    public static String inferProtocolByIp(String ip) {
+        if (IpUtils.checkIpv6(ip)) {
+            return PROTOCOL_IP_V6;
+        }
+        return PROTOCOL_IP_V4;
+    }
+
+    /**
+     * 有压缩的IPv6地址转换成完整无压缩的IPv6
+     *
+     * @param compressedIpv6 有压缩的IPv6地址
+     * @return 完整无压缩的IPv6地址
+     */
+    public static String getFullIpv6ByCompressedOne(String compressedIpv6) {
+        if (!checkIpv6(compressedIpv6)) {
+            throw new InvalidIpv6Exception(ErrorCode.INVALID_IPV6_ADDRESS, new String[]{compressedIpv6});
+        }
+        String[] finalSeqArr = new String[]{"0000", "0000", "0000", "0000", "0000", "0000", "0000", "0000"};
+        // 连续0标识符
+        String continueZeroToken = "::";
+        // 段之间分隔符
+        String seqSeparator = ":";
+        // 一个IPv6地址最多有8段
+        int maxSeqNum = 8;
+        // ::开头的IP首位补0便于后续统一分割处理
+        if (compressedIpv6.startsWith(continueZeroToken)) {
+            compressedIpv6 = "0" + compressedIpv6;
+        }
+        // ::结尾的IP末位补0便于后续统一分割处理
+        if (compressedIpv6.endsWith(continueZeroToken)) {
+            compressedIpv6 = compressedIpv6 + "0";
+        }
+        // 统一分割、解析
+        if (compressedIpv6.contains(continueZeroToken)) {
+            String[] seqArr = compressedIpv6.split(continueZeroToken);
+            String[] leftSeqArr = seqArr[0].split(seqSeparator);
+            for (int i = 0; i < leftSeqArr.length && i < maxSeqNum; i++) {
+                finalSeqArr[i] = getStandardIpv6Seq(leftSeqArr[i]);
+            }
+            String[] rightSeqArr = seqArr[1].split(seqSeparator);
+            for (int i = 0; i < rightSeqArr.length && i < maxSeqNum; i++) {
+                finalSeqArr[i + maxSeqNum - rightSeqArr.length] = getStandardIpv6Seq(rightSeqArr[i]);
+            }
+        } else {
+            String[] seqArr = compressedIpv6.split(seqSeparator);
+            for (int i = 0; i < seqArr.length && i < maxSeqNum; i++) {
+                finalSeqArr[i] = getStandardIpv6Seq(seqArr[i]);
+            }
+        }
+        return StringUtils.join(finalSeqArr, ":");
+    }
+
+    /**
+     * 获取含有4个字符的Ipv6标准段，不足4字符则添加前缀0
+     *
+     * @param ipv6Seq ipv6地址的一段
+     * @return 4个字符的标准段
+     */
+    private static String getStandardIpv6Seq(String ipv6Seq) {
+        // 兼容IPv4地址的最后一个地址段
+        if (ipv6Seq.contains(".")) {
+            return ipv6Seq;
+        }
+        String template = "0000";
+        return template.substring(0, template.length() - ipv6Seq.length()) + ipv6Seq;
+    }
+
+    /**
+     * 提取云区域ID
+     *
+     * @param cloudIp 云区域ID:IP
+     * @return 云区域ID
+     */
+    public static Long extractBkCloudId(String cloudIp) {
+        if (cloudIp == null) {
+            throw new IllegalArgumentException("Empty cloudIp");
+        }
+        int idx = cloudIp.indexOf(":");
+        if (idx == -1) {
+            throw new IllegalArgumentException("Invalid cloudIp: " + cloudIp);
+        }
+        String bkCloudId = cloudIp.substring(0, idx);
+        return Long.parseLong(bkCloudId);
+    }
+
+    /**
+     * 从含有多个IP的字符串中获取首个IP，若multiIp不含有任何IP则直接返回multiIp本身
+     *
+     * @param multiIp   多IP字符串
+     * @param separator 分隔符
+     * @return 首个IP
+     */
+    public static String getFirstIpFromMultiIp(String multiIp, String separator) {
+        if (StringUtils.isBlank(multiIp)) {
+            return multiIp;
+        }
+        if (multiIp.contains(separator)) {
+            return multiIp.split(separator)[0];
+        }
+        return multiIp;
+    }
+
+    public static String buildCloudIp(Long bkCloudId, String ipv4) {
+        return bkCloudId + ":" + ipv4;
     }
 }

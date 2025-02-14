@@ -24,30 +24,35 @@
 
 package com.tencent.bk.job.gateway;
 
+import com.tencent.bk.job.common.service.boot.JobBootApplication;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
+import org.springframework.boot.autoconfigure.web.embedded.NettyWebServerFactoryCustomizer;
 import org.springframework.boot.web.embedded.netty.NettyReactiveWebServerFactory;
-import org.springframework.boot.web.reactive.server.ReactiveWebServerFactory;
 import org.springframework.boot.web.server.WebServer;
-import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.http.server.reactive.HttpHandler;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 
 /**
- * @date 2019/09/20
+ * Job Gateway Spring Boot Application
  */
-@SpringBootApplication(scanBasePackages = "com.tencent.bk.job")
-@EnableDiscoveryClient
+@JobBootApplication(scanBasePackages = "com.tencent.bk.job.gateway",
+    exclude = {ApplicationAvailabilityAutoConfiguration.class},
+    excludeName = {"org.springframework.cloud.kubernetes.client.discovery.KubernetesDiscoveryClientAutoConfiguration"})
 @Slf4j
+@EnableFeignClients
 public class JobGatewayBootApplication {
-    private HttpHandler httpHandler;
+    private final HttpHandler httpHandler;
 
     private WebServer httpWebServer;
+
+    private final NettyWebServerFactoryCustomizer nettyWebServerFactoryCustomizer;
 
     @Value("${server.http.enabled}")
     private Boolean httpEnabled;
@@ -55,8 +60,12 @@ public class JobGatewayBootApplication {
     @Value("${server.http.port:}")
     private Integer httpPort;
 
-    public JobGatewayBootApplication(@Autowired HttpHandler httpHandler) {
+    public JobGatewayBootApplication(@Autowired
+                                         HttpHandler httpHandler,
+                                     @Autowired(required = false)
+                                         NettyWebServerFactoryCustomizer nettyWebServerFactoryCustomizer) {
         this.httpHandler = httpHandler;
+        this.nettyWebServerFactoryCustomizer = nettyWebServerFactoryCustomizer;
     }
 
     public static void main(String[] args) {
@@ -66,7 +75,10 @@ public class JobGatewayBootApplication {
     @PostConstruct
     public void startHttpWebServer() {
         if (httpEnabled && httpPort != null) {
-            ReactiveWebServerFactory factory = new NettyReactiveWebServerFactory(httpPort);
+            NettyReactiveWebServerFactory factory = new NettyReactiveWebServerFactory(httpPort);
+            if (nettyWebServerFactoryCustomizer != null) {
+                nettyWebServerFactoryCustomizer.customize(factory);
+            }
             this.httpWebServer = factory.getWebServer(this.httpHandler);
             this.httpWebServer.start();
         }

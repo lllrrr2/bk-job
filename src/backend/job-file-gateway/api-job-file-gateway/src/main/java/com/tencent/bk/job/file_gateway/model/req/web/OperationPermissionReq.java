@@ -37,8 +37,11 @@ public class OperationPermissionReq {
     @ApiModelProperty("资源ID,比如文件源ID;对于部分不需要资源ID的操作(新建),不需要传参")
     private String resourceId;
 
-    @ApiModelProperty("业务ID")
-    private Long appId;
+    @ApiModelProperty("资源范围类型:biz/business_set")
+    private String scopeType;
+
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
 
     @ApiModelProperty("是否返回详细的权限信息(依赖的权限，申请URL)。默认为false")
     private boolean returnPermissionDetail;

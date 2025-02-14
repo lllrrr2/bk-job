@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.manage.api.esb.impl.v3;
 
+import com.tencent.bk.job.common.artifactory.config.ArtifactoryConfig;
 import com.tencent.bk.job.common.artifactory.model.dto.TempUrlInfo;
 import com.tencent.bk.job.common.artifactory.sdk.ArtifactoryClient;
 import com.tencent.bk.job.common.constant.ErrorCode;
@@ -34,12 +35,12 @@ import com.tencent.bk.job.common.util.StringUtil;
 import com.tencent.bk.job.common.util.Utils;
 import com.tencent.bk.job.common.util.check.ParamCheckUtil;
 import com.tencent.bk.job.manage.api.esb.v3.EsbLocalFileV3Resource;
-import com.tencent.bk.job.manage.config.ArtifactoryConfig;
 import com.tencent.bk.job.manage.config.LocalFileConfigForManage;
 import com.tencent.bk.job.manage.model.esb.v3.request.EsbGenLocalFileUploadUrlV3Req;
 import com.tencent.bk.job.manage.model.esb.v3.response.EsbUploadUrlV3DTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
@@ -58,21 +59,19 @@ public class EsbLocalFileResourceV3Impl implements EsbLocalFileV3Resource {
     private final ArtifactoryClient artifactoryClient;
 
     @Autowired
-    public EsbLocalFileResourceV3Impl(
-        ArtifactoryConfig artifactoryConfig, LocalFileConfigForManage localFileConfigForManage,
-        ArtifactoryClient artifactoryClient
-    ) {
+    public EsbLocalFileResourceV3Impl(ArtifactoryConfig artifactoryConfig,
+                                      LocalFileConfigForManage localFileConfigForManage,
+                                      @Qualifier("jobArtifactoryClient") ArtifactoryClient artifactoryClient) {
         this.artifactoryConfig = artifactoryConfig;
         this.localFileConfigForManage = localFileConfigForManage;
         this.artifactoryClient = artifactoryClient;
     }
 
     @Override
-    public EsbResp<EsbUploadUrlV3DTO> generateLocalFileUploadUrl(EsbGenLocalFileUploadUrlV3Req req) {
+    public EsbResp<EsbUploadUrlV3DTO> generateLocalFileUploadUrl(String username,
+                                                                 String appCode,
+                                                                 EsbGenLocalFileUploadUrlV3Req req) {
         // 参数检查
-        // appId
-        Long appId = req.getAppId();
-        ParamCheckUtil.checkAppId(appId, EsbConsts.PARAM_BK_BIZ_ID);
         // fileNameList
         List<String> fileNameList = req.getFileNameList();
         String fileNameDesc = "fileName in " + EsbConsts.PARAM_FILE_NAME_LIST;
@@ -87,11 +86,11 @@ public class EsbLocalFileResourceV3Impl implements EsbLocalFileV3Resource {
         List<String> filePathList = new ArrayList<>();
         fileNameList.forEach(fileName -> {
             StringBuilder sb = new StringBuilder();
-            sb.append(appId);
+            sb.append(req.getAppId());
             sb.append(File.separatorChar);
             sb.append(Utils.getUUID());
             sb.append(File.separator);
-            sb.append(req.getUserName());
+            sb.append(username);
             sb.append(File.separatorChar);
             sb.append(fileName);
             String filePath = sb.toString();

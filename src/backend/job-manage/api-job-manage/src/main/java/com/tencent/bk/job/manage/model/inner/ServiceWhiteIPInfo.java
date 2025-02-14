@@ -35,8 +35,7 @@ import java.util.Map;
 @AllArgsConstructor
 @NoArgsConstructor
 public class ServiceWhiteIPInfo {
-    private Long cloudId;
-    private String ip;
+    private Long hostId;
     private boolean isForAllApp;
     //（脚本执行：SCRIPT_EXECUTE/文件分发：FILE_DISTRIBUTION）
     private List<String> allAppActionScopeList;
@@ -45,8 +44,7 @@ public class ServiceWhiteIPInfo {
     @Override
     public String toString() {
         return "ServiceWhiteIPInfo{" +
-            "cloudId=" + cloudId +
-            ", ip='" + ip + '\'' +
+            "hostId=" + hostId +
             ", isForAllApp=" + isForAllApp +
             ", allAppActionScopeList=" + allAppActionScopeList +
             ", appIdActionScopeMap=" + appIdActionScopeMap +

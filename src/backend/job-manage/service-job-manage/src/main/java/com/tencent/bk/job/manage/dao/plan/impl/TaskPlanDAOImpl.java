@@ -27,11 +27,14 @@ package com.tencent.bk.job.manage.dao.plan.impl;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.common.util.json.JsonMapper;
-import com.tencent.bk.job.manage.common.consts.task.TaskPlanTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskPlanTypeEnum;
 import com.tencent.bk.job.manage.common.util.DbRecordMapper;
 import com.tencent.bk.job.manage.dao.plan.TaskPlanDAO;
 import com.tencent.bk.job.manage.model.dto.TaskPlanQueryDTO;
+import com.tencent.bk.job.manage.model.dto.task.TaskPlanBasicInfoDTO;
 import com.tencent.bk.job.manage.model.dto.task.TaskPlanInfoDTO;
+import com.tencent.bk.job.manage.model.tables.TaskPlan;
+import com.tencent.bk.job.manage.model.tables.records.TaskPlanRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -40,12 +43,11 @@ import org.jooq.DSLContext;
 import org.jooq.OrderField;
 import org.jooq.Record1;
 import org.jooq.Record13;
+import org.jooq.Record6;
 import org.jooq.Result;
 import org.jooq.SelectJoinStep;
 import org.jooq.TableField;
 import org.jooq.UpdateSetMoreStep;
-import org.jooq.generated.tables.TaskPlan;
-import org.jooq.generated.tables.records.TaskPlanRecord;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +55,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -149,7 +152,7 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
 
         if (CollectionUtils.isNotEmpty(excludePlanIdList)) {
             conditions.add(
-                TABLE.ID.notIn(excludePlanIdList.parallelStream().map(ULong::valueOf).collect(Collectors.toList())));
+                TABLE.ID.notIn(excludePlanIdList.stream().map(ULong::valueOf).collect(Collectors.toList())));
         }
 
         long count = getPageTaskPlanCount(conditions);
@@ -193,6 +196,14 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
         return context.selectCount().from(TABLE).where(conditions).fetchOne(0, Long.class);
     }
 
+    private List<Condition> buildTaskPlanIdsCondition(Collection<Long> planIds) {
+        List<Condition> conditions = new ArrayList<>();
+        conditions.add(TABLE.IS_DELETED.eq(UByte.valueOf(0)));
+        conditions.add(TABLE.TYPE.eq(UByte.valueOf(TaskPlanTypeEnum.NORMAL.getType())));
+        conditions.add(TABLE.ID.in(planIds));
+        return conditions;
+    }
+
     private List<Condition> buildTaskPlanQueryCondition(TaskPlanQueryDTO taskPlanQuery,
                                                         BaseSearchCondition baseSearchCondition) {
         List<Condition> conditions = new ArrayList<>();
@@ -213,7 +224,7 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
                 taskPlanQuery.getTemplateIdList().add(taskPlanQuery.getTemplateId());
             }
             if (CollectionUtils.isNotEmpty(taskPlanQuery.getTemplateIdList())) {
-                conditions.add(TABLE.TEMPLATE_ID.in(taskPlanQuery.getTemplateIdList().parallelStream().map(ULong::valueOf).collect(Collectors.toList())));
+                conditions.add(TABLE.TEMPLATE_ID.in(taskPlanQuery.getTemplateIdList().stream().map(ULong::valueOf).collect(Collectors.toList())));
             }
             if (taskPlanQuery.getName() != null) {
                 conditions.add(TABLE.NAME.like("%" + taskPlanQuery.getName() + "%"));
@@ -359,21 +370,42 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
         if (taskPlanQuery == null) {
             conditions.add(TABLE.APP_ID.eq(ULong.valueOf(appId)));
         }
-        conditions.add(TABLE.ID.in(planIdList.parallelStream().map(ULong::valueOf).collect(Collectors.toList())));
+        conditions.add(TABLE.ID.in(planIdList.stream().map(ULong::valueOf).collect(Collectors.toList())));
         Result<Record13<ULong, ULong, ULong, UByte, String, String, ULong, String, ULong, ULong, ULong, String,
             UByte>> result =
             context.select(TABLE.ID, TABLE.APP_ID, TABLE.TEMPLATE_ID, TABLE.TYPE, TABLE.NAME, TABLE.CREATOR,
-                TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
-                TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.IS_LATEST_VERSION).from(TABLE)
+                    TABLE.CREATE_TIME, TABLE.LAST_MODIFY_USER, TABLE.LAST_MODIFY_TIME, TABLE.FIRST_STEP_ID,
+                    TABLE.LAST_STEP_ID, TABLE.VERSION, TABLE.IS_LATEST_VERSION).from(TABLE)
                 .where(conditions).fetch();
 
         List<TaskPlanInfoDTO> taskPlanInfoList = new ArrayList<>();
-        if (result != null && result.size() > 0) {
+        if (result.size() > 0) {
             result.map(record ->
                 taskPlanInfoList.add(DbRecordMapper.convertRecordToPlanInfo(record)));
         }
         return taskPlanInfoList;
+    }
 
+    @Override
+    public List<TaskPlanBasicInfoDTO> listTaskPlanBasicInfoByIds(Collection<Long> planIds) {
+        List<Condition> conditions = buildTaskPlanIdsCondition(planIds);
+        Result<Record6<ULong, String, String, ULong, ULong, UByte>> result =
+            context.select(
+                    TABLE.ID,
+                    TABLE.NAME,
+                    TABLE.VERSION,
+                    TABLE.APP_ID,
+                    TABLE.TEMPLATE_ID,
+                    TABLE.TYPE
+                ).from(TABLE)
+                .where(conditions).fetch();
+
+        List<TaskPlanBasicInfoDTO> taskPlanBasicInfoList = new ArrayList<>();
+        if (result.size() > 0) {
+            result.map(record ->
+                taskPlanBasicInfoList.add(DbRecordMapper.convertRecordToPlanBasicInfo(record)));
+        }
+        return taskPlanBasicInfoList;
     }
 
     @Override
@@ -386,8 +418,9 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
             conditions.add(TABLE.ID.notEqual(ULong.valueOf(planId)));
         }
         conditions.add(TABLE.NAME.eq(name));
-        return context.selectCount().from(TABLE).where(conditions).fetchOne(0, Integer.class) == 0;
+        conditions.add(TABLE.TYPE.eq(UByte.valueOf(TaskPlanTypeEnum.NORMAL.getType())));
 
+        return !context.fetchExists(TABLE, conditions);
     }
 
     @Override
@@ -488,7 +521,7 @@ public class TaskPlanDAOImpl implements TaskPlanDAO {
         conditions.add(TABLE.IS_DELETED.equal(UByte.valueOf(0)));
         List<ULong> uLongPlanId = context.select(TABLE.ID).from(TABLE).where(conditions).fetch(TABLE.ID);
         if (CollectionUtils.isNotEmpty(uLongPlanId)) {
-            return uLongPlanId.parallelStream().map(ULong::longValue).collect(Collectors.toList());
+            return uLongPlanId.stream().map(ULong::longValue).collect(Collectors.toList());
         } else {
             return new ArrayList<>();
         }

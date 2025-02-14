@@ -24,7 +24,7 @@
 
 package com.tencent.bk.job.manage.task;
 
-import com.tencent.bk.job.manage.common.client.PAASClientFactory;
+import com.tencent.bk.job.manage.manager.app.ApplicationCache;
 import com.tencent.bk.job.manage.service.SyncService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,28 +32,28 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/**
- * @Description 增加调度需要注意到ScheduleConfig中更新线程池配置
- * @Date 2020/1/3
- * @Version 1.0
- */
 @Slf4j
-@Component
+@Component("jobManageScheduledTasks")
 @EnableScheduling
 public class ScheduledTasks {
 
-    private EsbUserInfoUpdateTask esbUserInfoUpdateTask;
-    private SyncService syncService;
-    private UserUploadFileCleanTask userUploadFileCleanTask;
+    private final EsbUserInfoUpdateTask esbUserInfoUpdateTask;
+    private final SyncService syncService;
+    private final UserUploadFileCleanTask userUploadFileCleanTask;
+    private final ClearDeletedHostsTask clearDeletedHostsTask;
+    private final ApplicationCache applicationCache;
 
     @Autowired
     public ScheduledTasks(
         EsbUserInfoUpdateTask esbUserInfoUpdateTask,
         SyncService syncService,
-        UserUploadFileCleanTask userUploadFileCleanTask) {
+        UserUploadFileCleanTask userUploadFileCleanTask,
+        ClearDeletedHostsTask clearDeletedHostsTask, ApplicationCache applicationCache) {
         this.esbUserInfoUpdateTask = esbUserInfoUpdateTask;
         this.syncService = syncService;
         this.userUploadFileCleanTask = userUploadFileCleanTask;
+        this.clearDeletedHostsTask = clearDeletedHostsTask;
+        this.applicationCache = applicationCache;
     }
 
     /**
@@ -83,6 +83,19 @@ public class ScheduledTasks {
     }
 
     /**
+     * 业务缓存刷新：1min/次
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    public void refreshAppCache() {
+        log.info(Thread.currentThread().getId() + ":refreshAppCache start");
+        try {
+            applicationCache.refreshCache();
+        } catch (Exception e) {
+            log.error("refreshAppCache fail", e);
+        }
+    }
+
+    /**
      * 主机同步：5min/次
      */
     @Scheduled(cron = "0 0/5 * * * ?")
@@ -96,9 +109,9 @@ public class ScheduledTasks {
     }
 
     /**
-     * Agent状态同步：3min/次
+     * Agent状态同步：1min/次
      */
-    @Scheduled(cron = "0 0/3 * * * ?")
+    @Scheduled(cron = "0 * * * * ?")
     public void agentStatusSyncTask() {
         log.info(Thread.currentThread().getId() + ":agentStatusSyncTask start");
         try {
@@ -119,14 +132,14 @@ public class ScheduledTasks {
         log.info("Clean user upload file task finished");
     }
 
-    @Scheduled(cron = "0 0 0 * * ?")
-    public void resetTodayStatistics() {
-        log.info("resetTodayStatistics begin");
+
+    @Scheduled(cron = "0 10 * * * ?")
+    public void clearDeletedHosts() {
+        log.info("Clear deleted hosts task begin");
         try {
-            PAASClientFactory.resetTodayStatistics();
+            log.info("Clear deleted hosts task finished:{}", clearDeletedHostsTask.execute());
         } catch (Exception e) {
-            log.error("resetTodayStatistics failed!", e);
+            log.error("Clear deleted hosts failed!", e);
         }
-        log.info("resetTodayStatistics finished");
     }
 }

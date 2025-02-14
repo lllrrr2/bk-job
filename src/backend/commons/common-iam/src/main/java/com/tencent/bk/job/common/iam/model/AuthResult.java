@@ -25,6 +25,7 @@
 package com.tencent.bk.job.common.iam.model;
 
 import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
+import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.model.iam.AuthResultDTO;
 import com.tencent.bk.job.common.model.iam.PathInfoDTO;
 import com.tencent.bk.job.common.model.iam.PermissionActionResourceDTO;
@@ -84,14 +85,17 @@ public class AuthResult {
             return;
         }
 
+        // 根据actionId从已经添加过的权限操作资源中找出已有的actionId相同的资源，没有则创建一个新的
         PermissionActionResource actionResource = createOrGetPermissionActionResource(actionId);
 
         PermissionResourceGroup resourceGroup = null;
+        // 找出已经添加过的同类别依赖资源分组
         for (PermissionResourceGroup existedResourceGroup : actionResource.getResourceGroups()) {
             if (existedResourceGroup.getResourceType() == permissionResource.getResourceType()) {
                 resourceGroup = existedResourceGroup;
             }
         }
+        // 第一次添加权限依赖资源
         if (resourceGroup == null) {
             resourceGroup = new PermissionResourceGroup();
             resourceGroup.setResourceType(permissionResource.getResourceType());
@@ -298,7 +302,7 @@ public class AuthResult {
                     PermissionResourceGroup resourceGroup = new PermissionResourceGroup();
                     resourceGroup.setResourceType(ResourceTypeEnum.getByResourceTypeId(resourceGroupDTO.getResourceType()));
                     resourceGroup.setSystemId(resourceGroupDTO.getSystemId());
-                    if (CollectionUtils.isNotEmpty(resourceGroup.getPermissionResources())) {
+                    if (CollectionUtils.isNotEmpty(resourceGroupDTO.getPermissionResources())) {
                         List<PermissionResource> resources = new ArrayList<>();
                         for (PermissionResourceDTO resourceDTO : resourceGroupDTO.getPermissionResources()) {
                             resources.add(toPermissionResource(resourceDTO));
@@ -345,6 +349,15 @@ public class AuthResult {
         }
 
         return pathBuilder.build();
+    }
+
+    /**
+     * 处理鉴权结果。如果鉴权不通过，抛出 PermissionDeniedException
+     */
+    public void denyIfNoPermission() throws PermissionDeniedException {
+        if (!isPass()) {
+            throw new PermissionDeniedException(this);
+        }
     }
 
 }

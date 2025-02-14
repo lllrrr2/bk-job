@@ -24,37 +24,54 @@
 
 package com.tencent.bk.job.manage.model.dto.task;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.annotation.PersistenceObject;
 import com.tencent.bk.job.common.esb.model.job.EsbIpDTO;
-import com.tencent.bk.job.common.esb.model.job.v3.EsbDynamicGroupDTO;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbServerV3DTO;
+import com.tencent.bk.job.common.model.dto.ApplicationHostDTO;
+import com.tencent.bk.job.common.model.openapi.v3.EsbDynamicGroupDTO;
+import com.tencent.bk.job.common.model.vo.TaskExecuteObjectsInfoVO;
+import com.tencent.bk.job.common.model.vo.TaskHostNodeVO;
 import com.tencent.bk.job.common.model.vo.TaskTargetVO;
+import com.tencent.bk.job.common.util.ApplicationContextRegister;
 import com.tencent.bk.job.common.util.json.JsonMapper;
 import com.tencent.bk.job.manage.model.inner.ServiceHostInfoDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskHostNodeDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskTargetDTO;
+import com.tencent.bk.job.manage.service.host.HostService;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * @since 2/12/2019 20:59
+ * 执行目标主机
  */
+@PersistenceObject
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
 @AllArgsConstructor
+@Slf4j
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class TaskTargetDTO {
 
+    @JsonProperty("variable")
     private String variable;
 
+    @JsonProperty("hostNodeList")
     private TaskHostNodeDTO hostNodeList;
 
     public static TaskTargetVO toVO(TaskTargetDTO executeTarget) {
@@ -63,7 +80,15 @@ public class TaskTargetDTO {
         }
         TaskTargetVO taskTargetVO = new TaskTargetVO();
         taskTargetVO.setVariable(executeTarget.getVariable());
-        taskTargetVO.setHostNodeInfo(TaskHostNodeDTO.toVO(executeTarget.getHostNodeList()));
+        TaskHostNodeVO taskHostNodeVO = TaskHostNodeDTO.toVO(executeTarget.getHostNodeList());
+        if (taskHostNodeVO != null) {
+            taskTargetVO.setHostNodeInfo(taskHostNodeVO);
+            TaskExecuteObjectsInfoVO taskExecuteObjectsInfoVO = new TaskExecuteObjectsInfoVO();
+            taskExecuteObjectsInfoVO.setHostList(taskHostNodeVO.getHostList());
+            taskExecuteObjectsInfoVO.setNodeList(taskHostNodeVO.getNodeList());
+            taskExecuteObjectsInfoVO.setDynamicGroupList(taskHostNodeVO.getDynamicGroupList());
+            taskTargetVO.setExecuteObjectsInfo(taskExecuteObjectsInfoVO);
+        }
         return taskTargetVO;
     }
 
@@ -75,11 +100,46 @@ public class TaskTargetDTO {
         if (StringUtils.isNotBlank(taskTargetVO.getVariable())) {
             taskTargetDTO.setVariable(taskTargetVO.getVariable());
         }
-        taskTargetDTO.setHostNodeList(TaskHostNodeDTO.fromVO(taskTargetVO.getHostNodeInfo()));
+        taskTargetDTO.setHostNodeList(TaskHostNodeDTO.fromVO(taskTargetVO.getExecuteObjectsInfoCompatibly()));
+        fillHostDetail(taskTargetDTO);
         return taskTargetDTO;
     }
 
-    public static TaskTargetDTO fromString(String targetString) {
+    private static void fillHostDetail(TaskTargetDTO target) {
+        HostService hostService =
+            ApplicationContextRegister.getBean(HostService.class);
+        if (target.getHostNodeList() != null && CollectionUtils.isNotEmpty(target.getHostNodeList().getHostList())) {
+            Set<Long> hostIds = target.getHostNodeList().getHostList().stream()
+                .map(ApplicationHostDTO::getHostId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+            if (CollectionUtils.isEmpty(hostIds)) {
+                return;
+            }
+            Map<Long, ApplicationHostDTO> hosts = hostService.listHostsByHostIds(hostIds);
+            if (hosts == null || hosts.isEmpty()) {
+                return;
+            }
+
+            target.getHostNodeList().getHostList().forEach(hostNode -> {
+                ApplicationHostDTO host = hosts.get(hostNode.getHostId());
+                if (host != null) {
+                    hostNode.setAgentId(host.getAgentId());
+                    hostNode.setCloudAreaId(host.getCloudAreaId());
+                    hostNode.setIp(host.getIp());
+                    hostNode.setIpv6(host.getIpv6());
+                    hostNode.setDisplayIp(host.getDisplayIp());
+                    hostNode.setOsName(host.getOsName());
+                    hostNode.setOsType(host.getOsType());
+                    hostNode.setGseAgentStatus(host.getGseAgentStatus());
+                } else {
+                    log.warn("Cannot find host by hostId={}", hostNode.getHostId());
+                }
+            });
+        }
+    }
+
+    public static TaskTargetDTO fromJsonString(String targetString) {
         if (StringUtils.isBlank(targetString)) {
             return null;
         }
@@ -116,19 +176,19 @@ public class TaskTargetDTO {
         esbServer.setVariable(taskTarget.getVariable());
         if (taskTarget.getHostNodeList() != null) {
             if (CollectionUtils.isNotEmpty(taskTarget.getHostNodeList().getHostList())) {
-                esbServer.setIps(taskTarget.getHostNodeList().getHostList().parallelStream()
+                esbServer.setIps(taskTarget.getHostNodeList().getHostList().stream()
                     .map(EsbIpDTO::fromApplicationHostInfo).collect(Collectors.toList()));
             }
             if (CollectionUtils.isNotEmpty(taskTarget.getHostNodeList().getDynamicGroupId())) {
-                esbServer.setDynamicGroups(taskTarget.getHostNodeList().getDynamicGroupId().parallelStream().map(id -> {
+                esbServer.setDynamicGroups(taskTarget.getHostNodeList().getDynamicGroupId().stream().map(id -> {
                     EsbDynamicGroupDTO esbDynamicGroup = new EsbDynamicGroupDTO();
                     esbDynamicGroup.setId(id);
                     return esbDynamicGroup;
                 }).collect(Collectors.toList()));
             }
             if (CollectionUtils.isNotEmpty(taskTarget.getHostNodeList().getNodeInfoList())) {
-                esbServer.setTopoNodes(taskTarget.getHostNodeList().getNodeInfoList().parallelStream()
-                    .map(TaskNodeInfoDTO::toEsbCCTopoNode).collect(Collectors.toList()));
+                esbServer.setTopoNodes(taskTarget.getHostNodeList().getNodeInfoList().stream()
+                    .map(TaskNodeInfoDTO::toEsbCmdbTopoNode).collect(Collectors.toList()));
             }
         }
         return esbServer;
@@ -140,7 +200,7 @@ public class TaskTargetDTO {
         if (hostNodeList != null) {
             ServiceTaskHostNodeDTO targetServer = new ServiceTaskHostNodeDTO();
             if (CollectionUtils.isNotEmpty(hostNodeList.getNodeInfoList())) {
-                targetServer.setNodeInfoList(hostNodeList.getNodeInfoList().parallelStream()
+                targetServer.setNodeInfoList(hostNodeList.getNodeInfoList().stream()
                     .map(TaskNodeInfoDTO::toServiceTaskHostNodeDTO).collect(Collectors.toList()));
             } else {
                 targetServer.setNodeInfoList(Collections.emptyList());
@@ -155,7 +215,6 @@ public class TaskTargetDTO {
                     }
                     hostInfoDTO.setCloudAreaId(hostNode.getCloudAreaId());
                     hostInfoDTO.setIp(hostNode.getIp());
-                    hostInfoDTO.setDisplayIp(hostNode.getDisplayIp());
                     hostInfoDTOS.add(hostInfoDTO);
                 });
                 targetServer.setHostList(hostInfoDTOS);
@@ -165,8 +224,7 @@ public class TaskTargetDTO {
         return targetDTO;
     }
 
-    @Override
-    public String toString() {
+    public String toJsonString() {
         if (StringUtils.isNotBlank(variable)) {
             this.hostNodeList = null;
         } else {
@@ -176,5 +234,11 @@ public class TaskTargetDTO {
             }
         }
         return JsonMapper.nonEmptyMapper().toJson(this);
+    }
+
+    @Override
+    public String toString() {
+        log.info("TaskTargetDTO_toString");
+        return toJsonString();
     }
 }

@@ -24,13 +24,10 @@
 
 package com.tencent.bk.job.manage.dao.notify;
 
-import org.jooq.DSLContext;
-
 public interface NotifyConfigStatusDAO {
-    int insertNotifyConfigStatus(DSLContext dslContext, String userName, Long appId);
 
-    int deleteNotifyConfigStatus(DSLContext dslContext, String userName, Long appId);
+    int insertNotifyConfigStatus(String userName, Long appId);
 
-    boolean exist(DSLContext dslContext, String userName, Long appId);
+    boolean exist(String userName, Long appId);
 
 }

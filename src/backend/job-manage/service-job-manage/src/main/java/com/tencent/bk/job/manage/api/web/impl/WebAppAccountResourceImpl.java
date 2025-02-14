@@ -24,36 +24,28 @@
 
 package com.tencent.bk.job.manage.api.web.impl;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
+import com.tencent.bk.job.common.constant.AccountCategoryEnum;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.FeatureToggleModeEnum;
-import com.tencent.bk.job.common.exception.FailedPreconditionException;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.exception.NotFoundException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.iam.constant.ActionId;
-import com.tencent.bk.job.common.iam.constant.ResourceId;
-import com.tencent.bk.job.common.iam.constant.ResourceTypeEnum;
-import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.iam.model.AuthResult;
-import com.tencent.bk.job.common.iam.service.AuthService;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.common.model.Response;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
-import com.tencent.bk.job.common.util.ArrayUtil;
-import com.tencent.bk.job.common.util.JobContextUtil;
+import com.tencent.bk.job.common.model.dto.AppResourceScope;
 import com.tencent.bk.job.common.util.Utils;
 import com.tencent.bk.job.common.util.date.DateUtils;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
 import com.tencent.bk.job.manage.api.web.WebAppAccountResource;
-import com.tencent.bk.job.manage.common.consts.account.AccountCategoryEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
+import com.tencent.bk.job.manage.auth.AccountAuthService;
 import com.tencent.bk.job.manage.config.JobManageConfig;
 import com.tencent.bk.job.manage.model.dto.AccountDTO;
 import com.tencent.bk.job.manage.model.web.request.AccountCreateUpdateReq;
 import com.tencent.bk.job.manage.model.web.vo.AccountVO;
 import com.tencent.bk.job.manage.service.AccountService;
-import com.tencent.bk.job.manage.service.ApplicationService;
-import com.tencent.bk.sdk.iam.util.PathBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -63,7 +55,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -72,74 +63,55 @@ import java.util.stream.Collectors;
 @RestController
 public class WebAppAccountResourceImpl implements WebAppAccountResource {
     private final AccountService accountService;
-    private final MessageI18nService i18nService;
-    private final AuthService authService;
-    private final ApplicationService applicationService;
+    private final AccountAuthService accountAuthService;
     private final JobManageConfig jobManageConfig;
 
     @Autowired
     public WebAppAccountResourceImpl(AccountService accountService,
-                                     MessageI18nService i18nService,
-                                     AuthService authService,
-                                     ApplicationService applicationService,
+                                     AccountAuthService accountAuthService,
                                      JobManageConfig jobManageConfig) {
         this.accountService = accountService;
-        this.i18nService = i18nService;
-        this.authService = authService;
-        this.applicationService = applicationService;
+        this.accountAuthService = accountAuthService;
         this.jobManageConfig = jobManageConfig;
     }
 
     @Override
-    public Response<Long> saveAccount(String username, Long appId,
-                                      AccountCreateUpdateReq accountCreateUpdateReq) {
-        ApplicationInfoDTO applicationInfoDTO = applicationService.getAppInfoById(appId);
-        if (applicationInfoDTO == null) {
-            return Response.buildCommonFailResp(ErrorCode.WRONG_APP_ID);
-        }
-        AuthResult authResult = checkCreateAccountPermission(username, appId);
-        if (!authResult.isPass()) {
-            throw new PermissionDeniedException(authResult);
-        }
-        JobContextUtil.setAppId(appId);
+    @AuditEntry(actionId = ActionId.CREATE_ACCOUNT)
+    public Response<AccountVO> saveAccount(String username,
+                                           AppResourceScope appResourceScope,
+                                           String scopeType,
+                                           String scopeId,
+                                           @AuditRequestBody AccountCreateUpdateReq accountCreateUpdateReq) {
         accountService.checkCreateParam(accountCreateUpdateReq, true, true);
 
-        AccountDTO newAccount = accountService.buildCreateAccountDTO(username, appId, accountCreateUpdateReq);
-        long accountId = accountService.saveAccount(newAccount);
-        authService.registerResource(
-            "" + accountId,
-            newAccount.getAlias(),
-            ResourceId.ACCOUNT,
-            username,
-            null
-        );
-        return Response.buildSuccessResp(accountId);
+        AccountDTO newAccount = accountService.buildCreateAccountDTO(username, appResourceScope.getAppId(),
+            accountCreateUpdateReq);
+        AccountDTO savedAccount = accountService.createAccount(username, newAccount);
+        return Response.buildSuccessResp(savedAccount.toAccountVO());
     }
 
     @Override
-    public Response updateAccount(String username, Long appId, AccountCreateUpdateReq accountCreateUpdateReq) {
-        Long accountId = accountCreateUpdateReq.getId();
-        AccountDTO account = accountService.getAccountById(accountId);
-        if (account == null) {
-            log.info("Account is not exist, accountId={}", accountId);
-            throw new NotFoundException(ErrorCode.ACCOUNT_NOT_EXIST, ArrayUtil.toArray(accountId));
-        }
-        AuthResult authResult = checkManageAccountPermission(username, appId, accountId);
-        if (!authResult.isPass()) {
-            throw new PermissionDeniedException(authResult);
-        }
+    @AuditEntry(actionId = ActionId.MANAGE_ACCOUNT)
+    public Response<AccountVO> updateAccount(String username,
+                                             AppResourceScope appResourceScope,
+                                             String scopeType,
+                                             String scopeId,
+                                             Long accountId,
+                                             @AuditRequestBody AccountCreateUpdateReq accountCreateUpdateReq) {
+        accountCreateUpdateReq.setId(accountId);
         if (!checkUpdateAccountParam(accountCreateUpdateReq)) {
             throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
-        AccountDTO updateAccount = buildUpdateAccountDTO(account, username, accountCreateUpdateReq);
-        accountService.updateAccount(updateAccount);
-        return Response.buildSuccessResp(null);
+
+        AccountDTO updateAccount = buildUpdateAccountDTO(username, appResourceScope.getAppId(), accountCreateUpdateReq);
+        AccountDTO savedAccount = accountService.updateAccount(username, updateAccount);
+        return Response.buildSuccessResp(savedAccount.toAccountVO());
     }
 
     private boolean checkUpdateAccountParam(AccountCreateUpdateReq req) {
         // 账号名称是不能更新的，所以这里不用校验
         if (req.getId() == null) {
-            log.warn("Id is invalid, id={}", req.getId());
+            log.warn("Id is invalid, id=null");
             return false;
         }
         if (req.getCategory() != null && req.getCategory().equals(AccountCategoryEnum.DB.getValue())
@@ -151,11 +123,10 @@ public class WebAppAccountResourceImpl implements WebAppAccountResource {
         return true;
     }
 
-    private AccountDTO buildUpdateAccountDTO(AccountDTO existAccount, String operator, AccountCreateUpdateReq req) {
+    private AccountDTO buildUpdateAccountDTO(String operator, long appId, AccountCreateUpdateReq req) {
         AccountDTO accountDTO = new AccountDTO();
-        accountDTO.setAppId(existAccount.getAppId());
-        accountDTO.setType(existAccount.getType());
-        accountDTO.setCategory(existAccount.getCategory());
+        accountDTO.setId(req.getId());
+        accountDTO.setAppId(appId);
         accountDTO.setAlias(req.getAlias());
         accountDTO.setRemark(req.getRemark());
         accountDTO.setGrantees(Utils.concatStringWithSeperator(req.getGrantees(), ","));
@@ -171,33 +142,28 @@ public class WebAppAccountResourceImpl implements WebAppAccountResource {
         accountDTO.setDbSystemAccountId(req.getDbSystemAccountId());
         accountDTO.setLastModifyUser(operator);
         accountDTO.setLastModifyTime(DateUtils.currentTimeMillis());
-        accountDTO.setId(req.getId());
 
         return accountDTO;
     }
 
     @Override
-    public Response<PageData<AccountVO>> listAppAccounts(
-        String username,
-        Long appId,
-        Long id,
-        String name,
-        String alias,
-        Integer category,
-        Integer type,
-        String creator,
-        String lastModifyUser,
-        Integer start,
-        Integer pageSize,
-        String orderField,
-        Integer order,
-        String keyword
-    ) {
-        ApplicationInfoDTO applicationInfoDTO = applicationService.getAppInfoById(appId);
-        if (applicationInfoDTO == null) {
-            return Response.buildCommonFailResp(ErrorCode.WRONG_APP_ID);
-        }
-        JobContextUtil.setAppId(appId);
+    public Response<PageData<AccountVO>> listAppAccounts(String username,
+                                                         AppResourceScope appResourceScope,
+                                                         String scopeType,
+                                                         String scopeId,
+                                                         Long id,
+                                                         String name,
+                                                         String alias,
+                                                         Integer category,
+                                                         Integer type,
+                                                         String creator,
+                                                         String lastModifyUser,
+                                                         String remark,
+                                                         Integer start,
+                                                         Integer pageSize,
+                                                         String orderField,
+                                                         Integer order,
+                                                         String keyword) {
         PageData<AccountDTO> pageData;
         BaseSearchCondition baseSearchCondition = new BaseSearchCondition();
         baseSearchCondition.setStart(start);
@@ -207,7 +173,7 @@ public class WebAppAccountResourceImpl implements WebAppAccountResource {
         if (keyword == null) {
             // 按字段搜索
             AccountDTO accountQuery = new AccountDTO();
-            accountQuery.setAppId(appId);
+            accountQuery.setAppId(appResourceScope.getAppId());
             if (id != null) {
                 accountQuery.setId(id);
             } else {
@@ -217,11 +183,12 @@ public class WebAppAccountResourceImpl implements WebAppAccountResource {
                 accountQuery.setType(AccountTypeEnum.valueOf(type));
                 accountQuery.setCreator(creator);
                 accountQuery.setLastModifyUser(lastModifyUser);
+                accountQuery.setRemark(remark);
             }
             pageData = accountService.listPageAccount(accountQuery, baseSearchCondition);
         } else {
             // 模糊搜索
-            pageData = accountService.searchPageAccount(appId, keyword, baseSearchCondition);
+            pageData = accountService.searchPageAccount(appResourceScope.getAppId(), keyword, baseSearchCondition);
         }
         PageData<AccountVO> result = new PageData<>();
         result.setTotal(pageData.getTotal());
@@ -231,148 +198,92 @@ public class WebAppAccountResourceImpl implements WebAppAccountResource {
         List<AccountVO> accountVOS = new ArrayList<>();
         if (pageData.getData() != null) {
             for (AccountDTO accountDTO : pageData.getData()) {
-                AccountVO accountVO = convertToAccountVO(accountDTO);
-                accountVOS.add(accountVO);
+                accountVOS.add(accountDTO.toAccountVO());
             }
         }
         // 添加权限数据
-        List<String> canManageIdList =
-            authService.batchAuth(username, ActionId.MANAGE_ACCOUNT, appId, ResourceTypeEnum.ACCOUNT,
-                accountVOS.parallelStream().map(AccountVO::getId).map(Objects::toString).collect(Collectors.toList()));
-        accountVOS.forEach(it -> {
-            it.setCanManage(canManageIdList.contains(it.getId().toString()));
-        });
+        List<Long> canManageIdList =
+            accountAuthService.batchAuthManageAccount(username, appResourceScope,
+                accountVOS.stream().map(AccountVO::getId).collect(Collectors.toList()));
+        accountVOS.forEach(it -> it.setCanManage(canManageIdList.contains(it.getId())));
         result.setData(accountVOS);
-        result.setCanCreate(checkCreateAccountPermission(username, appId).isPass());
+        result.setCanCreate(checkCreateAccountPermission(username, appResourceScope).isPass());
         return Response.buildSuccessResp(result);
     }
 
-    private AccountVO convertToAccountVO(AccountDTO accountDTO) {
-        AccountVO accountVO = new AccountVO();
-        accountVO.setId(accountDTO.getId());
-        accountVO.setAppId(accountDTO.getAppId());
-        accountVO.setAccount(accountDTO.getAccount());
-        accountVO.setAlias(accountDTO.getAlias());
-        accountVO.setCategory(accountDTO.getCategory().getValue());
-        accountVO.setCategoryName(i18nService.getI18n(accountDTO.getCategory().getI18nKey()));
-        accountVO.setType(accountDTO.getType().getType());
-        accountVO.setTypeName(accountDTO.getType().getName());
-        accountVO.setOwnerUsers(Utils.getNotBlankSplitList(accountDTO.getGrantees(), ","));
-        accountVO.setRemark(accountDTO.getRemark());
-        accountVO.setOs(accountDTO.getOs());
-        accountVO.setPassword("******");
-        accountVO.setDbPort(accountDTO.getDbPort());
-        accountVO.setDbPassword("******");
-        accountVO.setDbSystemAccountId(accountDTO.getDbSystemAccountId());
-        accountVO.setLastModifyUser(accountDTO.getLastModifyUser());
-        accountVO.setCreator(accountDTO.getCreator());
-        if (accountDTO.getCreateTime() != null) {
-            accountVO.setCreateTime(accountDTO.getCreateTime());
-        }
-        if (accountDTO.getLastModifyTime() != null) {
-            accountVO.setLastModifyTime(accountDTO.getLastModifyTime());
-        }
-        return accountVO;
-    }
-
     @Override
-    public Response deleteAccount(String username, Long appId, Long accountId) {
-        JobContextUtil.setAppId(appId);
-        log.info("Delete account, operator={}, appId={}, accountId={}", username, appId, accountId);
-        AccountDTO account = accountService.getAccountById(accountId);
-        if (account == null) {
-            log.info("Account is not exist, accountId={}", accountId);
-            throw new NotFoundException(ErrorCode.ACCOUNT_NOT_EXIST, ArrayUtil.toArray(accountId));
-        }
-        AuthResult authResult = checkManageAccountPermission(username, appId, accountId);
-        if (!authResult.isPass()) {
-            throw new PermissionDeniedException(authResult);
-        }
-        if (accountService.isAccountRefByAnyStep(accountId)) {
-            log.info("Account:{} is ref by step, should not delete!", accountId);
-            throw new FailedPreconditionException(ErrorCode.DELETE_REF_ACCOUNT_FORBIDDEN);
-        }
-        if (account.getCategory() == AccountCategoryEnum.SYSTEM
-            && accountService.isSystemAccountRefByDbAccount(accountId)) {
-            log.info("Account:{} is ref by db account, should not delete!", accountId);
-            throw new FailedPreconditionException(ErrorCode.DELETE_REF_ACCOUNT_FORBIDDEN);
-        }
-        accountService.deleteAccount(accountId);
+    @AuditEntry(actionId = ActionId.MANAGE_ACCOUNT)
+    public Response deleteAccount(String username,
+                                  AppResourceScope appResourceScope,
+                                  String scopeType,
+                                  String scopeId,
+                                  Long accountId) {
+        accountService.deleteAccount(username, appResourceScope.getAppId(), accountId);
         return Response.buildSuccessResp(null);
     }
 
     @Override
-    public Response<AccountVO> getAccountById(String username, Long appId, Long accountId) {
-        JobContextUtil.setAppId(appId);
-        AccountDTO accountDTO = accountService.getAccountById(accountId);
-        if (accountDTO == null) {
-            return Response.buildSuccessResp(null);
-        }
-        return Response.buildSuccessResp(convertToAccountVO(accountDTO));
+    @AuditEntry(actionId = ActionId.USE_ACCOUNT)
+    public Response<AccountVO> getAccountById(String username,
+                                              AppResourceScope appResourceScope,
+                                              String scopeType,
+                                              String scopeId,
+                                              Long accountId) {
+        AccountDTO account = accountService.getAccount(username, appResourceScope.getAppId(), accountId);
+        return Response.buildSuccessResp(account.toAccountVO());
     }
 
     @Override
-    public Response<List<AccountVO>> listAccounts(String username, Long appId, Integer category) {
-        JobContextUtil.setAppId(appId);
+    public Response<List<AccountVO>> listAccounts(String username,
+                                                  AppResourceScope appResourceScope,
+                                                  String scopeType,
+                                                  String scopeId,
+                                                  Integer category) {
         if (category != null && AccountCategoryEnum.valOf(category) == null) {
             throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
         List<AccountDTO> accountDTOS =
-            accountService.listAllAppAccount(appId, AccountCategoryEnum.valOf(category));
+            accountService.listAppAccount(appResourceScope.getAppId(), AccountCategoryEnum.valOf(category));
         List<AccountVO> accountVOS = new ArrayList<>();
         if (accountDTOS != null && !accountDTOS.isEmpty()) {
             List<Long> accountIdList = new ArrayList<>();
-            for (int i = 0; i < accountDTOS.size(); i++) {
-                AccountDTO accountDTO = accountDTOS.get(i);
-                AccountVO accountVO = convertToAccountVO(accountDTO);
-                accountVO.setPassword("******");
-                accountVO.setDbPassword("******");
+            for (AccountDTO accountDTO : accountDTOS) {
+                AccountVO accountVO = accountDTO.toAccountVO();
                 accountVO.setCanManage(true);
                 accountVO.setCanUse(true);
                 accountIdList.add(accountDTO.getId());
                 accountVOS.add(accountVO);
             }
             // 批量鉴权
-            Set<String> allowedManageAccounts = new HashSet<>(authService
-                .batchAuth(username, ActionId.MANAGE_ACCOUNT, appId, ResourceTypeEnum.ACCOUNT,
-                    accountIdList.parallelStream().map(Object::toString).collect(Collectors.toList())));
+            List<Long> canManageIdList = accountAuthService.batchAuthManageAccount(username,
+                appResourceScope, accountIdList);
+            Set<Long> canManageIdSet = new HashSet<>(canManageIdList);
             accountVOS.forEach(accountVO ->
-                accountVO.setCanManage(allowedManageAccounts.contains(accountVO.getId().toString())));
+                accountVO.setCanManage(canManageIdSet.contains(accountVO.getId())));
 
-            setUseAccountPermission(username, appId, accountVOS);
+            setUseAccountPermission(username, appResourceScope, accountVOS);
         }
         return Response.buildSuccessResp(accountVOS);
     }
 
-    private AuthResult checkCreateAccountPermission(String username, Long appId) {
+    private AuthResult checkCreateAccountPermission(String username, AppResourceScope appResourceScope) {
         // 需要拥有在业务下创建账号的权限
-        return authService.auth(
-            true,
-            username,
-            ActionId.CREATE_ACCOUNT,
-            ResourceTypeEnum.BUSINESS,
-            appId.toString(),
-            null
-        );
+        return accountAuthService.authCreateAccount(username, appResourceScope);
     }
 
-    private AuthResult checkManageAccountPermission(String username, Long appId, Long accountId) {
-        // 需要拥有在业务下管理某个具体账号的权限
-        return authService.auth(true, username, ActionId.MANAGE_ACCOUNT, ResourceTypeEnum.ACCOUNT,
-            accountId.toString(), PathBuilder.newBuilder(ResourceTypeEnum.BUSINESS.getId(), appId.toString()).build());
-    }
-
-    private void setUseAccountPermission(String username, Long appId, List<AccountVO> accountVOS) {
+    private void setUseAccountPermission(String username,
+                                         AppResourceScope appResourceScope,
+                                         List<AccountVO> accountVOS) {
         if (CollectionUtils.isEmpty(accountVOS)) {
             return;
         }
-        if (shouldAuthAccount(appId)) {
+        if (shouldAuthAccount(appResourceScope.getAppId())) {
             List<Long> accountIdList = accountVOS.stream().map(AccountVO::getId).collect(Collectors.toList());
-            Set<String> allowedUseAccounts = new HashSet<>(authService
-                .batchAuth(username, ActionId.USE_ACCOUNT, appId, ResourceTypeEnum.ACCOUNT,
-                    accountIdList.parallelStream().map(Object::toString).collect(Collectors.toList())));
+            List<Long> allowedIdList = accountAuthService.batchAuthUseAccount(username, appResourceScope,
+                accountIdList);
+            Set<Long> allowedIdSet = new HashSet<>(allowedIdList);
             accountVOS.forEach(accountVO ->
-                accountVO.setCanUse(allowedUseAccounts.contains(accountVO.getId().toString())));
+                accountVO.setCanUse(allowedIdSet.contains(accountVO.getId())));
         } else {
             accountVOS.forEach(accountVO -> accountVO.setCanUse(true));
         }

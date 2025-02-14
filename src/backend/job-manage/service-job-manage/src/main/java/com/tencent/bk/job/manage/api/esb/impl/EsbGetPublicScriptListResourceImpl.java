@@ -30,20 +30,19 @@ import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbPageData;
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.common.model.ValidateResult;
 import com.tencent.bk.job.common.util.date.DateUtils;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import com.tencent.bk.job.manage.api.esb.EsbGetPublicScriptListResource;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
 import com.tencent.bk.job.manage.model.dto.ScriptDTO;
 import com.tencent.bk.job.manage.model.esb.EsbScriptDTO;
 import com.tencent.bk.job.manage.model.esb.request.EsbGetPublicScriptListRequest;
 import com.tencent.bk.job.manage.model.query.ScriptQuery;
-import com.tencent.bk.job.manage.service.ScriptService;
+import com.tencent.bk.job.manage.service.PublicScriptService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -57,17 +56,17 @@ import java.util.List;
 @Slf4j
 public class EsbGetPublicScriptListResourceImpl implements EsbGetPublicScriptListResource {
 
-    private final ScriptService scriptService;
-    private final MessageI18nService i18nService;
+    private final PublicScriptService publicScriptService;
 
-    public EsbGetPublicScriptListResourceImpl(ScriptService scriptService, MessageI18nService i18nService) {
-        this.scriptService = scriptService;
-        this.i18nService = i18nService;
+    public EsbGetPublicScriptListResourceImpl(PublicScriptService publicScriptService) {
+        this.publicScriptService = publicScriptService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v2_get_public_script_list"})
-    public EsbResp<EsbPageData<EsbScriptDTO>> getPublicScriptList(EsbGetPublicScriptListRequest request) {
+    public EsbResp<EsbPageData<EsbScriptDTO>> getPublicScriptList(String username,
+                                                                  String appCode,
+                                                                  EsbGetPublicScriptListRequest request) {
         ValidateResult checkResult = checkRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Get public script list, request is illegal!");
@@ -88,8 +87,9 @@ public class EsbGetPublicScriptListResourceImpl implements EsbGetPublicScriptLis
         BaseSearchCondition baseSearchCondition = new BaseSearchCondition();
         baseSearchCondition.setStart(request.getStart());
         baseSearchCondition.setLength(request.getLength());
+        scriptQuery.setBaseSearchCondition(baseSearchCondition);
 
-        PageData<ScriptDTO> pageScripts = scriptService.listPageScriptVersion(scriptQuery, baseSearchCondition);
+        PageData<ScriptDTO> pageScripts = publicScriptService.listPageScriptVersion(scriptQuery);
         EsbPageData<EsbScriptDTO> result = convertToPageEsbScriptDTO(pageScripts, returnScriptContent);
         return EsbResp.buildSuccessResp(result);
     }
@@ -108,7 +108,6 @@ public class EsbGetPublicScriptListResourceImpl implements EsbGetPublicScriptLis
         List<EsbScriptDTO> esbScriptList = new ArrayList<>();
         for (ScriptDTO script : pageScripts.getData()) {
             EsbScriptDTO esbScript = new EsbScriptDTO();
-            esbScript.setAppId(script.getAppId());
             esbScript.setId(script.getScriptVersionId());
             esbScript.setCreator(script.getCreator());
             esbScript.setCreateTime(DateUtils.formatUnixTimestamp(script.getCreateTime(), ChronoUnit.MILLIS, "yyyy-MM" +
@@ -134,7 +133,7 @@ public class EsbGetPublicScriptListResourceImpl implements EsbGetPublicScriptLis
     }
 
     private ValidateResult checkRequest(EsbGetPublicScriptListRequest request) {
-        if (request.getScriptType() != null && ScriptTypeEnum.valueOf(request.getScriptType()) == null) {
+        if (request.getScriptType() != null && ScriptTypeEnum.valOf(request.getScriptType()) == null) {
             log.warn("ScriptType:{} is illegal!", request.getScriptType());
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "script_type");
         }

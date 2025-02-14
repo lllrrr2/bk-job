@@ -1,5 +1,4 @@
 com.rabbitmq
-com.google.code.findbugs
 com.netflix.archaius
 org.aspectj
 org.aspectj
@@ -35,6 +34,8 @@ commons-lang
 org.apache.commons
 commons-logging
 org.apache.commons
+org.apache.curator
+org.apache.curator
 com.ecwid.consul
 net.sf.dozer
 com.google.errorprone

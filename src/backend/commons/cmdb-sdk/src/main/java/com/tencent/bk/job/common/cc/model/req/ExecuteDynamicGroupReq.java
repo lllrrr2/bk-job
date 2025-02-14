@@ -39,13 +39,19 @@ import java.util.List;
 public class ExecuteDynamicGroupReq extends EsbReq {
 
     @JsonProperty("bk_biz_id")
-    private Long appId;
+    private Long bizId;
 
     @JsonProperty("id")
     private String groupId;
 
-    private List<String> fields = Arrays.asList("bk_host_id", "bk_host_name", "bk_host_innerip", "bk_cloud_id",
-        "bk_os_name");
+    private List<String> fields = Arrays.asList(
+        "bk_host_id",
+        "bk_agent_id",
+        "bk_host_name",
+        "bk_host_innerip",
+        "bk_cloud_id",
+        "bk_os_name"
+    );
 
     private Page page = new Page();
 }

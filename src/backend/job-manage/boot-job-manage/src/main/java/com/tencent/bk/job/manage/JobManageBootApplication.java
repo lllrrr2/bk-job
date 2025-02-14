@@ -24,38 +24,25 @@
 
 package com.tencent.bk.job.manage;
 
-import com.tencent.bk.job.common.cc.config.CcConfig;
-import com.tencent.bk.job.common.cc.service.CloudAreaService;
-import com.tencent.bk.job.common.esb.config.EsbConfig;
-import com.tencent.bk.job.common.gse.service.QueryAgentStatusClient;
-import com.tencent.bk.job.common.util.ApplicationContextRegister;
-import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.tencent.bk.job.common.service.boot.JobBootApplication;
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
+import org.springframework.boot.autoconfigure.availability.ApplicationAvailabilityAutoConfiguration;
+import org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cloud.openfeign.EnableFeignClients;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication(scanBasePackages = "com.tencent.bk.job", exclude = {RedisAutoConfiguration.class})
+@JobBootApplication(
+    scanBasePackages = "com.tencent.bk.job.manage",
+    exclude = {JooqAutoConfiguration.class, ApplicationAvailabilityAutoConfiguration.class},
+    excludeName = {"org.springframework.cloud.kubernetes.client.discovery.KubernetesDiscoveryClientAutoConfiguration"})
 @EnableCaching
-@EnableFeignClients
+@EnableFeignClients(basePackages = "com.tencent.bk.job")
 @EnableScheduling
-@DependsOn({"applicationContextRegister", "ccConfigSetter"})
 public class JobManageBootApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(JobManageBootApplication.class, args);
     }
 
-    @Bean
-    CloudAreaService buildCloudAreaService(@Autowired EsbConfig esbConfig, @Autowired CcConfig ccConfig) {
-        QueryAgentStatusClient queryAgentStatusClient =
-            ApplicationContextRegister.getBean(QueryAgentStatusClient.class);
-        MeterRegistry meterRegistry = ApplicationContextRegister.getBean(MeterRegistry.class);
-        return new CloudAreaService(esbConfig, ccConfig, queryAgentStatusClient, meterRegistry);
-    }
 }

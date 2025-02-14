@@ -24,23 +24,43 @@
 */
 
 /* eslint-disable no-param-reassign */
+import DangerousRuleModel from '@model/dangerous-rule';
+
+import I18n from '@/i18n';
+
 import DangerousRuleSource from '../source/dangerous-rule';
 
 export default {
-    fetchList (params = {}, payload = {}) {
-        return DangerousRuleSource.getData(params, payload)
-            .then(({ data }) => data);
-    },
-    update (params) {
-        return DangerousRuleSource.update(params)
-            .then(({ data }) => data);
-    },
-    remove (params) {
-        return DangerousRuleSource.removeById(params)
-            .then(({ data }) => data);
-    },
-    updateSort (params) {
-        return DangerousRuleSource.move(params)
-            .then(({ data }) => data);
-    },
+  fetchList(params = {}, payload = {}) {
+    return DangerousRuleSource.getData(params, payload)
+      .then(({ data }) => data.map(item => new DangerousRuleModel(item)));
+  },
+  create(params) {
+    return DangerousRuleSource.create(params)
+      .then(({ data }) => data);
+  },
+  update(params) {
+    return DangerousRuleSource.update(params)
+      .then(({ data }) => data);
+  },
+  remove(params) {
+    return DangerousRuleSource.removeById(params)
+      .then(({ data }) => data);
+  },
+  updateSort(params) {
+    return DangerousRuleSource.move(params)
+      .then(({ data }) => data);
+  },
+  fetchActionList() {
+    return Promise.resolve([
+      {
+        id: 1,
+        name: I18n.t('扫描'),
+      },
+      {
+        id: 2,
+        name: I18n.t('拦截'),
+      },
+    ]);
+  },
 };

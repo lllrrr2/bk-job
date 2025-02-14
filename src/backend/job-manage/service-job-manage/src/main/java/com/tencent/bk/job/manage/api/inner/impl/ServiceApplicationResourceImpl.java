@@ -24,172 +24,195 @@
 
 package com.tencent.bk.job.manage.api.inner.impl;
 
-import com.tencent.bk.job.common.constant.AppTypeEnum;
+import com.tencent.bk.job.common.cc.model.bizset.BizSetInfo;
+import com.tencent.bk.job.common.cc.sdk.IBizCmdbClient;
+import com.tencent.bk.job.common.cc.sdk.IBizSetCmdbClient;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.constant.ResourceScopeTypeEnum;
+import com.tencent.bk.job.common.exception.NotFoundException;
 import com.tencent.bk.job.common.model.InternalResponse;
-import com.tencent.bk.job.common.model.dto.ApplicationInfoDTO;
-import com.tencent.bk.job.common.model.dto.DynamicGroupInfoDTO;
-import com.tencent.bk.job.common.model.vo.HostInfoVO;
+import com.tencent.bk.job.common.model.dto.ApplicationDTO;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
 import com.tencent.bk.job.manage.api.inner.ServiceApplicationResource;
-import com.tencent.bk.job.manage.dao.ApplicationInfoDAO;
 import com.tencent.bk.job.manage.model.inner.ServiceAppBaseInfoDTO;
-import com.tencent.bk.job.manage.model.inner.ServiceApplicationDTO;
-import com.tencent.bk.job.manage.model.inner.ServiceHostStatusDTO;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByDynamicGroupReq;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByIpReq;
-import com.tencent.bk.job.manage.model.inner.request.ServiceGetHostStatusByNodeReq;
-import com.tencent.bk.job.manage.model.web.request.ipchooser.AppTopologyTreeNode;
-import com.tencent.bk.job.manage.model.web.vo.NodeInfoVO;
+import com.tencent.bk.job.manage.model.inner.ServiceApplicationAttrsDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 import com.tencent.bk.job.manage.service.ApplicationService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
 public class ServiceApplicationResourceImpl implements ServiceApplicationResource {
     private final ApplicationService applicationService;
-    private final ApplicationInfoDAO applicationInfoDAO;
+    private final IBizCmdbClient bizCmdbClient;
+    private final IBizSetCmdbClient bizSetCmdbClient;
 
     @Autowired
     public ServiceApplicationResourceImpl(ApplicationService applicationService,
-                                          ApplicationInfoDAO applicationInfoDAO) {
+                                          IBizCmdbClient bizCmdbClient,
+                                          IBizSetCmdbClient bizSetCmdbClient) {
         this.applicationService = applicationService;
-        this.applicationInfoDAO = applicationInfoDAO;
+        this.bizCmdbClient = bizCmdbClient;
+        this.bizSetCmdbClient = bizSetCmdbClient;
     }
 
     @Override
     public InternalResponse<List<ServiceAppBaseInfoDTO>> listNormalApps() {
-        List<ApplicationInfoDTO> applicationInfoDTOList = applicationInfoDAO.listAppInfoByType(AppTypeEnum.NORMAL);
+        List<ApplicationDTO> appList = applicationService.listAllApps();
         List<ServiceAppBaseInfoDTO> resultList =
-            applicationInfoDTOList.parallelStream().map(this::convertToServiceAppBaseInfo).collect(Collectors.toList());
+            appList.stream().filter(ApplicationDTO::isBiz)
+                .map(this::convertToServiceAppBaseInfo).collect(Collectors.toList());
+        return InternalResponse.buildSuccessResp(resultList);
+    }
+
+    @Override
+    public InternalResponse<List<ServiceApplicationDTO>> listBizSetApps() {
+        List<ApplicationDTO> applicationInfoDTOList =
+            applicationService.listAppsByScopeType(ResourceScopeTypeEnum.BIZ_SET);
+        List<ServiceApplicationDTO> resultList =
+            applicationInfoDTOList.stream().map(this::convertToServiceApp).collect(Collectors.toList());
         return InternalResponse.buildSuccessResp(resultList);
     }
 
     @Override
     public ServiceApplicationDTO queryAppById(Long appId) {
-        ApplicationInfoDTO appInfo = applicationService.getAppInfoById(appId);
+        ApplicationDTO appInfo = applicationService.getAppByAppId(appId);
         if (appInfo == null) {
-            return null;
+            throw new NotFoundException(ErrorCode.APP_NOT_EXIST);
         }
         return convertToServiceApp(appInfo);
     }
 
-    private ServiceApplicationDTO convertToServiceApp(ApplicationInfoDTO appInfo) {
+    private ServiceApplicationDTO convertToServiceApp(ApplicationDTO appInfo) {
+        if (appInfo == null) {
+            return null;
+        }
         ServiceApplicationDTO app = new ServiceApplicationDTO();
         app.setId(appInfo.getId());
+        app.setScopeType(appInfo.getScope().getType().getValue());
+        app.setScopeId(appInfo.getScope().getId());
         app.setName(appInfo.getName());
-        app.setAppType(appInfo.getAppType().getValue());
-        app.setSubAppIds(appInfo.getSubAppIds());
-        app.setMaintainers(appInfo.getMaintainers());
         app.setOwner(appInfo.getBkSupplierAccount());
-        app.setOperateDeptId(appInfo.getOperateDeptId());
         app.setTimeZone(appInfo.getTimeZone());
         app.setLanguage(appInfo.getLanguage());
+        if (appInfo.getAttrs() != null) {
+            ServiceApplicationAttrsDTO attrs = new ServiceApplicationAttrsDTO();
+            attrs.setMatchAllBiz(appInfo.getAttrs().getMatchAllBiz());
+            attrs.setSubBizIds(appInfo.getAttrs().getSubBizIds());
+            app.setAttrs(attrs);
+        }
         return app;
     }
 
-    private ServiceAppBaseInfoDTO convertToServiceAppBaseInfo(ApplicationInfoDTO appInfo) {
+    private ServiceAppBaseInfoDTO convertToServiceAppBaseInfo(ApplicationDTO appInfo) {
         ServiceAppBaseInfoDTO appBaseInfoDTO = new ServiceAppBaseInfoDTO();
-        appBaseInfoDTO.setId(appInfo.getId());
+        appBaseInfoDTO.setScopeType(appInfo.getScope().getType().getValue());
+        appBaseInfoDTO.setScopeId(appInfo.getScope().getId());
+        appBaseInfoDTO.setAppId(appInfo.getId());
         appBaseInfoDTO.setName(appInfo.getName());
         return appBaseInfoDTO;
     }
 
     @Override
-    public InternalResponse<Boolean> checkAppPermission(Long appId, String username) {
-        if (appId == null || appId < 0) {
-            return InternalResponse.buildSuccessResp(false);
+    public ServiceApplicationDTO queryAppByScope(String scopeType, String scopeId) {
+        ApplicationDTO appInfo = applicationService.getAppByScope(new ResourceScope(scopeType, scopeId));
+        if (appInfo == null) {
+            throw new NotFoundException(ErrorCode.APP_NOT_EXIST);
         }
-        return InternalResponse.buildSuccessResp(applicationService.checkAppPermission(appId, username));
+        return convertToServiceApp(appInfo);
     }
 
     @Override
-    public InternalResponse<List<ServiceApplicationDTO>> listLocalDBApps(Integer appType) {
-        List<ApplicationInfoDTO> applicationInfoDTOList;
-        if (appType == null || appType <= 0) {
-            applicationInfoDTOList = applicationInfoDAO.listAppInfo();
-        } else {
-            applicationInfoDTOList = applicationInfoDAO.listAppInfoByType(AppTypeEnum.valueOf(appType));
+    public List<ServiceApplicationDTO> listAppsByAppIds(String appIds) {
+        Set<Long> appIdList = Arrays.stream(appIds.split(","))
+            .map(Long::parseLong).collect(Collectors.toSet());
+        List<ApplicationDTO> applications = applicationService.listAppsByAppIds(appIdList);
+        if (CollectionUtils.isEmpty(applications)) {
+            throw new NotFoundException(ErrorCode.APP_NOT_EXIST);
         }
+        return applications.stream().map(this::convertToServiceApp).collect(Collectors.toList());
+    }
+
+    @Override
+    public InternalResponse<List<ServiceApplicationDTO>> listApps(String scopeType) {
+        List<ApplicationDTO> appList = applicationService.listAllApps();
+        if (CollectionUtils.isEmpty(appList)) {
+            InternalResponse.buildSuccessResp(appList);
+        }
+
+        if (scopeType != null) {
+            appList = appList.stream()
+                .filter(app -> app.getScope().getType() == ResourceScopeTypeEnum.from(scopeType))
+                .collect(Collectors.toList());
+        }
+
         List<ServiceApplicationDTO> resultList =
-            applicationInfoDTOList.parallelStream().map(this::convertToServiceApp).collect(Collectors.toList());
+            appList.stream().map(this::convertToServiceApp).collect(Collectors.toList());
         return InternalResponse.buildSuccessResp(resultList);
     }
 
     @Override
-    public InternalResponse<Boolean> existsHost(Long appId, String ip) {
-        return InternalResponse.buildSuccessResp(applicationService.existsHost(appId, ip));
+    public InternalResponse<List<Long>> listAllAppIdOfArchivedScope() {
+        List<ApplicationDTO> loaclAllDeletedApps = applicationService.listAllDeletedApps();
+        log.debug("find archived app from local, size={}", loaclAllDeletedApps.size());
+
+        List<ApplicationDTO> bizApps = loaclAllDeletedApps.stream()
+            .filter(app -> ResourceScopeTypeEnum.BIZ.getValue().equals(app.getScope().getType().getValue()))
+            .collect(Collectors.toList());
+        List<Long> bizIds = bizApps.stream()
+            .map(bizApp -> Long.valueOf(bizApp.getScope().getId()))
+            .collect(Collectors.toList());
+
+        List<ApplicationDTO> bizSetApps = loaclAllDeletedApps.stream()
+            .filter(app -> ResourceScopeTypeEnum.BIZ_SET.getValue().equals(app.getScope().getType().getValue()))
+            .collect(Collectors.toList());
+        List<Long> bizSetIds = bizSetApps.stream()
+            .map(bizSetApp -> Long.valueOf(bizSetApp.getScope().getId()))
+            .collect(Collectors.toList());
+
+        List<Long> archivedIds = new ArrayList<>();
+
+        if (CollectionUtils.isNotEmpty(bizApps)) {
+            List<ApplicationDTO> ccAllBizApps = bizCmdbClient.ListBizAppByIds(bizIds);
+            Set<String> ccBizAppScopeIds = ccAllBizApps.stream()
+                .map(ccBizApp -> ccBizApp.getScope().getId())
+                .collect(Collectors.toSet());
+            archivedIds.addAll(bizApps.stream().filter(bizAppInfoDTO ->
+                !ccBizAppScopeIds.contains(bizAppInfoDTO.getScope().getId()))
+                .map(ApplicationDTO::getId)
+                .collect(Collectors.toList()));
+        }
+        if (CollectionUtils.isNotEmpty(bizSetApps)) {
+            List<BizSetInfo> bizSetInfos = bizSetCmdbClient.ListBizSetByIds(bizSetIds);
+            Set<String> ccBizSetAppScopeIds = bizSetInfos.stream()
+                .map(ccBizSetApp -> String.valueOf(ccBizSetApp.getId()))
+                .collect(Collectors.toSet());
+            archivedIds.addAll(bizSetApps.stream().filter(bizAppInfoDTO ->
+                !ccBizSetAppScopeIds.contains(bizAppInfoDTO.getScope().getId()))
+                .map(ApplicationDTO::getId)
+                .collect(Collectors.toList()));
+        }
+        log.debug("finally find archived appIds={}", archivedIds);
+        return InternalResponse.buildSuccessResp(archivedIds);
     }
 
     @Override
-    public InternalResponse<List<ServiceHostStatusDTO>> getHostStatusByNode(
-        Long appId,
-        String username,
-        ServiceGetHostStatusByNodeReq req
-    ) {
-        List<AppTopologyTreeNode> treeNodeList = req.getTreeNodeList();
-        List<NodeInfoVO> nodeInfoVOList = applicationService.getHostsByNode(username, appId, treeNodeList);
-        List<ServiceHostStatusDTO> hostStatusDTOList = new ArrayList<>();
-        nodeInfoVOList.parallelStream().forEach(nodeInfoVO -> {
-            nodeInfoVO.getIpListStatus().forEach(hostInfoVO -> {
-                ServiceHostStatusDTO serviceHostStatusDTO = new ServiceHostStatusDTO();
-                serviceHostStatusDTO.setHostId(hostInfoVO.getHostId());
-                serviceHostStatusDTO.setIp(hostInfoVO.getIp());
-                serviceHostStatusDTO.setAlive(hostInfoVO.getAlive());
-                if (!hostStatusDTOList.contains(serviceHostStatusDTO)) {
-                    hostStatusDTOList.add(serviceHostStatusDTO);
-                }
-            });
-        });
-        return InternalResponse.buildSuccessResp(hostStatusDTOList);
-    }
-
-    @Override
-    public InternalResponse<List<ServiceHostStatusDTO>> getHostStatusByDynamicGroup(
-        Long appId,
-        String username,
-        ServiceGetHostStatusByDynamicGroupReq req
-    ) {
-        List<String> dynamicGroupIdList = req.getDynamicGroupIdList();
-        List<DynamicGroupInfoDTO> dynamicGroupInfoDTOList = applicationService.getDynamicGroupHostList(
-            username,
-            appId,
-            dynamicGroupIdList
-        );
-        List<ServiceHostStatusDTO> hostStatusDTOList = new ArrayList<>();
-        dynamicGroupInfoDTOList.parallelStream().forEach(dynamicGroupInfoDTO -> {
-            dynamicGroupInfoDTO.getIpListStatus().forEach(hostInfoVO -> {
-                ServiceHostStatusDTO serviceHostStatusDTO = new ServiceHostStatusDTO();
-                serviceHostStatusDTO.setHostId(hostInfoVO.getHostId());
-                serviceHostStatusDTO.setIp(hostInfoVO.getIp());
-                serviceHostStatusDTO.setAlive(hostInfoVO.getGseAgentAlive() ? 1 : 0);
-                if (!hostStatusDTOList.contains(serviceHostStatusDTO)) {
-                    hostStatusDTOList.add(serviceHostStatusDTO);
-                }
-            });
-        });
-        return InternalResponse.buildSuccessResp(hostStatusDTOList);
-    }
-
-    @Override
-    public InternalResponse<List<ServiceHostStatusDTO>> getHostStatusByIp(Long appId, String username,
-                                                                     ServiceGetHostStatusByIpReq req) {
-        List<String> ipList = req.getIpList();
-        List<HostInfoVO> hostInfoVOList = applicationService.getHostsByIp(username, appId, null, ipList);
-        List<ServiceHostStatusDTO> hostStatusDTOList = new ArrayList<>();
-        hostInfoVOList.forEach(hostInfoVO -> {
-            ServiceHostStatusDTO serviceHostStatusDTO = new ServiceHostStatusDTO();
-            serviceHostStatusDTO.setHostId(hostInfoVO.getHostId());
-            serviceHostStatusDTO.setIp(hostInfoVO.getCloudAreaInfo().getId() + ":" + hostInfoVO.getIp());
-            serviceHostStatusDTO.setAlive(hostInfoVO.getAlive());
-            if (!hostStatusDTOList.contains(serviceHostStatusDTO)) {
-                hostStatusDTOList.add(serviceHostStatusDTO);
-            }
-        });
-        return InternalResponse.buildSuccessResp(hostStatusDTOList);
+    public InternalResponse<Boolean> existsAppById(Long appId) {
+        try {
+            ApplicationDTO appInfo = applicationService.getAppByAppId(appId);
+            return InternalResponse.buildSuccessResp(appInfo != null);
+        } catch (NotFoundException e){
+            log.info("biz/bizSet not exist, appId={}", appId);
+            return InternalResponse.buildSuccessResp(false);
+        }
     }
 }

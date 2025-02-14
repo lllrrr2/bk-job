@@ -24,12 +24,13 @@
 
 package com.tencent.bk.job.manage.api.web;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
 import com.tencent.bk.job.common.annotation.WebAPI;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import com.tencent.bk.job.common.model.Response;
 import com.tencent.bk.job.manage.model.web.request.globalsetting.AccountNameRulesReq;
 import com.tencent.bk.job.manage.model.web.request.globalsetting.FileUploadSettingReq;
 import com.tencent.bk.job.manage.model.web.request.globalsetting.HistoryExpireReq;
-import com.tencent.bk.job.manage.model.web.request.globalsetting.SetTitleFooterReq;
 import com.tencent.bk.job.manage.model.web.request.notify.ChannelTemplatePreviewReq;
 import com.tencent.bk.job.manage.model.web.request.notify.ChannelTemplateReq;
 import com.tencent.bk.job.manage.model.web.request.notify.NotifyBlackUsersReq;
@@ -37,7 +38,7 @@ import com.tencent.bk.job.manage.model.web.request.notify.SetAvailableNotifyChan
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.AccountNameRulesWithDefaultVO;
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.FileUploadSettingVO;
 import com.tencent.bk.job.manage.model.web.vo.globalsetting.NotifyChannelWithIconVO;
-import com.tencent.bk.job.manage.model.web.vo.globalsetting.TitleFooterWithDefaultVO;
+import com.tencent.bk.job.manage.model.web.vo.globalsetting.PlatformInfoWithDefaultVO;
 import com.tencent.bk.job.manage.model.web.vo.notify.ChannelTemplateDetailWithDefaultVO;
 import com.tencent.bk.job.manage.model.web.vo.notify.ChannelTemplateStatusVO;
 import com.tencent.bk.job.manage.model.web.vo.notify.NotifyBlackUserInfoVO;
@@ -45,6 +46,7 @@ import com.tencent.bk.job.manage.model.web.vo.notify.UserVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -109,10 +111,10 @@ public interface WebGlobalSettingsResource {
         @RequestHeader("username")
             String username,
         @ApiParam("渠道Code")
-        @RequestParam(value = "channelCode", required = true)
+        @RequestParam(value = "channelCode")
             String channelCode,
         @ApiParam("消息类型Code")
-        @RequestParam(value = "messageTypeCode", required = true)
+        @RequestParam(value = "messageTypeCode")
             String messageTypeCode
     );
 
@@ -218,11 +220,12 @@ public interface WebGlobalSettingsResource {
             String username,
         @ApiParam(value = "创建或更新请求体", required = true)
         @RequestBody
+        @Validated
             FileUploadSettingReq req
     );
 
 
-    @ApiOperation(value = "获取执行历史保留时间", produces = "application/json")
+    @ApiOperation(value = "获取文件上传设置", produces = "application/json")
     @GetMapping("/file/upload")
     Response<FileUploadSettingVO> getFileUploadSettings(
         @ApiParam("用户名，网关自动传入")
@@ -230,20 +233,11 @@ public interface WebGlobalSettingsResource {
             String username
     );
 
-    @ApiOperation(value = "设置Title与Footer", produces = "application/json")
-    @PostMapping("/titleFooter")
-    Response<Boolean> setTitleFooter(
-        @ApiParam(value = "用户名，网关自动传入", required = true)
-        @RequestHeader("username")
-            String username,
-        @ApiParam(value = "设置Title与Footer请求体", required = true)
-        @RequestBody
-            SetTitleFooterReq req
-    );
-
-    @ApiOperation(value = "获取Title与Footer", produces = "application/json")
-    @GetMapping("/titleFooterWithDefault")
-    Response<TitleFooterWithDefaultVO> getTitleFooterWithDefault(
+    @CompatibleImplementation(name = "platform_info", deprecatedVersion = "3.11.x", type = CompatibleType.DEPLOY,
+        explain = "发布完成后可以删除")
+    @ApiOperation(value = "获取平台信息-包含默认配置", produces = "application/json")
+    @GetMapping("/platformInfoWithDefault")
+    Response<PlatformInfoWithDefaultVO> getPlatformInfoWithDefault(
         @ApiParam(value = "用户名，网关自动传入", required = true)
         @RequestHeader("username")
             String username

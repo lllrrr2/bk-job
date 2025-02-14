@@ -26,17 +26,16 @@
 -->
 
 <template>
-    <jb-router-view />
+  <jb-router-view />
 </template>
 <script>
-    import {
-        loadLanguage,
-    } from '@/i18n';
-    import ScriptLocal from '@/views/script-manage/local';
+  import Language from '@views/script-manage/language';
 
-    [
-        ScriptLocal,
-    ].forEach(module => loadLanguage(module));
+  import {
+    loadLanguage,
+  } from '@/i18n';
 
-    export default {};
+  loadLanguage(Language);
+
+  export default {};
 </script>

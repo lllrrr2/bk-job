@@ -28,7 +28,6 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.tencent.bk.job.common.util.json.LongTimestampSerializer;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -36,16 +35,17 @@ import lombok.NoArgsConstructor;
  * 业务VO
  */
 @NoArgsConstructor
-@AllArgsConstructor
 @ApiModel("业务")
 @Data
 public class AppVO {
-    @ApiModelProperty("业务ID")
+    @ApiModelProperty(value = "Job业务ID", hidden = true)
     private Long id;
+    @ApiModelProperty("资源范围类型")
+    private String scopeType;
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
     @ApiModelProperty("业务名称")
     private String name;
-    @ApiModelProperty("业务类型")
-    private Integer type;
     @ApiModelProperty("是否有权限")
     private Boolean hasPermission;
     @ApiModelProperty("是否收藏")
@@ -53,4 +53,20 @@ public class AppVO {
     @ApiModelProperty("收藏时间")
     @JsonSerialize(using = LongTimestampSerializer.class)
     private Long favorTime;
+
+    public AppVO(Long id,
+                 String scopeType,
+                 String scopeId,
+                 String name,
+                 Boolean hasPermission,
+                 Boolean favor,
+                 Long favorTime) {
+        this.id = id;
+        this.scopeType = scopeType;
+        this.scopeId = scopeId;
+        this.name = name;
+        this.hasPermission = hasPermission;
+        this.favor = favor;
+        this.favorTime = favorTime;
+    }
 }

@@ -26,22 +26,23 @@
 -->
 
 <template>
-    <div>
-        <vue-progress-bar />
-        <jb-router-view :key="$route.fullPath" />
-    </div>
+  <div>
+    <vue-progress-bar />
+    <jb-router-view :key="$route.fullPath" />
+  </div>
 </template>
 <script>
-    import {
-        loadLanguage,
-    } from '@/i18n';
-    import Local from './local';
-    import TemplateLocal from '@/views/task-manage/local';
+  import {
+    loadLanguage,
+  } from '@/i18n';
+  import TemplateLanguage from '@/views/task-manage/language';
 
-    [
-        Local,
-        TemplateLocal,
-    ].forEach(module => loadLanguage(module));
+  import Language from './language';
 
-    export default {};
+  [
+    Language,
+    TemplateLanguage,
+  ].forEach(module => loadLanguage(module));
+
+  export default {};
 </script>

@@ -24,86 +24,28 @@
 
 package com.tencent.bk.job.crontab.config;
 
-import com.tencent.bk.job.crontab.timer.AutowiredSpringBeanJobFactory;
-import org.quartz.Scheduler;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.quartz.SchedulerFactoryBeanCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.scheduling.quartz.SchedulerFactoryBean;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
-import java.util.Map;
-import java.util.Properties;
 
 /**
- * @since 14/1/2020 16:57
+ * Quartz 设置
  */
 @Configuration
-@Profile({"prod", "dev"})
+@Profile("!test")
 public class QuartzConfig {
 
-    private final PlatformTransactionManager transactionManager;
-    private final QuartzProperties quartzProperties;
-    private final DataSource dataSource;
-    private final AutowiredSpringBeanJobFactory autowiredSpringBeanJobFactory;
-
-    @Autowired
-    public QuartzConfig(PlatformTransactionManager transactionManager, QuartzProperties quartzProperties,
-                        @Qualifier("job-crontab-data-source") DataSource dataSource,
-                        AutowiredSpringBeanJobFactory autowiredSpringBeanJobFactory) {
-        this.transactionManager = transactionManager;
-        this.quartzProperties = quartzProperties;
-        this.dataSource = dataSource;
-        this.autowiredSpringBeanJobFactory = autowiredSpringBeanJobFactory;
-    }
-
     @Bean
-    public ThreadPoolTaskExecutor quartzTaskExecutor() {
-        ThreadPoolTaskExecutor threadPoolTaskExecutor = new ThreadPoolTaskExecutor();
-        threadPoolTaskExecutor.setCorePoolSize(quartzProperties.getThreadPool().getCorePoolSize());
-        threadPoolTaskExecutor.setMaxPoolSize(quartzProperties.getThreadPool().getMaxPoolSize());
-        threadPoolTaskExecutor.setQueueCapacity(quartzProperties.getThreadPool().getQueueCapacity());
-        threadPoolTaskExecutor.setKeepAliveSeconds(quartzProperties.getThreadPool().getKeepAliveSeconds());
-        threadPoolTaskExecutor.setWaitForTasksToCompleteOnShutdown(
-            quartzProperties.getThreadPool().isWaitForTasksToCompleteOnShutdown());
-        threadPoolTaskExecutor.setAwaitTerminationSeconds(
-            quartzProperties.getThreadPool().getAwaitTerminationSeconds());
-
-        return threadPoolTaskExecutor;
-    }
-
-    @Bean
-    public SchedulerFactoryBean schedulerFactoryBean() {
-        SchedulerFactoryBean schedulerFactoryBean = new SchedulerFactoryBean();
-        schedulerFactoryBean.setConfigLocation(quartzProperties.getScheduler().getConfigLocation());
-        // 此处设置数据源之后，会覆盖quartz.properties中的myDS数据源
-        schedulerFactoryBean.setDataSource(dataSource);
-        schedulerFactoryBean.setJobFactory(autowiredSpringBeanJobFactory);
-        schedulerFactoryBean.setSchedulerName(quartzProperties.getScheduler().getSchedulerName());
-        schedulerFactoryBean.setTaskExecutor(quartzTaskExecutor());
-        schedulerFactoryBean.setTransactionManager(transactionManager);
-        schedulerFactoryBean.setApplicationContextSchedulerContextKey(
-            quartzProperties.getScheduler().getApplicationContextSchedulerContextKey());
-        schedulerFactoryBean.setOverwriteExistingJobs(quartzProperties.getScheduler().isOverwriteExistingJobs());
-        schedulerFactoryBean.setAutoStartup(quartzProperties.getScheduler().isAutoStartup());
-        schedulerFactoryBean.setStartupDelay(quartzProperties.getScheduler().getStartupDelay());
-        schedulerFactoryBean.setQuartzProperties(asProperties(quartzProperties.getProperties()));
-
-        return schedulerFactoryBean;
-    }
-
-    @Bean
-    public Scheduler scheduler() {
-        return schedulerFactoryBean().getObject();
-    }
-
-    private Properties asProperties(Map<String, String> source) {
-        Properties properties = new Properties();
-        properties.putAll(source);
-        return properties;
+    public SchedulerFactoryBeanCustomizer schedulerFactoryBeanCustomizer(
+        @Qualifier("job-crontab-data-source") DataSource dataSource) {
+        return schedulerFactoryBean -> {
+            schedulerFactoryBean.setOverwriteExistingJobs(true);
+            schedulerFactoryBean.setStartupDelay(10);
+            schedulerFactoryBean.setDataSource(dataSource);
+        };
     }
 }

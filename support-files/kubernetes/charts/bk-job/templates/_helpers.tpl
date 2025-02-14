@@ -56,84 +56,105 @@ Return the annotation key of bk-job sha256SumServiceConfigMap
 Return the proper job-frontend image name
 */}}
 {{- define "job-frontend.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.frontendConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.frontendConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-gateway image name
 */}}
 {{- define "job-gateway.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.gatewayConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.gatewayConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-manage image name
 */}}
 {{- define "job-manage.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.manageConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.manageConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-execute image name
 */}}
 {{- define "job-execute.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.executeConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.executeConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-crontab image name
 */}}
 {{- define "job-crontab.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.crontabConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.crontabConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-logsvr image name
 */}}
 {{- define "job-logsvr.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.logsvrConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.logsvrConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-backup image name
 */}}
 {{- define "job-backup.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.backupConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.backupConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-analysis image name
 */}}
 {{- define "job-analysis.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.analysisConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.analysisConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-file-gateway image name
 */}}
 {{- define "job-file-gateway.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.fileGatewayConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.fileGatewayConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-file-worker image name
 */}}
 {{- define "job-file-worker.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.fileWorkerConfig.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.fileWorkerConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper job-migration image name
 */}}
 {{- define "job-migration.image" -}}
-{{ include "common.images.image" (dict "imageRoot" .Values.migration.image "global" .Values.jobImage) }}
+{{ include "common.images.image" (dict "imageRoot" .Values.migration.image "global" .Values.global) }}
+{{- end -}}
+
+{{/*
+Return the proper job-config-watcher image name
+*/}}
+{{- define "job-config-watcher.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.k8sConfigWatcherConfig.image "global" .Values.global) }}
+{{- end -}}
+
+{{/*
+Return the proper job-assemble image name
+*/}}
+{{- define "job-assemble.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.assembleConfig.image "global" .Values.global) }}
+{{- end -}}
+
+{{/*
+Return the proper job-sync-bk-api-gateway image name
+*/}}
+{{- define "job-sync-bk-api-gateway.image" -}}
+{{ include "common.images.image" (dict "imageRoot" .Values.bkApiGatewayConfig.image "global" .Values.global) }}
 {{- end -}}
 
 {{/*
 Return the proper Docker Image Registry Secret Names
 */}}
 {{- define "job.imagePullSecrets" -}}
-{{ include "common.images.pullSecrets" (dict "images" (list .Values.gatewayConfig.image .Values.manageConfig.image .Values.executeConfig.image .Values.crontabConfig.image .Values.logsvrConfig.image .Values.backupConfig.image .Values.analysisConfig.image .Values.fileGatewayConfig.image .Values.fileWorkerConfig.image) "global" .Values.jobImage) }}
+{{ include "common.images.pullSecrets" (dict "images" (list .Values.gatewayConfig.image .Values.manageConfig.image .Values.executeConfig.image .Values.crontabConfig.image .Values.logsvrConfig.image .Values.backupConfig.image .Values.analysisConfig.image .Values.fileGatewayConfig.image .Values.fileWorkerConfig.image) "global" .Values.global) }}
 {{- end -}}
 
 
@@ -194,6 +215,26 @@ Return the MariaDB root password
 {{- end -}}
 
 {{/*
+Return the migrate mysqlSchema admin username
+*/}}
+{{- define "job.migration.mysqlSchema.adminUsername" -}}
+{{- printf "%s" .Values.job.migration.mysqlSchema.adminUsername | default "root" -}}
+{{- end -}}
+
+{{/*
+Return the migrate mysqlSchema admin password
+*/}}
+{{- define "job.migration.mysqlSchema.adminPassword" -}}
+{{- if .Values.job.migration.mysqlSchema.adminPassword -}}
+    {{- printf "%s" .Values.job.migration.mysqlSchema.adminPassword -}}
+{{- else if .Values.externalMariaDB.rootPassword -}}
+    {{- printf "%s" .Values.externalMariaDB.rootPassword -}}
+{{- else -}}
+    {{- printf "%s" .Values.mariadb.auth.rootPassword -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Return the MariaDB secret name
 */}}
 {{- define "job.mariadb.secretName" -}}
@@ -204,6 +245,31 @@ Return the MariaDB secret name
 {{- else -}}
     {{- printf "%s-%s" (include "job.fullname" .) "external-mariadb" -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Return the JDBC MySQL Driver Class
+*/}}
+{{- define "job.jdbcMysqlDriverClass" -}}
+{{- printf "io.opentelemetry.instrumentation.jdbc.OpenTelemetryDriver" -}}
+{{- end -}}
+
+{{/*
+Return the MariaDB jdbc connection url properties
+*/}}
+{{- define "job.mariadb.connection.properties" -}}
+{{- if .Values.mariadb.enabled }}
+    {{- printf "%s" .Values.mariadb.connection.properties -}}
+{{- else -}}
+    {{- printf "%s" .Values.externalMariaDB.connection.properties -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the JDBC MySQL scheme
+*/}}
+{{- define "job.jdbcMysqlScheme" -}}
+{{- printf "jdbc:otel:mysql" -}}
 {{- end -}}
 
 
@@ -309,7 +375,7 @@ Return the RabbitMQ Port
 */}}
 {{- define "job.rabbitmq.port" -}}
 {{- if .Values.rabbitmq.enabled }}
-    {{- printf "%d" (.Values.rabbitmq.service.port | int ) -}}
+    {{- printf "%d" (.Values.rabbitmq.service.ports.amqp | int ) -}}
 {{- else -}}
     {{- printf "%d" (.Values.externalRabbitMQ.port | int ) -}}
 {{- end -}}
@@ -340,6 +406,17 @@ Return the RabbitMQ secret name
 {{- end -}}
 
 {{/*
+Return the RabbitMQ password key
+*/}}
+{{- define "job.rabbitmq.passwordKey" -}}
+{{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+{{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+{{- else -}}
+${rabbitmq-password}
+{{- end }}
+{{- end -}}
+
+{{/*
 Return the RabbitMQ vhost
 */}}
 {{- define "job.rabbitmq.vhost" -}}
@@ -349,6 +426,7 @@ Return the RabbitMQ vhost
     {{- default "job" (printf "%s" .Values.externalRabbitMQ.vhost) -}}
 {{- end -}}
 {{- end -}}
+
 
 {{/*
 Fully qualified app name for MongoDB
@@ -411,7 +489,7 @@ Return the MongoDB connect uri
 */}}
 {{- define "job.mongodb.connect.uri" -}}
 {{- if .Values.mongodb.enabled -}}
-  {{- printf "mongodb://%s:%s@%s/?authSource=%s" (include "job.mongodb.username" .) (printf "${%s}" "mongodb-password") (include "job.mongodb.hostsAndPorts" .) (include "job.mongodb.authenticationDatabase" .) -}}
+  {{- printf "mongodb://%s:%s@%s/?authSource=%s" (include "job.mongodb.username" .) (printf "${%s}" "mongodb-passwords") (include "job.mongodb.hostsAndPorts" .) (include "job.mongodb.authenticationDatabase" .) -}}
 {{- else -}}
   {{- if .Values.externalMongoDB.uri -}}
     {{- printf "%s" .Values.externalMongoDB.uri -}}
@@ -453,11 +531,40 @@ Return the Job InitContainer WaitForMigration Content
 */}}
 {{- define "job.initContainer.waitForMigration" -}}
 - name: "migration-init"
-  image: "groundnuty/k8s-wait-for:1.3"
-  imagePullPolicy: IfNotPresent
+  image: {{ include "common.images.image" (dict "imageRoot" .Values.waitForMigration.image "global" .Values.global) }}
+  imagePullPolicy: {{ .Values.waitForMigration.image.pullPolicy }}
+  resources:
+    {{- toYaml .Values.waitForMigration.resources | nindent 4 }}
   args:
-  - "job"
-  - {{ printf "%s-migration-%d" (include "common.names.fullname" .) .Release.Revision | quote }}
+  - "job-wr"
+  - {{ printf "%s-migration-%s" (include "common.names.fullname" .) .Chart.Version | quote }}
+{{- end -}}
+
+{{/*
+Return the Job InitContainer WaitForDependServices Content
+{{ include "job.initContainer.waitForDependServices" ( dict "appName" "${appName}" "context" $) }}
+*/}}
+{{- define "job.initContainer.waitForDependServices" -}}
+{{- if .context.Values.waitForDependServices.enabled -}}
+- name: "wait-for-depend-services"
+  image: {{ include "common.images.image" (dict "imageRoot" .context.Values.waitForDependServices.image "global" .context.Values.global) }}
+  imagePullPolicy: {{ .context.Values.waitForDependServices.image.pullPolicy }}
+  resources:
+    {{- toYaml .context.Values.waitForDependServices.resources | nindent 4 }}
+  env:
+    - name: KUBERNETES_NAMESPACE
+      value: {{ .context.Release.Namespace }}
+    - name: BK_JOB_CURRENT_SERVICE_NAME
+      value: {{ .currentServiceName }}
+    - name: BK_JOB_STARTUP_DEPENDENCIES_STR
+      value: {{ .context.Values.waitForDependServices.dependencies }}
+    - name: BK_JOB_LOG_LEVEL
+      value: {{ .context.Values.waitForDependServices.logLevel }}
+    - name: BK_JOB_EXPECT_POD_LABELS_COMMON
+      value: {{ .context.Values.waitForDependServices.expectPodLabels.common }}
+    - name: BK_JOB_EXPECT_POD_LABELS_SERVICE
+      value: {{ .context.Values.waitForDependServices.expectPodLabels.service }}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -475,25 +582,25 @@ Return the gse secret
 Return the Job Web Scheme
 */}}
 {{- define "job.web.scheme" -}}
-{{- if .Values.job.web.https.enabled -}}
-    {{- printf "https" -}}
-{{- else -}}
-    {{- printf "http" -}}
-{{- end -}}
+    {{- printf "%s" .Values.bkDomainScheme -}}
 {{- end -}}
 
 {{/*
 Return the Job Web URL
 */}}
 {{- define "job.web.url" -}}
+{{- if .Values.job.web.extraWebUrls -}}
+{{ printf "%s://%s" (include "job.web.scheme" .) .Values.job.web.domain }}{{ printf ",%s" .Values.job.web.extraWebUrls }}
+{{- else -}}
 {{ printf "%s://%s" (include "job.web.scheme" .) .Values.job.web.domain }}
+{{- end -}}
 {{- end -}}
 
 {{/*
 Return the Job Web API URL
 */}}
 {{- define "job.web.api.url" -}}
-{{ printf "%s://%s" (include "job.web.scheme" .) .Values.job.web.apiDomain }}
+{{ printf "%s://%s" (include "job.web.scheme" .) .Values.job.web.domain }}
 {{- end -}}
 
 {{/*
@@ -502,4 +609,178 @@ Return the sha256sum of configmap
 {{- define "annotations.sha256sum.configmap" -}}
 {{ include "job.annotationKeys.sha256SumCommonConfigMap" . }}: {{ include (print .context.Template.BasePath "/configmap-common.yaml") .context | sha256sum }}
 {{ include "job.annotationKeys.sha256SumServiceConfigMap" . }}: {{ include (print .context.Template.BasePath "/" .service "/configmap.yaml") .context | sha256sum }}
+{{- end -}}
+
+{{/*
+Return the Job Storage Env Content
+*/}}
+{{- define "job.storage.env" -}}
+- name: BK_JOB_STORAGE_BASE_DIR
+  value: {{ .Values.persistence.localStorage.path }}
+- name: BK_JOB_STORAGE_OUTER_DIR
+  value: {{ .Values.persistence.localStorage.path }}
+- name: BK_JOB_STORAGE_LOCAL_DIR
+  value: {{ .Values.persistence.localStorage.path }}/local
+{{- end -}}
+
+{{/*
+Return the Job Config Env Content
+*/}}
+{{- define "job.config.env" -}}
+- name: BK_JOB_PROFILE
+  value: {{ include "job.profile" . }}
+- name: JOB_COMMON_CONFIGMAP_NAME
+  value: {{ include "common.names.fullname" . }}-common
+- name: spring_cloud_kubernetes_secrets_paths
+  value: /etc/secrets
+{{- end -}}
+
+{{/*
+Return the Job Deploy Env Content
+*/}}
+{{- define "job.deploy.env" -}}
+- name: KUBERNETES_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+- name: BK_JOB_POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: BK_JOB_RELEASE_NAME
+  value: {{ .Release.Name }}
+{{- end -}}
+
+
+{{/*
+Return environment variables for a given micro service
+*/}}
+{{- define "job.service.extra.env" -}}
+{{- $extraEnv := . -}}
+{{- if $extraEnv -}}
+{{- range $extraEnv -}}
+- name: {{ .name }}
+  value: {{ .value | quote }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the Job Common Env Content
+*/}}
+{{- define "job.common.env" -}}
+{{ include "job.storage.env" . }}
+{{ include "job.config.env" . }}
+{{ include "job.deploy.env" . }}
+{{- end -}}
+
+{{/*
+Return the Job Ingress Frontend TLS Config
+*/}}
+{{- define "job.ingress.frontend.tls" -}}
+{{- if .Values.frontendConfig.ingress.tls -}}
+tls: {{- include "common.tplvalues.render" ( dict "value" .Values.frontendConfig.ingress.tls "context" $) | nindent 0 -}}
+{{- else -}}
+tls:
+- hosts:
+    - {{ .Values.job.web.domain }}
+  secretName: {{ include "common.names.fullname" . }}-ingress-tls
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the Job Ingress Gateway TLS Config
+*/}}
+{{- define "job.ingress.gateway.tls" -}}
+{{- if .Values.gatewayConfig.ingress.tls -}}
+tls: {{- include "common.tplvalues.render" ( dict "value" .Values.gatewayConfig.ingress.tls "context" $) | nindent 0 -}}
+{{- else -}}
+tls:
+- hosts:
+    - {{ .Values.job.web.apiDomain }}
+  secretName: {{ include "common.names.fullname" . }}-ingress-tls
+{{- end -}}
+{{- end -}}
+
+
+{{/*
+Return the Job Service Probes Config
+*/}}
+{{- define "job.service.probes" -}}
+startupProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: {{ .port }}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: {{ .port }}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 20
+  successThreshold: 1
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: {{ .port }}
+  initialDelaySeconds: 10
+  periodSeconds: 3
+  timeoutSeconds: 3
+  failureThreshold: 1
+  successThreshold: 1
+{{- end -}}
+
+
+{{/*
+Return the Archive MariaDB secret name
+*/}}
+{{- define "job.archiveMariadb.secretName" -}}
+{{ printf "%s-%s" (include "job.fullname" .) "archive-mariadb" }}
+{{- end -}}
+
+{{/*
+Return the storage PVC name
+*/}}
+{{- define "job.storage.pvc.name" -}}
+{{ printf "%s-pv-claim-%s" (include "common.names.fullname" .) .Values.persistence.storageClass }}
+{{- end -}}
+
+{{/*
+Return the job pod terminationGracePeriodSeconds
+*/}}
+{{- define "job.podTerminationGracePeriodSeconds" -}}
+terminationGracePeriodSeconds: {{ .Values.podTerminationGracePeriodSeconds }}
+{{- end -}}
+
+{{/*
+Return the Crontab DB secret name
+*/}}
+{{- define "job.crontabdb.secretName" -}}
+{{ printf "%s-%s" (include "job.fullname" .) "crontab-db" }}
+{{- end -}}
+
+
+{{/*
+Return the job crontab database config
+*/}}
+{{- define "job.crontab.databaseConfig" -}}
+{{- if .Values.crontabConfig.database.host -}}
+jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- .Values.crontabConfig.database.host }}:{{- .Values.crontabConfig.database.port }}/job_crontab{{- .Values.crontabConfig.database.connection.properties }}
+username: {{ .Values.crontabConfig.database.username }}
+password: ${crontab-db-password}
+{{- else -}}
+jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_crontab{{ include "job.mariadb.connection.properties" . }}
+username: {{ include "job.mariadb.username" . }}
+    {{- if .Values.externalMariaDB.existingPasswordSecret }}
+password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
+    {{- else }}
+password: ${mariadb-password}
+    {{- end }}
+{{- end }}
 {{- end -}}

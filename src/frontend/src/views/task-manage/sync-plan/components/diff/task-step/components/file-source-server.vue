@@ -26,40 +26,43 @@
 -->
 
 <template>
-    <ip-detail :pre-host="realPreHost" :last-host="realLastHost" />
+  <ip-detail
+    :last-host="realLastHost"
+    :pre-host="realPreHost" />
 </template>
 <script>
-    import TaskHostNodeModel from '@model/task-host-node';
-    import IpDetail from '../../common/ip-detail';
+  import ExecuteTargetModel from '@model/execute-target';
 
-    const generatorHost = () => new TaskHostNodeModel({});
+  import IpDetail from '../../common/ip-detail';
 
-    export default {
-        name: 'SyncPlanFileSourceServer',
-        components: {
-            IpDetail,
-        },
-        props: {
-            preHost: {
-                type: Object,
-                default: () => ({}),
-            },
-            lastHost: {
-                type: Object,
-                default: () => ({}),
-            },
-        },
-        created () {
-            if (!this.preHost || !this.preHost.hostNodeInfo) {
-                this.realPreHost = generatorHost();
-            } else {
-                this.realPreHost = this.preHost;
-            }
-            if (!this.lastHost || !this.lastHost.hostNodeInfo) {
-                this.realLastHost = generatorHost();
-            } else {
-                this.realLastHost = this.lastHost;
-            }
-        },
-    };
+  const generatorHost = () => new ExecuteTargetModel({});
+
+  export default {
+    name: 'SyncPlanFileSourceServer',
+    components: {
+      IpDetail,
+    },
+    props: {
+      preHost: {
+        type: Object,
+        default: () => ({}),
+      },
+      lastHost: {
+        type: Object,
+        default: () => ({}),
+      },
+    },
+    created() {
+      if (!this.preHost || !this.preHost.executeObjectsInfo) {
+        this.realPreHost = generatorHost();
+      } else {
+        this.realPreHost = this.preHost;
+      }
+      if (!this.lastHost || !this.lastHost.executeObjectsInfo) {
+        this.realLastHost = generatorHost();
+      } else {
+        this.realLastHost = this.lastHost;
+      }
+    },
+  };
 </script>

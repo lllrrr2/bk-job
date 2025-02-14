@@ -1,3 +1,4 @@
+{{- if and .Values.manageConfig.enabled (eq .Values.deploy.mode "standard") }}
 apiVersion: {{ include "common.capabilities.deployment.apiVersion" . }}
 kind: Deployment
 metadata:
@@ -12,7 +13,6 @@ metadata:
     {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
     {{- end }}
   annotations:
-  {{ include "annotations.sha256sum.configmap" ( dict "service" "job-manage" "context" . ) | nindent 4 }}
   {{- if .Values.commonAnnotations }}
   {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -31,7 +31,10 @@ spec:
         app.kubernetes.io/component: "job-manage"
         {{ include "job.labelKeys.jobScope" . }}: {{ include "job.labelValues.jobScope.backend" . }}
         {{ include "job.labelKeys.imageTag" . }}: {{ .Values.manageConfig.image.tag | quote }}
+      annotations:
+        {{ include "annotations.sha256sum.configmap" ( dict "service" "job-manage" "context" . ) | nindent 8 }}
     spec:
+      {{- include "job.podTerminationGracePeriodSeconds" . | nindent 6 }}
       {{- include "job.imagePullSecrets" . | nindent 6 }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.hostAliases "context" $) | nindent 8 }}
       {{- if .Values.manageConfig.affinity }}
@@ -57,6 +60,7 @@ spec:
       {{- end }}
       initContainers:
       {{- include "job.initContainer.waitForMigration" . | nindent 8 }}
+      {{- include "job.initContainer.waitForDependServices"   ( dict "currentServiceName" "job-manage" "context" $) | nindent 8 }}
       containers:
         - name: "job-manage"
           {{- if .Values.manageConfig.containerSecurityContext.enabled }}
@@ -65,57 +69,29 @@ spec:
           image: {{ include "job-manage.image" . }}
           imagePullPolicy: {{ .Values.manageConfig.image.pullPolicy }}
           env:
+            {{- include "job.common.env" . | nindent 12 }}
             - name: BK_JOB_APP_NAME
               value: "job-manage"
             - name: BK_JOB_EDITION
               value: {{ .Values.job.edition }}
             - name: BK_JOB_JVM_OPTION
               value: {{ .Values.manageConfig.jvmOptions | quote }}
-            - name: BK_JOB_PROFILE
-              value: {{ include "job.profile" . }}
             - name: BK_JOB_JAR
               value: job-manage.jar
             - name: JOB_APPLICATION_CONFIGMAP_NAME
               value: {{ include "common.names.fullname" . }}-manage
-            - name: JOB_COMMON_CONFIGMAP_NAME
-              value: {{ include "common.names.fullname" . }}-common
-            - name: spring_cloud_kubernetes_secrets_paths
-              value: /etc/secrets
-            - name: KUBERNETES_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: BK_JOB_POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
+            - name: JOB_COMMON_REFRESHABLE_CONFIGMAP_NAME
+              value: {{ include "common.names.fullname" . }}-common-refreshable
           ports:
             - name: http
               containerPort: {{ .Values.manageConfig.containerPort }}
               protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: http
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30
-            successThreshold: 1
-          readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: http
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30
-            successThreshold: 1
+          {{- include "job.service.probes" ( dict "port" "http" "context" . ) | nindent 10 }}
           resources:
             {{- toYaml .Values.manageConfig.resources | nindent 12 }}
           volumeMounts:
             - name: job-storage
-              mountPath: /data/job/storage
+              mountPath: {{ .Values.persistence.localStorage.path }}
             - name: mariadb
               mountPath: /etc/secrets/mariadb
               readOnly: true
@@ -134,7 +110,7 @@ spec:
       volumes:
         - name: job-storage
           persistentVolumeClaim:
-            claimName: {{ include "common.names.fullname" . }}-pv-claim
+            claimName: {{ include "job.storage.pvc.name" . }}
         - name: mariadb
           secret:
             secretName: {{ include "job.mariadb.secretName" . }}
@@ -160,3 +136,4 @@ spec:
                 path: gse.keystore.password
               - key: gse.truststore.password
                 path: gse.truststore.password
+{{- end }}

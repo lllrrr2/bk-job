@@ -29,9 +29,33 @@ package com.tencent.bk.job.common.constant;
  */
 public class JobConstants {
     /**
+     * 不可能取值的action scope id值，用于数据查询时排除
+     */
+    public static final long UNAVAILABLE_ACTION_SCOPE_ID = -1L;
+    /**
+     * GSE Agent状态：正常
+     */
+    public static final int GSE_AGENT_STATUS_VALUE_ALIVE = 1;
+    /**
+     * GSE Agent状态：异常
+     */
+    public static final int GSE_AGENT_STATUS_VALUE_NOT_ALIVE = 0;
+    /**
+     * 默认系统用户
+     */
+    public static final String DEFAULT_SYSTEM_USER_ADMIN = "admin";
+    /**
+     * 默认云区域ID
+     */
+    public static final long DEFAULT_CLOUD_AREA_ID = 0L;
+    /**
      * 公共资源对应的业务ID(比如公共脚本)
      */
     public static final long PUBLIC_APP_ID = 0L;
+    /**
+     * CMDB内置的全业务ID
+     */
+    public static final long DEFAULT_ALL_BIZ_SET_ID = 9991001L;
     /**
      * 执行结果分组标签最大长度
      */
@@ -59,5 +83,21 @@ public class JobConstants {
     /**
      * 作业最大超时时间，单位秒
      */
-    public static final int MAX_JOB_TIMEOUT_SECONDS = 86400;
+    public static final int MAX_JOB_TIMEOUT_SECONDS = 259200;
+    /**
+     * 请求来源：备份服务
+     */
+    public static final int REQUEST_SOURCE_JOB_BACKUP = 1;
+    /**
+     * Job内置业务集的ID范围的最小值
+     */
+    public static final long JOB_BUILD_IN_BIZ_SET_ID_MIN = 8000000L;
+    /**
+     * Job内置业务集的ID范围的最大值
+     */
+    public static final long JOB_BUILD_IN_BIZ_SET_ID_MAX = 9999999L;
+    /**
+     * 未知的资源名称
+     */
+    public static final String UNKNOWN_NAME = "Unknown";
 }

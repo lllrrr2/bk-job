@@ -25,7 +25,7 @@
 package com.tencent.bk.job.manage.manager.script.check.checker;
 
 import com.google.common.collect.Lists;
-import com.tencent.bk.job.manage.common.consts.script.ScriptCheckErrorLevelEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptCheckErrorLevelEnum;
 import com.tencent.bk.job.manage.manager.script.check.ScriptCheckParam;
 import com.tencent.bk.job.manage.model.dto.ScriptCheckResultItemDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -58,7 +58,7 @@ public class ScriptLogicChecker extends DefaultChecker {
 
     @Override
     public List<ScriptCheckResultItemDTO> call() {
-        StopWatch watch = new StopWatch();
+        StopWatch watch = new StopWatch("ScriptLogicChecker");
         ArrayList<ScriptCheckResultItemDTO> checkResults = Lists.newArrayList();
         String[] lines = param.getLines();
         try {
@@ -70,7 +70,12 @@ public class ScriptLogicChecker extends DefaultChecker {
             checkScriptLines(checkResults, lines, cdDirCheck, LOGIC_NEED_CD_DIR_CHECK);
             watch.stop();
         } finally {
-            log.debug("watch={}", watch);
+            if (watch.isRunning()) {
+                watch.stop();
+            }
+            if (watch.getTotalTimeMillis() > 10) {
+                log.info("Check script logic is slow, watch={}", watch.prettyPrint());
+            }
         }
         return checkResults;
     }

@@ -25,22 +25,31 @@
 package com.tencent.bk.job.common.redis.util;
 
 
+import com.tencent.bk.job.common.util.ThreadUtils;
+import io.lettuce.core.RedisCommandInterruptedException;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.helpers.MessageFormatter;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class RedisKeyHeartBeatThread extends Thread {
-    private RedisTemplate<String, String> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
+    @Setter
     private volatile boolean runFlag;
-    private String redisKey;
-    private String redisValue;
-    private Long expireTimeMillis;
-    private Long periodMillis;
+    private final String redisKey;
+    private final String redisValue;
+    private final Long expireTimeMillis;
+    private final Long periodMillis;
 
-    public RedisKeyHeartBeatThread(RedisTemplate<String, String> redisTemplate, String redisKey, String redisValue,
-                                   Long expireTimeMillis, Long periodMillis) {
+    public RedisKeyHeartBeatThread(RedisTemplate<String, String> redisTemplate,
+                                   String redisKey,
+                                   String redisValue,
+                                   Long expireTimeMillis,
+                                   Long periodMillis) {
         this.redisTemplate = redisTemplate;
         this.redisKey = redisKey;
         this.redisValue = redisValue;
@@ -51,19 +60,9 @@ public class RedisKeyHeartBeatThread extends Thread {
 
     public void stopAtOnce() {
         setRunFlag(false);
-        redisTemplate.delete(redisKey);
-    }
-
-    public void setRunFlag(boolean runFlag) {
-        this.runFlag = runFlag;
-    }
-
-    public String getRedisKey() {
-        return redisKey;
-    }
-
-    public void setRedisKey(String redisKey) {
-        this.redisKey = redisKey;
+        Boolean result = redisTemplate.delete(redisKey);
+        log.debug("stopAtOnce, delete redis key:{}, result={}", redisKey, result);
+        interrupt();
     }
 
     @Override
@@ -71,12 +70,47 @@ public class RedisKeyHeartBeatThread extends Thread {
         try {
             while (runFlag) {
                 redisTemplate.opsForValue().set(redisKey, redisValue, expireTimeMillis, TimeUnit.MILLISECONDS);
-                Thread.sleep(periodMillis);
+                ThreadUtils.sleep(periodMillis, false);
             }
-            redisTemplate.delete(redisKey);
-            log.info("RedisKeyHeartBeatThread {} quit normally", this.getName());
         } catch (Throwable t) {
-            log.error("RedisKeyHeartBeatThread {} quit unexpectedly:", this.getName(), t);
+            String msg = MessageFormatter.format(
+                "RedisKeyHeartBeatThread {} quit unexpectedly:",
+                this.getName()
+            ).getMessage();
+            // 主动终止线程产生的异常只打印调试级别日志
+            if (!causeByStopAtOnceInterrupt(t)) {
+                log.error(msg, t);
+            } else {
+                log.debug(msg, t);
+            }
+        } finally {
+            deleteRedisKeySafely();
         }
+    }
+
+    private void deleteRedisKeySafely() {
+        try {
+            Boolean result = redisTemplate.delete(redisKey);
+            log.debug("delete redis key:{}, result={}", redisKey, result);
+        } catch (Throwable e) {
+            // 主动终止线程产生的异常只打印调试级别日志
+            if (!causeByStopAtOnceInterrupt(e)) {
+                log.error("Delete redis key fail", e);
+            } else {
+                log.debug("Delete redis key fail", e);
+            }
+        }
+    }
+
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    private boolean causeByStopAtOnceInterrupt(Throwable t) {
+        if (runFlag) {
+            return false;
+        }
+        if (t instanceof RedisSystemException) {
+            Throwable cause = t.getCause();
+            return cause instanceof RedisCommandInterruptedException;
+        }
+        return false;
     }
 }

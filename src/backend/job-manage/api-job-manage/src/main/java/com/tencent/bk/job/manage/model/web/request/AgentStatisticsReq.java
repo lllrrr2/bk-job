@@ -24,38 +24,36 @@
 
 package com.tencent.bk.job.manage.model.web.request;
 
-import com.tencent.bk.job.manage.model.web.request.ipchooser.AppTopologyTreeNode;
+import com.tencent.bk.job.common.model.vo.DynamicGroupIdWithMeta;
+import com.tencent.bk.job.manage.model.web.request.chooser.host.BizTopoNode;
+import com.tencent.bk.job.manage.model.web.request.chooser.host.HostIdWithMeta;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 主机状态批量查询请求
  */
-
 @Data
 @ApiModel("主机状态批量查询请求报文")
 public class AgentStatisticsReq {
-    /**
-     * IP列表
-     */
-    @ApiModelProperty(value = "IP列表", required = false)
-    List<String> ipList;
 
-    /**
-     * 业务拓扑节点列表
-     */
-    @ApiModelProperty(value = "业务拓扑节点列表(传 objectId 与 instanceId ，其余字段置空即可)", required = false)
-    List<AppTopologyTreeNode> appTopoNodeList;
+    @ApiModelProperty(value = "主机列表")
+    List<HostIdWithMeta> hostList = new ArrayList<>();
 
-    /**
-     * 动态分组Id列表
-     */
-    @ApiModelProperty(value = "动态分组Id列表", required = false)
-    List<String> dynamicGroupIds;
+    @ApiModelProperty(value = "业务拓扑节点列表(传 objectId 与 instanceId ，其余字段置空即可)")
+    List<BizTopoNode> nodeList;
 
+    @ApiModelProperty(value = "动态分组列表")
+    List<DynamicGroupIdWithMeta> dynamicGroupList;
+
+    public List<String> getDynamicGroupIds() {
+        return dynamicGroupList.stream()
+            .map(DynamicGroupIdWithMeta::getId)
+            .collect(Collectors.toList());
+    }
 }
-
-

@@ -25,7 +25,7 @@
 package com.tencent.bk.job.manage.model.esb.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.tencent.bk.job.common.esb.model.EsbReq;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeReq;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -34,9 +34,7 @@ import lombok.EqualsAndHashCode;
  */
 @EqualsAndHashCode(callSuper = true)
 @Data
-public class EsbGetScriptListRequest extends EsbReq {
-    @JsonProperty("bk_biz_id")
-    private Long appId;
+public class EsbGetScriptListRequest extends EsbAppScopeReq {
 
     @JsonProperty("is_public")
     private Boolean publicScript;
@@ -53,7 +51,7 @@ public class EsbGetScriptListRequest extends EsbReq {
     /**
      * 脚本类型
      *
-     * @see com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum
+     * @see com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum
      */
     @JsonProperty("script_type")
     private Integer scriptType;

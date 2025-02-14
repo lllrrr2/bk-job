@@ -25,44 +25,44 @@
 package com.tencent.bk.job.manage.dao.whiteip;
 
 import com.tencent.bk.job.common.model.BaseSearchCondition;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 import com.tencent.bk.job.manage.model.dto.whiteip.CloudIPDTO;
 import com.tencent.bk.job.manage.model.dto.whiteip.WhiteIPRecordDTO;
 import com.tencent.bk.job.manage.model.web.vo.whiteip.WhiteIPRecordVO;
-import org.jooq.DSLContext;
 
 import java.util.Collection;
 import java.util.List;
 
 public interface WhiteIPRecordDAO {
-    Long insertWhiteIPRecord(DSLContext dslContext, WhiteIPRecordDTO whiteIPRecordDTO);
+    Long insertWhiteIPRecord(WhiteIPRecordDTO whiteIPRecordDTO);
 
-    int deleteWhiteIPRecordById(DSLContext dslContext, Long id);
+    int deleteWhiteIPRecordById(Long id);
 
-    WhiteIPRecordDTO getWhiteIPRecordById(DSLContext dslContext, Long id);
+    WhiteIPRecordDTO getWhiteIPRecordById(Long id);
 
-    List<WhiteIPRecordVO> listWhiteIPRecord(DSLContext dslContext, List<String> ipList, List<Long> appIdList,
+    List<WhiteIPRecordVO> listWhiteIPRecord(List<String> ipList, List<Long> appIdList,
                                             List<String> appNameList, List<Long> actionScopeIdList, String creator,
                                             String lastModifyUser, BaseSearchCondition baseSearchCondition);
 
-    List<Long> listAllWhiteIPRecordId(DSLContext dslContext);
-
-    List<WhiteIPRecordVO> listWhiteIPRecord(DSLContext dslContext, String partIP, List<Long> appIdList,
-                                            List<Long> actionScopeIdList, BaseSearchCondition baseSearchCondition);
-
-    Long countWhiteIPRecord(DSLContext dslContext, List<String> ipList, List<Long> appIdList,
+    Long countWhiteIPRecord(List<String> ipList, List<Long> appIdList,
                             List<String> appNameList, List<Long> actionScopeIdList, String creator,
                             String lastModifyUser, BaseSearchCondition baseSearchCondition);
 
-    Long countWhiteIPRecord(DSLContext dslContext, String partIP, List<Long> appIdList, List<Long> actionScopeIdList,
-                            BaseSearchCondition baseSearchCondition);
-
     Long countWhiteIPIP();
 
-    int updateWhiteIPRecordById(DSLContext dslContext, WhiteIPRecordDTO whiteIPRecordDTO);
+    int updateWhiteIPRecordById(WhiteIPRecordDTO whiteIPRecordDTO);
 
-    List<String> getWhiteIPActionScopes(DSLContext dslContext, Long appId, String ip, Long cloudAreaId);
+    List<String> getWhiteIPActionScopes(Collection<Long> appIds, String ip, Long cloudAreaId);
 
-    List<String> getWhiteIPActionScopes(DSLContext dslContext, Collection<Long> appIds, String ip, Long cloudAreaId);
+    List<String> getWhiteIPActionScopes(Collection<Long> appIds, Long hostId);
 
-    List<CloudIPDTO> listWhiteIPByAppIds(DSLContext dslContext, Collection<Long> appIds, Long actionScopeId);
+    List<CloudIPDTO> listWhiteIPByAppIds(Collection<Long> appIds, Long actionScopeId);
+
+    List<HostDTO> listWhiteIPHost(Collection<Long> appIds, Long actionScopeId, Collection<Long> hostIds);
+
+    List<HostDTO> listWhiteIPHostByIps(Collection<Long> appIds, Long actionScopeId, Collection<String> ips);
+
+    List<HostDTO> listWhiteIPHostByIpv6s(Collection<Long> appIds, Long actionScopeId, Collection<String> ipv6s);
+
+    List<WhiteIPRecordDTO> listAllWhiteIPRecord();
 }

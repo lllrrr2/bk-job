@@ -23,22 +23,24 @@
  * IN THE SOFTWARE.
 */
 
+import Entry from '@views/home/index.vue';
+
 import I18n from '@/i18n';
 
 export default {
-    path: 'home',
-    component: () => import('@views/home/index'),
-    meta: {
-        group: 'business',
+  path: 'home',
+  component: Entry,
+  meta: {
+    group: 'business',
+  },
+  children: [
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('@views/home/index/index'),
+      meta: {
+        title: I18n.t('首页'),
+      },
     },
-    children: [
-        {
-            path: '/',
-            name: 'home',
-            component: () => import('@views/home/index/index'),
-            meta: {
-                title: I18n.t('首页'),
-            },
-        },
-    ],
+  ],
 };

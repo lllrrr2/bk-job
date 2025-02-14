@@ -26,7 +26,7 @@ package com.tencent.bk.job.analysis.api.iam.impl;
 
 import com.tencent.bk.job.analysis.api.iam.IamDashBoardViewCallbackResource;
 import com.tencent.bk.job.analysis.consts.AnalysisConsts;
-import com.tencent.bk.job.common.iam.constant.ResourceId;
+import com.tencent.bk.job.common.iam.constant.ResourceTypeId;
 import com.tencent.bk.job.common.iam.service.BaseIamCallbackService;
 import com.tencent.bk.sdk.iam.dto.PathInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.CallbackRequestDTO;
@@ -34,6 +34,7 @@ import com.tencent.bk.sdk.iam.dto.callback.request.IamSearchCondition;
 import com.tencent.bk.sdk.iam.dto.callback.response.BaseDataResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.CallbackBaseResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.FetchInstanceInfoResponseDTO;
+import com.tencent.bk.sdk.iam.dto.callback.response.FetchResourceTypeSchemaResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.InstanceInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.ListInstanceResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.SearchInstanceResponseDTO;
@@ -97,31 +98,37 @@ public class IamDashBoardViewCallbackResourceImpl extends BaseIamCallbackService
         return instanceResponse;
     }
 
+    private InstanceInfoDTO buildInstance(String id) {
+        // 拓扑路径构建
+        List<PathInfoDTO> path = new ArrayList<>();
+        PathInfoDTO rootNode = new PathInfoDTO();
+        rootNode.setType(ResourceTypeId.DASHBOARD_VIEW);
+        rootNode.setId(AnalysisConsts.GLOBAL_DASHBOARD_VIEW_ID);
+        path.add(rootNode);
+        // 实例组装
+        InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
+        instanceInfo.setId(id);
+        instanceInfo.setDisplayName(AnalysisConsts.GLOBAL_DASHBOARD_VIEW_NAME);
+        instanceInfo.setPath(path);
+        return instanceInfo;
+    }
+
     @Override
     protected CallbackBaseResponseDTO fetchInstanceResp(
         CallbackRequestDTO callbackRequest
     ) {
         IamSearchCondition searchCondition = IamSearchCondition.fromReq(callbackRequest);
         List<Object> instanceAttributeInfoList = new ArrayList<>();
-        for (String instanceId : searchCondition.getIdList()) {
+        for (String id : searchCondition.getIdList()) {
+            if (!AnalysisConsts.GLOBAL_DASHBOARD_VIEW_ID.equals(id)) {
+                logNotExistId(id);
+                continue;
+            }
             try {
-                if (!AnalysisConsts.GLOBAL_DASHBOARD_VIEW_ID.equals(instanceId)) {
-                    return getNotFoundRespById(instanceId);
-                }
-                // 拓扑路径构建
-                List<PathInfoDTO> path = new ArrayList<>();
-                PathInfoDTO rootNode = new PathInfoDTO();
-                rootNode.setType(ResourceId.DASHBOARD_VIEW);
-                rootNode.setId(AnalysisConsts.GLOBAL_DASHBOARD_VIEW_ID);
-                path.add(rootNode);
-                // 实例组装
-                InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
-                instanceInfo.setId(instanceId);
-                instanceInfo.setDisplayName(AnalysisConsts.GLOBAL_DASHBOARD_VIEW_NAME);
-                instanceInfo.setPath(path);
+                InstanceInfoDTO instanceInfo = buildInstance(id);
                 instanceAttributeInfoList.add(instanceInfo);
-            } catch (NumberFormatException e) {
-                log.error("Parse object id failed!|{}", instanceId, e);
+            } catch (Exception e) {
+                logBuildInstanceFailure(id, e);
             }
         }
 
@@ -134,5 +141,12 @@ public class IamDashBoardViewCallbackResourceImpl extends BaseIamCallbackService
     @Override
     public CallbackBaseResponseDTO callback(CallbackRequestDTO callbackRequest) {
         return baseCallback(callbackRequest);
+    }
+
+    @Override
+    protected FetchResourceTypeSchemaResponseDTO fetchResourceTypeSchemaResp(
+        CallbackRequestDTO callbackRequest) {
+        // 无需实现
+        return null;
     }
 }

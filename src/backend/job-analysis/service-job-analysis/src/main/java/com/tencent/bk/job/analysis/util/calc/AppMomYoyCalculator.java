@@ -25,9 +25,9 @@
 package com.tencent.bk.job.analysis.util.calc;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.tencent.bk.job.common.statistics.model.dto.StatisticsDTO;
+import com.tencent.bk.job.analysis.api.dto.StatisticsDTO;
 import com.tencent.bk.job.common.util.json.JsonUtils;
-import com.tencent.bk.job.manage.model.inner.ServiceApplicationDTO;
+import com.tencent.bk.job.manage.model.inner.resp.ServiceApplicationDTO;
 
 import java.util.List;
 
@@ -41,11 +41,17 @@ public class AppMomYoyCalculator extends AbstractMomYoyCalculator {
         super(statisticsDTO, momStatisticsDTO, yoyStatisticsDTO);
     }
 
-    Long getCountFromStatisticValue(String value) {
+    /**
+     * 从序列化的存储数据中解析出业务数量
+     *
+     * @param serializedData 序列化的存储数据
+     * @return 业务数量
+     */
+    protected Long getCountFromSerializedData(String serializedData) {
         // 解析统计量
-        List<ServiceApplicationDTO> applicationDTOList = JsonUtils.fromJson(value,
+        List<ServiceApplicationDTO> applicationDTOList = JsonUtils.fromJson(serializedData,
             new TypeReference<List<ServiceApplicationDTO>>() {
-        });
+            });
         return (long) applicationDTOList.size();
     }
 }

@@ -24,11 +24,15 @@
 
 package com.tencent.bk.job.execute.service;
 
-import com.tencent.bk.job.common.exception.ServiceException;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
-import com.tencent.bk.job.common.model.dto.IpDTO;
-import com.tencent.bk.job.execute.model.*;
+import com.tencent.bk.job.execute.engine.model.ExecuteObject;
+import com.tencent.bk.job.execute.model.StepExecutionDetailDTO;
+import com.tencent.bk.job.execute.model.StepExecutionRecordDTO;
+import com.tencent.bk.job.execute.model.StepExecutionResultQuery;
+import com.tencent.bk.job.execute.model.TaskExecuteResultDTO;
+import com.tencent.bk.job.execute.model.TaskInstanceDTO;
+import com.tencent.bk.job.execute.model.TaskInstanceQuery;
 import com.tencent.bk.job.execute.model.inner.ServiceCronTaskExecuteResultStatistics;
 
 import java.util.List;
@@ -48,6 +52,7 @@ public interface TaskResultService {
     PageData<TaskInstanceDTO> listPageTaskInstance(TaskInstanceQuery taskQuery,
                                                    BaseSearchCondition baseSearchCondition);
 
+
     /**
      * 获取作业执行结果
      *
@@ -58,17 +63,6 @@ public interface TaskResultService {
      */
     TaskExecuteResultDTO getTaskExecutionResult(String username, Long appId, Long taskInstanceId);
 
-    /**
-     * 获取步骤执行详情
-     *
-     * @param username       用户名
-     * @param appId          业务ID
-     * @param taskInstanceId 作业实例ID
-     * @param query          查询条件
-     * @return 步骤执行详情
-     */
-    StepExecutionDetailDTO getFastTaskStepExecutionResult(String username, Long appId, Long taskInstanceId,
-                                                          StepExecutionResultQuery query);
 
     /**
      * 获取步骤执行详情
@@ -77,10 +71,8 @@ public interface TaskResultService {
      * @param appId    业务ID
      * @param query    查询条件
      * @return 执行详情
-     * @throws ServiceException
      */
-    StepExecutionDetailDTO getStepExecutionResult(String username, Long appId, StepExecutionResultQuery query)
-        throws ServiceException;
+    StepExecutionDetailDTO getStepExecutionResult(String username, Long appId, StepExecutionResultQuery query);
 
     /**
      * 获取定时任务执行结果统计
@@ -93,29 +85,43 @@ public interface TaskResultService {
                                                                                          List<Long> cronTaskIdList);
 
     /**
-     * 根据执行结果分组获取主机信息
+     * 根据执行结果分组获取执行对象信息
      *
      * @param username       用户名
      * @param appId          业务ID
+     * @param taskInstanceId 作业实例 ID
      * @param stepInstanceId 步骤实例ID
      * @param executeCount   执行次数
+     * @param batch          滚动执行批次;如果传入null或0，忽略该参数
      * @param resultType     结果
      * @param tag            结果输出分类标签
      * @param keyword        脚本日志关键字
-     * @return
+     * @return 主机列表
      */
-    List<IpDTO> getHostsByResultType(String username, Long appId, Long stepInstanceId,
-                                     Integer executeCount, Integer resultType,
-                                     String tag, String keyword);
+    List<ExecuteObject> getExecuteObjectsByResultType(String username,
+                                                      Long appId,
+                                                      Long taskInstanceId,
+                                                      Long stepInstanceId,
+                                                      Integer batch,
+                                                      Integer executeCount,
+                                                      Integer resultType,
+                                                      String tag,
+                                                      String keyword);
 
     /**
      * 获取步骤执行历史
      *
      * @param username       用户名
      * @param appId          业务ID
+     * @param taskInstanceId 作业实例 ID
      * @param stepInstanceId 步骤实例ID
+     * @param batch          滚动执行批次;如果传入，则会按照batch过滤步骤执行历史
      * @return 执行历史
      */
-    List<StepExecutionRecordDTO> listStepExecutionHistory(String username, Long appId, Long stepInstanceId);
+    List<StepExecutionRecordDTO> listStepExecutionHistory(String username,
+                                                          Long appId,
+                                                          Long taskInstanceId,
+                                                          Long stepInstanceId,
+                                                          Integer batch);
 
 }

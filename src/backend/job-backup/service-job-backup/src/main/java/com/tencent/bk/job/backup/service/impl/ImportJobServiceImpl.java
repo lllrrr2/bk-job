@@ -29,6 +29,7 @@ import com.tencent.bk.job.backup.constant.Constant;
 import com.tencent.bk.job.backup.constant.DuplicateIdHandlerEnum;
 import com.tencent.bk.job.backup.constant.LogEntityTypeEnum;
 import com.tencent.bk.job.backup.constant.LogMessage;
+import com.tencent.bk.job.backup.crypto.BackupFileCryptoService;
 import com.tencent.bk.job.backup.dao.ImportJobDAO;
 import com.tencent.bk.job.backup.executor.ImportJobExecutor;
 import com.tencent.bk.job.backup.model.dto.IdNameInfoDTO;
@@ -40,7 +41,6 @@ import com.tencent.bk.job.backup.service.StorageService;
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.redis.util.LockUtils;
 import com.tencent.bk.job.common.util.JobContextUtil;
-import com.tencent.bk.job.common.util.crypto.AESUtils;
 import com.tencent.bk.job.common.util.file.ZipUtil;
 import com.tencent.bk.job.manage.model.web.vo.task.TaskPlanVO;
 import com.tencent.bk.job.manage.model.web.vo.task.TaskTemplateVO;
@@ -77,14 +77,19 @@ public class ImportJobServiceImpl implements ImportJobService {
     private final StorageService storageService;
     private final LogService logService;
     private final MessageI18nService i18nService;
+    private final BackupFileCryptoService backupFileCryptoService;
 
     @Autowired
-    public ImportJobServiceImpl(ImportJobDAO importJobDAO, StorageService storageService, LogService logService,
-                                MessageI18nService i18nService) {
+    public ImportJobServiceImpl(ImportJobDAO importJobDAO,
+                                StorageService storageService,
+                                LogService logService,
+                                MessageI18nService i18nService,
+                                BackupFileCryptoService backupFileCryptoService) {
         this.importJobDAO = importJobDAO;
         this.storageService = storageService;
         this.logService = logService;
         this.i18nService = i18nService;
+        this.backupFileCryptoService = backupFileCryptoService;
     }
 
     @Override
@@ -134,74 +139,78 @@ public class ImportJobServiceImpl implements ImportJobService {
     @Override
     public Boolean parseFile(String username, Long appId, String jobId) {
         ImportJobInfoDTO importJob = importJobDAO.getImportJobById(appId, jobId);
-        if (importJob != null) {
-            logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.PROCESS_UPLOAD_FILE));
-            File uploadFile = storageService.getFile(importJob.getFileName());
-            if (uploadFile != null && uploadFile.exists()) {
-                logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.DETECT_FILE_TYPE));
-                if (!uploadFile.getName().endsWith(Constant.JOB_EXPORT_FILE_SUFFIX)
-                    && !uploadFile.getName().endsWith(
-                    Constant.JOB_EXPORT_FILE_SUFFIX.concat(Constant.JOB_IMPORT_DECRYPT_SUFFIX))) {
-                    markJobFailed(importJob, i18nService.getI18n(LogMessage.WRONG_FILE_TYPE));
-                    return false;
+        if (importJob == null) {
+            return false;
+        }
+        logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.PROCESS_UPLOAD_FILE));
+        File uploadFile = storageService.getFile(importJob.getFileName());
+        if (uploadFile == null || !uploadFile.exists()) {
+            return false;
+        }
+        logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.DETECT_FILE_TYPE));
+        if (!uploadFile.getName().endsWith(Constant.JOB_EXPORT_FILE_SUFFIX)
+            && !uploadFile.getName().endsWith(
+            Constant.JOB_EXPORT_FILE_SUFFIX.concat(Constant.JOB_IMPORT_DECRYPT_SUFFIX))) {
+            markJobAllFailed(importJob, i18nService.getI18n(LogMessage.WRONG_FILE_TYPE));
+            return false;
+        }
+        logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.CORRECT_FILE_TYPE));
+        ZipFile zipFile = null;
+        try {
+            zipFile = new ZipFile(uploadFile);
+            List<File> fileList = ZipUtil.unzip(uploadFile);
+            logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.EXTRACT_FILE_DATA));
+            boolean success = false;
+            for (File file : fileList) {
+                if (!file.getName().endsWith(".json")) {
+                    continue;
                 }
-                logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.CORRECT_FILE_TYPE));
-                ZipFile zipFile = null;
+                JobBackupInfoDTO jobBackupInfo = ImportJobExecutor.readJobBackupInfoFromFile(file);
+                if (jobBackupInfo == null) {
+                    continue;
+                }
+                if (jobBackupInfo.getExpireTime() != 0
+                    && jobBackupInfo.getExpireTime() <= System.currentTimeMillis()) {
+                    markJobAllFailed(importJob, i18nService.getI18n(LogMessage.IMPORT_FILE_EXPIRED));
+                }
+                importJob.setExportId(jobBackupInfo.getId());
+                importJob.setStatus(BackupJobStatusEnum.PARSE_SUCCESS);
+                importJob.setTemplateInfo(jobBackupInfo.getTemplateInfo());
+                importJob.setIdNameInfo(extractIdNameInfo(jobBackupInfo));
+                importJobDAO.updateImportJobById(importJob);
+                logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.EXTRACT_SUCCESS));
+                success = true;
+                break;
+            }
+            if (!success) {
+                log.warn("Parse import file fail");
+                markJobAllFailed(importJob, i18nService.getI18n(LogMessage.EXTRACT_FAILED));
+            } else {
+                return true;
+            }
+        } catch (IOException | RuntimeException e) {
+            log.error("Error while unzip upload file", e);
+            if (detectAndRemoveMagic(uploadFile)) {
+                importJob.setStatus(BackupJobStatusEnum.NEED_PASSWORD);
+                importJobDAO.updateImportJobById(importJob);
+                logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.FILE_ENCRYPTED),
+                    LogEntityTypeEnum.REQUEST_PASSWORD);
+            } else {
+                markJobAllFailed(importJob, i18nService.getI18n(LogMessage.EXTRACT_FAILED));
+            }
+        } finally {
+            if (zipFile != null) {
                 try {
-                    zipFile = new ZipFile(uploadFile);
-                    List<File> fileList = ZipUtil.unzip(uploadFile);
-                    logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.EXTRACT_FILE_DATA));
-                    boolean success = false;
-                    for (File file : fileList) {
-                        if (file.getName().endsWith(".json")) {
-                            JobBackupInfoDTO jobBackupInfo = ImportJobExecutor.readJobBackupInfoFromFile(file);
-                            if (jobBackupInfo != null) {
-                                if (jobBackupInfo.getExpireTime() != 0
-                                    && jobBackupInfo.getExpireTime() <= System.currentTimeMillis()) {
-                                    markJobFailed(importJob, "作业已过期！");
-                                }
-                                importJob.setExportId(jobBackupInfo.getId());
-                                importJob.setStatus(BackupJobStatusEnum.PARSE_SUCCESS);
-                                importJob.setTemplateInfo(jobBackupInfo.getTemplateInfo());
-                                importJob.setIdNameInfo(extractIdNameInfo(jobBackupInfo));
-                                importJobDAO.updateImportJobById(importJob);
-                                logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.EXTRACT_SUCCESS));
-                                success = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!success) {
-                        log.warn("Parse import file fail");
-                        markJobFailed(importJob, i18nService.getI18n(LogMessage.EXTRACT_FAILED));
-                    } else {
-                        return true;
-                    }
-                } catch (IOException | RuntimeException e) {
-                    log.error("Error while unzip upload file", e);
-                    if (detectAndRemoveMagic(appId, jobId, uploadFile)) {
-                        importJob.setStatus(BackupJobStatusEnum.NEED_PASSWORD);
-                        importJobDAO.updateImportJobById(importJob);
-                        logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.FILE_ENCRYPTED),
-                            LogEntityTypeEnum.REQUEST_PASSWORD);
-                    } else {
-                        markJobFailed(importJob, i18nService.getI18n(LogMessage.EXTRACT_FAILED));
-                    }
-                } finally {
-                    if (zipFile != null) {
-                        try {
-                            zipFile.close();
-                        } catch (IOException e) {
-                            log.warn("Error when close", e);
-                        }
-                    }
+                    zipFile.close();
+                } catch (IOException e) {
+                    log.warn("Error when close", e);
                 }
             }
         }
         return false;
     }
 
-    private boolean detectAndRemoveMagic(Long appId, String jobId, File uploadFile) {
+    private boolean detectAndRemoveMagic(File uploadFile) {
         boolean success = false;
         File tmpFile = new File(uploadFile.getPath().concat(".tmp"));
         try (FileInputStream in = new FileInputStream(uploadFile); FileOutputStream out =
@@ -280,7 +289,7 @@ public class ImportJobServiceImpl implements ImportJobService {
                     new File(parentPath.concat(File.separatorChar + uploadFile.getName()
                         + Constant.JOB_IMPORT_DECRYPT_SUFFIX));
                 try {
-                    AESUtils.decrypt(uploadFile, decryptedFile, password);
+                    backupFileCryptoService.decryptBackupFile(password, uploadFile, decryptedFile);
                     logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.CORRECT_PASSWORD));
                     FileUtils.deleteQuietly(uploadFile);
                     importInfo.setFileName(importInfo.getFileName().concat(Constant.JOB_IMPORT_DECRYPT_SUFFIX));
@@ -288,6 +297,7 @@ public class ImportJobServiceImpl implements ImportJobService {
                     parseFile(username, appId, jobId);
                     return true;
                 } catch (Exception e) {
+                    log.warn("Fail to decrypt backupFile", e);
                     logService.addImportLog(appId, jobId, i18nService.getI18n(LogMessage.WRONG_PASSWORD),
                         LogEntityTypeEnum.RETRY_PASSWORD);
                     importInfo.setStatus(BackupJobStatusEnum.WRONG_PASSWORD);
@@ -300,13 +310,13 @@ public class ImportJobServiceImpl implements ImportJobService {
     }
 
     @Override
-    public Boolean updateImportJob(ImportJobInfoDTO importJob) {
-        return importJobDAO.updateImportJobById(importJob);
+    public void updateImportJob(ImportJobInfoDTO importJob) {
+        importJobDAO.updateImportJobById(importJob);
     }
 
     @Override
-    public void markJobFailed(ImportJobInfoDTO importJob, String message) {
-        importJob.setStatus(BackupJobStatusEnum.FAILED);
+    public void markJobAllFailed(ImportJobInfoDTO importJob, String message) {
+        importJob.setStatus(BackupJobStatusEnum.ALL_FAILED);
         importJobDAO.updateImportJobById(importJob);
         logService.addImportLog(importJob.getAppId(), importJob.getId(), message, LogEntityTypeEnum.ERROR);
     }

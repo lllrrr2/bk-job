@@ -39,30 +39,51 @@ public class ScriptSyncResultVO {
     public static final int SYNC_SUCCESS = 1;
     public static final int SYNC_FAIL = 2;
 
-    @ApiModelProperty("业务ID")
-    private Long appId;
+    /**
+     * 资源范围类型
+     */
+    @ApiModelProperty(value = "资源范围类型", allowableValues = "biz-业务,biz_set-业务集")
+    private String scopeType;
+
+    /**
+     * 资源范围ID
+     */
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
+
     @ApiModelProperty("脚本ID")
     private String scriptId;
+
     @ApiModelProperty("步骤引用的脚本版本ID")
     private Long scriptVersionId;
+
     @ApiModelProperty("步骤引用的脚本版本号")
     private String scriptVersion;
+
     @ApiModelProperty("脚本名称")
     private String scriptName;
+
     @ApiModelProperty("步骤ID")
     private Long stepId;
+
     @ApiModelProperty("步骤名称")
     private String stepName;
+
     @ApiModelProperty("同步状态,1-成功，2-失败")
     private Integer syncStatus;
+
     @ApiModelProperty("脚本状态")
     private Integer scriptStatus;
+
     @ApiModelProperty("脚本状态描述")
     private String scriptStatusDesc;
+
     @ApiModelProperty("作业模板ID")
     private Long templateId;
+
     @ApiModelProperty("作业模板名称")
     private String templateName;
+
     @ApiModelProperty("失败原因")
     private String failMsg;
 

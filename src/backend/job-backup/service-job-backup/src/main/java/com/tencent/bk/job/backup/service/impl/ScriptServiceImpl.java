@@ -24,43 +24,45 @@
 
 package com.tencent.bk.job.backup.service.impl;
 
-import com.tencent.bk.job.backup.client.ServiceScriptResourceClient;
-import com.tencent.bk.job.backup.client.WebScriptResourceClient;
 import com.tencent.bk.job.backup.service.ScriptService;
 import com.tencent.bk.job.common.model.InternalResponse;
+import com.tencent.bk.job.manage.api.inner.ServiceScriptResource;
 import com.tencent.bk.job.manage.model.inner.ServiceScriptDTO;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-/**
- * @since 6/8/2020 22:01
- */
 @Slf4j
-@Service
+@Service("jobBackupScriptService")
 public class ScriptServiceImpl implements ScriptService {
-    private final WebScriptResourceClient webScriptResourceClient;
-    private final ServiceScriptResourceClient serviceScriptResourceClient;
+    private final ServiceScriptResource scriptResource;
 
     @Autowired
-    public ScriptServiceImpl(WebScriptResourceClient webScriptResourceClient,
-                             ServiceScriptResourceClient serviceScriptResourceClient) {
-        this.webScriptResourceClient = webScriptResourceClient;
-        this.serviceScriptResourceClient = serviceScriptResourceClient;
+    public ScriptServiceImpl(ServiceScriptResource scriptResource) {
+        this.scriptResource = scriptResource;
     }
 
     @Override
     public ServiceScriptDTO getScriptInfoById(String username, Long appId, Long scriptVersionId) {
         try {
             InternalResponse<ServiceScriptDTO> scriptByVersionIdResponse =
-                serviceScriptResourceClient.getScriptByAppIdAndScriptVersionId(username, appId, scriptVersionId);
+                scriptResource.getScriptByAppIdAndScriptVersionId(username, appId, scriptVersionId);
             if (scriptByVersionIdResponse != null) {
                 if (scriptByVersionIdResponse.getCode() == 0) {
                     return scriptByVersionIdResponse.getData();
                 }
             }
         } catch (Exception e) {
-            log.error("Error while getting script info by id!|{}|{}|{}", username, appId, scriptVersionId, e);
+            String msg = MessageFormatter.arrayFormat(
+                "Error while getting script info by id!|{}|{}|{}",
+                new String[]{
+                    username,
+                    String.valueOf(appId),
+                    String.valueOf(scriptVersionId)
+                }
+            ).getMessage();
+            log.error(msg, e);
         }
         return null;
     }

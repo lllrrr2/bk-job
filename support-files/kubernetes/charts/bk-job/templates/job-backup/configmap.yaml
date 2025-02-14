@@ -1,4 +1,4 @@
-{{- if .Values.backupConfig }}
+{{- if and .Values.backupConfig.enabled (eq .Values.deploy.mode "standard") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,13 +14,31 @@ data:
   application.yaml: |-
     spring:
       cloud:
-        refresh:
-          extra-refreshable: javax.sql.DataSource
+        loadbalancer:
+          cache:
+            ttl: 20s
+        stream:
+          defaultBinder: jobCommon
+          binders:
+            jobCommon:
+              type: rabbit
+              environment:
+                spring:
+                  rabbitmq:
+                    host: {{ include "job.rabbitmq.host" . }}
+                    port: {{ include "job.rabbitmq.port" . }}
+                    username: {{ include "job.rabbitmq.username" . }}
+                    {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+                    password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+                    {{- else -}}
+                    password: ${rabbitmq-password}
+                    {{- end }}
+                    virtual-host: {{ include "job.rabbitmq.vhost" . }}
       datasource:
         job-backup:
-          driver-class-name: com.mysql.cj.jdbc.Driver
+          driver-class-name: {{ include "job.jdbcMysqlDriverClass" . }}
           type: com.zaxxer.hikari.HikariDataSource
-          jdbc-url: jdbc:mysql://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_backup?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull
+          jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_backup{{ include "job.mariadb.connection.properties" . }}
           username: {{ include "job.mariadb.username" . }}
           {{ if .Values.externalMariaDB.existingPasswordSecret }}
           password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
@@ -32,10 +50,12 @@ data:
           idle-timeout: 600000
           poolName: "job-backup"
           validationTimeout: 5000
-        job-execute-db:
-          driver-class-name: com.mysql.cj.jdbc.Driver
+        {{- if and .Values.backupConfig.archive.execute.enabled }}
+        {{- if eq .Values.backupConfig.archive.execute.mariadb.dataSourceMode "standalone" }}
+        job-execute:
+          driver-class-name: {{ include "job.jdbcMysqlDriverClass" . }}
           type: com.zaxxer.hikari.HikariDataSource
-          jdbc-url: jdbc:mysql://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_execute?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull
+          jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_execute{{ .Values.backupConfig.archive.execute.mariadb.connection.properties }}
           username: {{ include "job.mariadb.username" . }}
           {{ if .Values.externalMariaDB.existingPasswordSecret }}
           password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
@@ -45,33 +65,36 @@ data:
           maximum-pool-size: 10
           minimum-idle: 2
           idle-timeout: 6000
-          poolName: "job-execute-db"
+          poolName: "job-execute"
           validationTimeout: 5000
+        {{- else if eq .Values.backupConfig.archive.execute.mariadb.dataSourceMode "vertical_sharding" }}
+        {{- range $dsName, $ds := .Values.backupConfig.archive.execute.mariadb.verticalSharding.datasource }}
+        {{ $dsName }}:
+            driverClassName: {{ include "job.jdbcMysqlDriverClass" . }}
+            jdbcUrl: {{ $ds.jdbcUrl | quote }}
+            username: {{ $ds.username | quote }}
+            password: {{ $ds.password | quote }}
+            maximumPoolSize: {{ $ds.maximumPoolSize | default 100 }}
+            minimumIdle: {{ $ds.minimumIdle | default 20 }}
+            idleTimeout: {{ $ds.idleTimeout | default 600000 }}
+            poolName: {{ $ds.poolName | default "job-execute" }}
+            validationTimeout: {{ $ds.validationTimeout | default 5000 }}
+        {{- end }}
+        {{- end }}  
+        {{- end }}
+        {{- if and .Values.backupConfig.archive.execute.enabled (or (eq .Values.backupConfig.archive.execute.mode "backupThenDelete") (eq .Values.backupConfig.archive.execute.mode "backupOnly")) }}
         job-execute-archive:
-          driver-class-name: com.mysql.cj.jdbc.Driver
+          driver-class-name: {{ include "job.jdbcMysqlDriverClass" . }}
           type: com.zaxxer.hikari.HikariDataSource
-          jdbc-url: jdbc:mysql://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_execute?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull
-          username: {{ include "job.mariadb.username" . }}
-          {{ if .Values.externalMariaDB.existingPasswordSecret }}
-          password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
-          {{- else -}}
-          password: ${mariadb-password}
-          {{- end }}
+          jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{ .Values.backupConfig.archive.mariadb.host }}:{{ .Values.backupConfig.archive.mariadb.port }}/job_execute{{ .Values.backupConfig.archive.mariadb.connection.properties }}
+          username: {{ .Values.backupConfig.archive.mariadb.username }}
+          password: ${archive-mariadb-password}
           maximum-pool-size: 10
           minimum-idle: 2
           idle-timeout: 6000
           poolName: "job-execute-archive"
           validationTimeout: 5000
-      rabbitmq:
-        host: {{ include "job.rabbitmq.host" . }}
-        port: {{ include "job.rabbitmq.port" . }}
-        username: {{ include "job.rabbitmq.username" . }}
-        {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
-        password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
-        {{- else -}}
-        password: ${rabbitmq-password}
         {{- end }}
-        virtual-host: {{ include "job.rabbitmq.vhost" . }}
       redis:
       {{- include "job.redis.config" . | indent 8 }}
         database: 0
@@ -95,18 +118,10 @@ data:
       port: {{ .Values.backupConfig.containerPort }}
     job:
       backup:
-        upload:
-          filesize:
-            max: 2GB
         storage-backend: {{ .Values.backupConfig.storageBackend }}
         artifactory:
           repo: {{ .Values.backupConfig.artifactory.repo }}
-      execute:
-        archive:
-          enabled: true
-          cron: 0 0 4 * * *
-          data:
-            keep_days: 30
-          delete:
-            enabled: true
-  {{- end}}
+        archive:  
+          execute:
+            {{- toYaml .Values.backupConfig.archive.execute | nindent 12 }}
+{{- end }}

@@ -24,49 +24,37 @@
 
 package com.tencent.bk.job.analysis.service;
 
+import com.tencent.bk.job.analysis.api.consts.StatisticsConstants;
 import com.tencent.bk.job.analysis.task.statistics.StatisticsTaskScheduler;
-import com.tencent.bk.job.common.statistics.consts.StatisticsConstants;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.Arrays;
-import java.util.function.ToDoubleFunction;
+import java.util.Collections;
 
 @Slf4j
-@Service
+@Service("jobAnalysisMeasureService")
 public class MeasureServiceImpl {
-
-    private final StatisticsTaskScheduler statisticsTaskScheduler;
 
     @Autowired
     public MeasureServiceImpl(MeterRegistry meterRegistry, StatisticsTaskScheduler statisticsTaskScheduler) {
-        this.statisticsTaskScheduler = statisticsTaskScheduler;
         // 当前正在运行的统计任务数量
         meterRegistry.gauge(
             StatisticsConstants.NAME_STATISTICS_TASK_ARRANGED_TASK_NUM,
-            Arrays.asList(Tag.of(StatisticsConstants.TAG_MODULE, StatisticsConstants.VALUE_MODULE_STATISTICS_TASK)),
-            this.statisticsTaskScheduler,
-            new ToDoubleFunction<StatisticsTaskScheduler>() {
-                @Override
-                public double applyAsDouble(StatisticsTaskScheduler statisticsTaskScheduler) {
-                    return statisticsTaskScheduler.listArrangedTasks().size();
-                }
-            }
+            Collections.singletonList(Tag.of(StatisticsConstants.TAG_KEY_MODULE,
+                StatisticsConstants.TAG_VALUE_MODULE_STATISTICS_TASK)),
+            statisticsTaskScheduler,
+            statisticsTaskScheduler1 -> statisticsTaskScheduler1.listArrangedTasks().size()
         );
         // 被线程池拒绝的统计任务数量
         meterRegistry.gauge(
             StatisticsConstants.NAME_STATISTICS_TASK_REJECTED_TASK_NUM,
-            Arrays.asList(Tag.of(StatisticsConstants.TAG_MODULE, StatisticsConstants.VALUE_MODULE_STATISTICS_TASK)),
-            this.statisticsTaskScheduler,
-            new ToDoubleFunction<StatisticsTaskScheduler>() {
-                @Override
-                public double applyAsDouble(StatisticsTaskScheduler statisticsTaskScheduler) {
-                    return statisticsTaskScheduler.getRejectedStatisticsTaskNum();
-                }
-            }
+            Collections.singletonList(Tag.of(StatisticsConstants.TAG_KEY_MODULE,
+                StatisticsConstants.TAG_VALUE_MODULE_STATISTICS_TASK)),
+            statisticsTaskScheduler,
+            StatisticsTaskScheduler::getRejectedStatisticsTaskNum
         );
     }
 }

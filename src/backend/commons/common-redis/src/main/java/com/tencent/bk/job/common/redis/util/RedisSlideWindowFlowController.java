@@ -24,13 +24,23 @@
 
 package com.tencent.bk.job.common.redis.util;
 
+import ch.qos.logback.classic.Level;
 import com.tencent.bk.job.common.util.FlowController;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.Timer;
+import java.util.TimerTask;
 
 /**
  * 基于Redis的分布式实时滑动窗口限流器
@@ -71,55 +81,68 @@ public class RedisSlideWindowFlowController implements FlowController {
             "end";
 
     private static StringRedisTemplate redisTemplate = null;
-    private static String REDIS_PREFIX_SLIDE_WINDOW = "job:slideWindow:";
-    private static String REDIS_PREFIX_MAX_RATE = "job:maxRate:";
-    private static Set<String> slideWindowKeys = new HashSet<>();
-    private static Set<String> maxRateKeys = new HashSet<>();
-    public Timer timer = new Timer();
-    public TimerTask clearTask = new TimerTask() {
-        int suppressCount = 0;
-
-        @Override
-        public void run() {
-            try {
-                long timeStart = System.currentTimeMillis();
-                // 清理Redis中的各个window内容
-                for (String windowKey : slideWindowKeys) {
-                    clear(windowKey, System.currentTimeMillis());
-                }
-                long duration = System.currentTimeMillis() - timeStart;
-
-                if (duration >= 1000) {
-                    log.warn("DANGER:slideWindow update time consuming:" + duration + "ms");
-                } else if (duration >= 100) {
-                    if (suppressCount == 0) {
-                        log.warn("slideWindow update time consuming:" + duration + "ms");
-                        suppressCount = 100;
-                    } else {
-                        suppressCount -= 1;
-                    }
-                } else if (duration >= 10) {
-                    if (suppressCount == 0) {
-                        log.info("slideWindow update time consuming:" + duration + "ms");
-                        suppressCount = 100;
-                    } else {
-                        suppressCount -= 1;
-                    }
-                }
-            } catch (Exception e) {
-                if (suppressCount == 0) {
-                    suppressCount = 100;
-                    log.debug("Exception when clear", e);
-                } else {
-                    suppressCount -= 1;
-                }
-            }
-        }
-    };
+    private static final String REDIS_PREFIX_SLIDE_WINDOW = "job:slideWindow:";
+    private static final String REDIS_PREFIX_MAX_RATE = "job:maxRate:";
+    private static final Set<String> slideWindowKeys = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<String> maxRateKeys = Collections.synchronizedSet(new HashSet<>());
     private Integer defaultMaxRate = 1000;
     private Integer precision = 10;
+    private int suppressCount = 0;
+    private boolean isReady = false;
+    public Timer timer = new Timer();
+    public TimerTask clearTask = new TimerTask() {
+        @Override
+        public void run() {
+            tryToClearSlideWindows();
+        }
+    };
 
-    public void init(StringRedisTemplate pRedisTemplate, Map<String, Integer> configMap, Integer pDefaultMaxRate,
+    private void logWithLevel(Level logLevel, String message) {
+        if (logLevel == Level.ERROR) {
+            log.error(message);
+        } else if (logLevel == Level.WARN) {
+            log.warn(message);
+        } else if (logLevel == Level.INFO) {
+            log.info(message);
+        } else {
+            log.debug(message);
+        }
+    }
+
+    private void logDurationWithSuppress(Level logLevel, long duration) {
+        if (suppressCount == 0) {
+            logWithLevel(logLevel, "slideWindow update time consuming:" + duration + "ms");
+            suppressCount = 100;
+        } else {
+            suppressCount -= 1;
+        }
+    }
+
+    private void tryToClearSlideWindows() {
+        try {
+            long timeStart = System.currentTimeMillis();
+            // 清理Redis中的各个window内容
+            Object[] keys = slideWindowKeys.toArray();
+            for (Object windowKey : keys) {
+                clear((String) windowKey, System.currentTimeMillis());
+            }
+            long duration = System.currentTimeMillis() - timeStart;
+
+            if (duration >= 1000) {
+                log.warn("DANGER:slideWindow update time consuming:" + duration + "ms");
+            } else if (duration >= 100) {
+                logDurationWithSuppress(Level.WARN, duration);
+            } else if (duration >= 10) {
+                logDurationWithSuppress(Level.INFO, duration);
+            }
+        } catch (Exception e) {
+            log.error("Exception when clear slideWindows", e);
+        }
+    }
+
+    public void init(StringRedisTemplate pRedisTemplate,
+                     Map<String, Integer> configMap,
+                     Integer pDefaultMaxRate,
                      Integer pPrecision) {
         redisTemplate = pRedisTemplate;
         if (pDefaultMaxRate != null && pDefaultMaxRate > 0) {
@@ -136,21 +159,27 @@ public class RedisSlideWindowFlowController implements FlowController {
             redisTemplate.opsForValue().set(REDIS_PREFIX_MAX_RATE + key, "" + value);
         });
         timer.schedule(clearTask, (long) (100 * Math.random()), 1000 / precision);
+        isReady = true;
     }
 
     private void clear(String key, Long timeMills) {
-        RedisScript script = RedisScript.of(popScript, Void.class);
+        RedisScript<Void> script = RedisScript.of(popScript, Void.class);
         List<String> keyList = new ArrayList<>();
         keyList.add(key);
         redisTemplate.execute(script, keyList, "" + timeMills);
     }
 
     private Long checkAndPush(String resourceId, Long timeMills) {
-        RedisScript script = RedisScript.of(checkAndPushScript, Long.class);
+        RedisScript<Long> script = RedisScript.of(checkAndPushScript, Long.class);
         List<String> keyList = new ArrayList<>();
         keyList.add(REDIS_PREFIX_SLIDE_WINDOW + resourceId);
         keyList.add(REDIS_PREFIX_MAX_RATE + resourceId);
-        return (Long) (redisTemplate.execute(script, keyList, "" + timeMills));
+        return redisTemplate.execute(script, keyList, "" + timeMills);
+    }
+
+    @Override
+    public boolean isReady() {
+        return isReady;
     }
 
     @Override
@@ -167,7 +196,14 @@ public class RedisSlideWindowFlowController implements FlowController {
                 redisTemplate.opsForValue().set(redisKey, redisValue);
                 count += 1;
             } catch (Exception e) {
-                log.error("Fail to write redis:key={},value={}", redisKey, redisValue, e);
+                String msg = MessageFormatter.arrayFormat(
+                    "Fail to write redis:key={},value={}",
+                    new String[]{
+                        redisKey,
+                        redisValue
+                    }
+                ).getMessage();
+                log.error(msg, e);
             }
         }
         return count;
@@ -181,7 +217,14 @@ public class RedisSlideWindowFlowController implements FlowController {
         try {
             return Long.parseLong(stringValue);
         } catch (Exception e) {
-            log.warn("Fail to parse maxRate, resourceId={},stringValue={}", resourceId, stringValue, e);
+            String msg = MessageFormatter.arrayFormat(
+                "Fail to parse maxRate, resourceId={},stringValue={}",
+                new String[]{
+                    resourceId,
+                    stringValue
+                }
+            ).getMessage();
+            log.error(msg, e);
             return null;
         }
     }
@@ -189,7 +232,9 @@ public class RedisSlideWindowFlowController implements FlowController {
     @Override
     public Map<String, Long> getCurrentConfig() {
         Map<String, Long> map = new HashMap<>();
-        if (maxRateKeys == null || maxRateKeys.isEmpty()) return map;
+        if (maxRateKeys.isEmpty()) {
+            return map;
+        }
         for (String maxRateKey : maxRateKeys) {
             try {
                 String value = redisTemplate.opsForValue().get(maxRateKey);
@@ -197,7 +242,11 @@ public class RedisSlideWindowFlowController implements FlowController {
                     map.put(maxRateKey.replace(REDIS_PREFIX_MAX_RATE, ""), Long.parseLong(value));
                 }
             } catch (Exception e) {
-                log.error("Fail to get redis value:key={}", maxRateKey, e);
+                String msg = MessageFormatter.format(
+                    "Fail to get redis value:key={}",
+                    maxRateKey
+                ).getMessage();
+                log.error(msg, e);
             }
         }
         return map;
@@ -205,22 +254,28 @@ public class RedisSlideWindowFlowController implements FlowController {
 
     @Override
     public Long getCurrentRate(String resourceId) {
-        RedisScript script = RedisScript.of(checkScript, Long.class);
+        RedisScript<Long> script = RedisScript.of(checkScript, Long.class);
         List<String> keyList = new ArrayList<>();
         keyList.add(REDIS_PREFIX_SLIDE_WINDOW + resourceId);
-        return (Long) (redisTemplate.execute(script, keyList));
+        return redisTemplate.execute(script, keyList);
     }
 
     @Override
     public Map<String, Long> getCurrentRateMap() {
         Map<String, Long> map = new HashMap<>();
-        if (slideWindowKeys == null || slideWindowKeys.isEmpty()) return map;
+        if (slideWindowKeys.isEmpty()) {
+            return map;
+        }
         for (String slideWindowKey : slideWindowKeys) {
             String resourceId = slideWindowKey.replace(REDIS_PREFIX_SLIDE_WINDOW, "");
             try {
                 map.put(resourceId, getCurrentRate(resourceId));
             } catch (Exception e) {
-                log.error("Fail to get current rate:resourceId={}", resourceId, e);
+                String msg = MessageFormatter.format(
+                    "Fail to get current rate:resourceId={}",
+                    resourceId
+                ).getMessage();
+                log.error(msg, e);
             }
         }
         return map;

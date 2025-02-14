@@ -24,12 +24,12 @@
 
 package com.tencent.bk.job.manage.model.inner.resp;
 
-import com.tencent.bk.job.manage.model.credential.CommonCredential;
+import com.tencent.bk.job.common.model.dto.CommonCredential;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
-@ApiModel("凭据")
+@ApiModel("凭证")
 @Data
 public class ServiceCredentialDTO {
     /**
@@ -53,8 +53,8 @@ public class ServiceCredentialDTO {
     @ApiModelProperty("类型")
     private String type;
     /**
-     * 凭据
+     * 凭证
      */
-    @ApiModelProperty("凭据")
+    @ApiModelProperty("凭证")
     private CommonCredential credential;
 }

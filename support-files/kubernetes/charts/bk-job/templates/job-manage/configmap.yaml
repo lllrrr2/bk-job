@@ -1,4 +1,4 @@
-{{- if .Values.manageConfig }}
+{{- if and .Values.manageConfig.enabled (eq .Values.deploy.mode "standard") }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,13 +14,28 @@ data:
   application.yaml: |-
     spring:
       cloud:
-        refresh:
-          extra-refreshable: javax.sql.DataSource
+        stream:
+          defaultBinder: jobCommon
+          binders:
+            jobCommon:
+              type: rabbit
+              environment:
+                spring:
+                  rabbitmq:
+                    host: {{ include "job.rabbitmq.host" . }}
+                    port: {{ include "job.rabbitmq.port" . }}
+                    username: {{ include "job.rabbitmq.username" . }}
+                    {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
+                    password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
+                    {{- else -}}
+                    password: ${rabbitmq-password}
+                    {{- end }}
+                    virtual-host: {{ include "job.rabbitmq.vhost" . }}
       datasource:
         job-manage:
-          driver-class-name: com.mysql.cj.jdbc.Driver
+          driver-class-name: {{ include "job.jdbcMysqlDriverClass" . }}
           type: com.zaxxer.hikari.HikariDataSource
-          jdbc-url: jdbc:mysql://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_manage?useUnicode=true&characterEncoding=UTF-8&zeroDateTimeBehavior=convertToNull
+          jdbc-url: {{ include "job.jdbcMysqlScheme" . }}://{{- include "job.mariadb.host" . }}:{{- include "job.mariadb.port" . }}/job_manage{{ include "job.mariadb.connection.properties" . }}
           username: {{ include "job.mariadb.username" . }}
           {{ if .Values.externalMariaDB.existingPasswordSecret }}
           password: {{ .Values.externalMariaDB.existingPasswordKey | default "mariadb-password" | printf "${%s}" }}
@@ -32,16 +47,6 @@ data:
           idle-timeout: 600000
           poolName: "job-manage"
           validationTimeout: 5000
-      rabbitmq:
-        host: {{ include "job.rabbitmq.host" . }}
-        port: {{ include "job.rabbitmq.port" . }}
-        username: {{ include "job.rabbitmq.username" . }}
-        {{ if .Values.externalRabbitMQ.existingPasswordSecret }}
-        password: {{ .Values.externalRabbitMQ.existingPasswordKey | default "rabbitmq-password" | printf "${%s}" }}
-        {{- else -}}
-        password: ${rabbitmq-password}
-        {{- end }}
-        virtual-host: {{ include "job.rabbitmq.vhost" . }}
       redis:
         {{- include "job.redis.config" . | indent 8 }}
         database: 0
@@ -56,27 +61,35 @@ data:
         multipart:
           max-file-size: 5GB
           max-request-size: 5GB
+    feign:
+      client:
+        config:
+          default:
+            connectTimeout: 5000
+            readTimeout: 20000
     bk:
       doc:
-        root:
+        root: {{ .Values.bkDocsCenterUrl }}
       feedback:
-        root:
-      helper:
-        url:
+        root: {{ .Values.bkFeedBackUrl }}
+      sharedResUrl: {{ .Values.bkSharedResUrl }}
+      sharedBaseJsPath: {{ .Values.bkSharedBaseJsPath }}
     job:
       manage:
         sync:
           app:
-            enabled: true
+            enabled: {{ .Values.manageConfig.sync.app.enabled }}
           host:
-            enabled: true
+            enabled: {{ .Values.manageConfig.sync.host.enabled }}
           resource:
             watch:
-              enabled: true
-    notify:
-      default:
-        channels:
-          available: mail
+              enabled: {{ .Values.manageConfig.sync.resource.watch.enabled }}
+          hostEvent:
+            handlerNum: {{ .Values.manageConfig.sync.hostEvent.handlerNum }}
+        notify:
+          default:
+            channels:
+              available: mail
     server:
       port: {{ .Values.manageConfig.containerPort }}
-  {{- end}}
+{{- end }}

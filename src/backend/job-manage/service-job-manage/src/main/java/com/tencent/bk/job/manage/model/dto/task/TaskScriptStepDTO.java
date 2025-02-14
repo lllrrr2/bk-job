@@ -24,11 +24,12 @@
 
 package com.tencent.bk.job.manage.model.dto.task;
 
+import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbAccountV3BasicDTO;
+import com.tencent.bk.job.common.esb.model.job.v3.resp.EsbScriptStepV3DTO;
 import com.tencent.bk.job.common.util.Base64Util;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskScriptSourceEnum;
-import com.tencent.bk.job.manage.model.esb.v3.response.EsbScriptStepV3DTO;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskScriptSourceEnum;
 import com.tencent.bk.job.manage.model.inner.ServiceAccountDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskScriptStepDTO;
 import com.tencent.bk.job.manage.model.web.vo.task.TaskScriptStepVO;
@@ -71,6 +72,8 @@ public class TaskScriptStepDTO {
 
     private String scriptParam;
 
+    private String windowsInterpreter;
+
     private Long timeout;
 
     private Long account;
@@ -99,6 +102,7 @@ public class TaskScriptStepDTO {
         }
         scriptStepVO.setScriptLanguage(scriptStep.getLanguage().getValue());
         scriptStepVO.setScriptParam(scriptStep.getScriptParam());
+        scriptStepVO.setWindowsInterpreter(scriptStep.getWindowsInterpreter());
         scriptStepVO.setTimeout(scriptStep.getTimeout());
         scriptStepVO.setAccount(scriptStep.getAccount());
         scriptStepVO.setExecuteTarget(TaskTargetDTO.toVO(scriptStep.getExecuteTarget()));
@@ -122,10 +126,11 @@ public class TaskScriptStepDTO {
         } else {
             scriptStep.setContent(null);
         }
-        scriptStep.setLanguage(ScriptTypeEnum.valueOf(scriptStepVO.getScriptLanguage()));
+        scriptStep.setLanguage(ScriptTypeEnum.valOf(scriptStepVO.getScriptLanguage()));
         scriptStep.setScriptParam(scriptStepVO.getScriptParam());
+        scriptStep.setWindowsInterpreter(scriptStepVO.getTrimmedWindowsInterpreter());
         if (scriptStepVO.getTimeout() == null) {
-            scriptStep.setTimeout(60L);
+            scriptStep.setTimeout((long) JobConstants.DEFAULT_JOB_TIMEOUT_SECONDS);
         } else {
             scriptStep.setTimeout(scriptStepVO.getTimeout());
         }
@@ -152,6 +157,7 @@ public class TaskScriptStepDTO {
         if (StringUtils.isNotBlank(scriptStepInfo.getScriptParam())) {
             esbScriptStep.setScriptParam(Base64Util.encodeContentToStr(scriptStepInfo.getScriptParam()));
         }
+        esbScriptStep.setWindowsInterpreter(scriptStepInfo.getWindowsInterpreter());
         esbScriptStep.setScriptTimeout(scriptStepInfo.getTimeout());
         EsbAccountV3BasicDTO account = new EsbAccountV3BasicDTO();
         account.setId(scriptStepInfo.getAccount());
@@ -173,6 +179,7 @@ public class TaskScriptStepDTO {
         serviceScriptStep.setType(scriptStepInfo.getLanguage().getValue());
         serviceScriptStep.setContent(scriptStepInfo.getContent());
         serviceScriptStep.setScriptParam(scriptStepInfo.getScriptParam());
+        serviceScriptStep.setWindowsInterpreter(scriptStepInfo.getWindowsInterpreter());
         serviceScriptStep.setScriptTimeout(scriptStepInfo.getTimeout());
 
         serviceScriptStep.setAccount(new ServiceAccountDTO());

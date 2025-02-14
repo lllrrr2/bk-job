@@ -26,11 +26,14 @@ package com.tencent.bk.job.common.util;
 
 import com.tencent.bk.job.common.util.json.JsonUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -40,12 +43,26 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * @Description 字符串处理工具类
- * @Date 2020/3/6
- * @Version 1.0
+ * 字符串处理工具类
  */
 @Slf4j
 public class StringUtil {
+
+    /**
+     * 使用常见的多个字符[;,；，\n\s|\u00A0]+分割字符串
+     *
+     * @param str 目标字符串
+     * @return 分割后的字符串列表
+     */
+    public static List<String> splitByNormalSeparator(String str) {
+        if (str == null) {
+            return Collections.emptyList();
+        }
+        if (StringUtils.isBlank(str)) {
+            return Collections.singletonList(str);
+        }
+        return Arrays.asList(str.split("[;,；，\\n\\s|\\u00A0]+"));
+    }
 
     /**
      * 使用对象中的字段值替换路径中的占位符
@@ -116,29 +133,46 @@ public class StringUtil {
     }
 
     /**
-     * 将list数据拼接为字符串，默认使用英文逗号作为分隔符
+     * 将集合拼接为字符串，默认使用英文逗号作为分隔符
      *
-     * @param list 原始list
-     * @param <T>  数据类型
+     * @param collection 原始集合
+     * @param <T>        数据类型
      * @return 拼接后的字符串
      */
-    public static <T> String listToStr(List<T> list) {
-        return listToStr(list, ",");
+    public static <T> String concatCollection(Collection<T> collection) {
+        return concatCollection(collection, ",");
     }
 
     /**
-     * 将list数据拼接为字符串
+     * 将集合拼接为字符串
      *
-     * @param list      原始list
-     * @param separator 分隔符
-     * @param <T>       数据类型
+     * @param collection 原始集合
+     * @param separator  分隔符
+     * @param <T>        数据类型
      * @return 拼接后的字符串
      */
-    public static <T> String listToStr(List<T> list, String separator) {
+    public static <T> String concatCollection(Collection<T> collection, String separator) {
         String str = null;
-        if (list != null) {
-            str = list.stream().map(Object::toString).collect(Collectors.joining(separator));
+        if (collection != null) {
+            str = collection.stream().map(Object::toString).collect(Collectors.joining(separator));
         }
+        return str;
+    }
+
+    /**
+     * 将集合拼接为字符串
+     *
+     * @param array     原始数组
+     * @param separator 分隔符
+     * @param T         原始数据
+     * @return 拼接后的字符串
+     */
+    public static <T> String concatArray(T[] array, String separator) {
+        String str;
+        if (array == null || array.length == 0) {
+            return "";
+        }
+        str = Arrays.stream(array).map(Object::toString).collect(Collectors.joining(separator));
         return str;
     }
 
@@ -151,8 +185,9 @@ public class StringUtil {
      * @param <T>       目标类型
      * @return list
      */
+    @SuppressWarnings("all")
     public static <T> List<T> strToList(String str, Class<T> clazz, String separator) {
-        if (str == null || str.isEmpty() || StringUtils.isBlank(str)) {
+        if (StringUtils.isBlank(str)) {
             return Collections.emptyList();
         }
         return Arrays.stream(str.trim().split(separator)).filter(StringUtils::isNotBlank)
@@ -215,6 +250,7 @@ public class StringUtil {
         return replaceByRegex(rawStr, pattern, variablesMap, 3);
     }
 
+
     /**
      * 使用变量Map中指定的值对原始字符串的指定模式进行替换
      *
@@ -225,21 +261,28 @@ public class StringUtil {
      * @return 替换后的字符串
      */
     public static String replaceByRegex(String rawStr, String pattern, Map<String, String> variablesMap, int depth) {
-        log.debug("rawStr={},pattern={},variablesMap={},depth={}", rawStr, pattern, variablesMap, depth);
+        if (log.isDebugEnabled()) {
+            log.debug("rawStr={},pattern={},variablesMap={},depth={}", rawStr, pattern, variablesMap, depth);
+        }
         String resultStr = rawStr;
         List<Pair<String, String>> keys = findTwoRegexPatterns(rawStr, pattern);
         Set<String> keyset = variablesMap.keySet();
         for (Pair<String, String> pair : keys) {
             String placeHolder = pair.getLeft().trim();
             String key = pair.getRight().trim();
-            log.debug("resultStr={},placeHolder={},key={}", resultStr, placeHolder, key);
+            if (log.isDebugEnabled()) {
+                log.debug("resultStr={},placeHolder={},key={}", resultStr, placeHolder, key);
+            }
             if (keyset.contains(key)) {
                 String value = variablesMap.get(key);
                 if (value != null) {
                     resultStr = resultStr.replace(placeHolder, value);
                 }
             } else {
-                log.warn("There is no value to replace {} in {},variablesMap:{}", placeHolder, rawStr, variablesMap);
+                if (log.isDebugEnabled()) {
+                    log.debug("There is no value to replace {} in {},variablesMap:{}", placeHolder, rawStr,
+                        variablesMap);
+                }
             }
         }
         // 变量值中含有变量，递归替换
@@ -247,6 +290,93 @@ public class StringUtil {
             return resultStr;
         } else {
             return replaceByRegex(resultStr, pattern, variablesMap, depth - 1);
+        }
+    }
+
+    /**
+     * 判断两个字符串对象是否不同
+     *
+     * @param str1 字符串1
+     * @param str2 字符串2
+     * @return 是否不同
+     */
+    public static boolean isDifferent(String str1, String str2) {
+        if (str1 == null && str2 == null) return false;
+        if (str1 != null) {
+            return !str1.equals(str2);
+        }
+        return true;
+    }
+
+    /**
+     * 对字符串特殊字符进行转义
+     *
+     * @param str         要转义的字符串
+     * @param chars       需要被转义的特殊字符
+     * @param escapeTexts 特殊字符的转义之后的值；与参数chars一一对应
+     * @return 转义之后的字符串
+     */
+    public static String escape(String str, char[] chars, String[] escapeTexts) {
+        StringWriter writer = new StringWriter(str.length() * 2);
+        for (int i = 0; i < str.length(); i++) {
+            char ch = str.charAt(i);
+            boolean isMatch = false;
+            for (int j = 0; j < chars.length; j++) {
+                if (ch == chars[j]) {
+                    writer.write(escapeTexts[j]);
+                    isMatch = true;
+                    break;
+                }
+            }
+            if (!isMatch) {
+                writer.write(ch);
+            }
+        }
+        return writer.toString();
+    }
+
+    /**
+     * 判断目标字符串是否与任意一个搜索内容匹配
+     *
+     * @param targetStr      目标字符串
+     * @param searchContents 搜索内容集合
+     * @return 是否匹配
+     */
+    public static boolean matchAnySearchContent(String targetStr,
+                                                Collection<String> searchContents) {
+        if (CollectionUtils.isEmpty(searchContents)) {
+            return true;
+        }
+        if (targetStr == null) {
+            return false;
+        }
+        for (String content : searchContents) {
+            if (StringUtils.isNotBlank(content)
+                && targetStr.toLowerCase().contains(content.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 返回限定长度的字符
+     *
+     * @param str       字符串
+     * @param maxLength 最大长度(字符)
+     * @return 限定长度的字符
+     */
+    public static String substring(String str, int maxLength) {
+        if (str == null) {
+            return null;
+        }
+        if (maxLength <= 0) {
+            return "";
+        }
+        if (str.length() <= maxLength) {
+            return str;
+        } else {
+            return str.substring(0, maxLength);
         }
     }
 }

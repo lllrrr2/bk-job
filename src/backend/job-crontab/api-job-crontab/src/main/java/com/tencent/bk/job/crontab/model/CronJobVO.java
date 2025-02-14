@@ -47,10 +47,16 @@ public class CronJobVO {
     private Long id;
 
     /**
-     * 业务 ID
+     * 资源范围类型
      */
-    @ApiModelProperty("业务 ID")
-    private Long appId;
+    @ApiModelProperty(value = "资源范围类型", allowableValues = "biz-业务,biz_set-业务集")
+    private String scopeType;
+
+    /**
+     * 资源范围ID
+     */
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
 
     /**
      * 定时任务名称

@@ -38,11 +38,24 @@ import java.util.List;
 @Data
 public class DynamicGroupInfoVO {
 
-    @ApiModelProperty("业务 ID")
-    private Long appId;
+    /**
+     * 资源范围类型
+     */
+    @ApiModelProperty(value = "资源范围类型", allowableValues = "biz-业务,biz_set-业务集")
+    private String scopeType;
 
+    /**
+     * 资源范围ID
+     */
+    @ApiModelProperty("资源范围ID")
+    private String scopeId;
+
+    @Deprecated
     @ApiModelProperty("业务名")
     private String appName;
+
+    @ApiModelProperty("资源范围名称")
+    private String scopeName;
 
     @ApiModelProperty("动态分组 ID")
     private String id;

@@ -27,18 +27,18 @@ package com.tencent.bk.job.execute.api.inner;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.TaskVariableTypeEnum;
 import com.tencent.bk.job.common.exception.InvalidParamException;
-import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.iam.exception.PermissionDeniedException;
 import com.tencent.bk.job.common.iam.model.AuthResult;
 import com.tencent.bk.job.common.iam.service.WebAuthService;
 import com.tencent.bk.job.common.model.InternalResponse;
-import com.tencent.bk.job.common.model.dto.IpDTO;
 import com.tencent.bk.job.common.model.iam.AuthResultDTO;
+import com.tencent.bk.job.common.web.metrics.CustomTimed;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
 import com.tencent.bk.job.execute.engine.model.TaskVariableDTO;
+import com.tencent.bk.job.execute.metrics.ExecuteMetricsConstants;
 import com.tencent.bk.job.execute.model.DynamicServerGroupDTO;
 import com.tencent.bk.job.execute.model.DynamicServerTopoNodeDTO;
-import com.tencent.bk.job.execute.model.ServersDTO;
+import com.tencent.bk.job.execute.model.ExecuteTargetDTO;
 import com.tencent.bk.job.execute.model.TaskExecuteParam;
 import com.tencent.bk.job.execute.model.TaskInstanceDTO;
 import com.tencent.bk.job.execute.model.inner.ServiceTargetServers;
@@ -54,63 +54,47 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.tencent.bk.job.common.constant.TaskVariableTypeEnum.CIPHER;
+
 @RestController
 @Slf4j
 public class ServiceExecuteTaskResourceImpl implements ServiceExecuteTaskResource {
 
     private final TaskExecuteService taskExecuteService;
 
-    private final MessageI18nService i18nService;
-
     private final WebAuthService webAuthService;
 
     @Autowired
     public ServiceExecuteTaskResourceImpl(TaskExecuteService taskExecuteService,
-                                          MessageI18nService i18nService,
                                           WebAuthService webAuthService) {
         this.taskExecuteService = taskExecuteService;
-        this.i18nService = i18nService;
         this.webAuthService = webAuthService;
     }
 
     @Override
+    @CustomTimed(metricName = ExecuteMetricsConstants.NAME_JOB_TASK_START,
+        extraTags = {
+            ExecuteMetricsConstants.TAG_KEY_START_MODE, ExecuteMetricsConstants.TAG_VALUE_START_MODE_CRON,
+            ExecuteMetricsConstants.TAG_KEY_TASK_TYPE, ExecuteMetricsConstants.TAG_VALUE_TASK_TYPE_EXECUTE_PLAN
+        })
     public InternalResponse<ServiceTaskExecuteResult> executeTask(ServiceTaskExecuteRequest request) {
         log.info("Execute task, request={}", request);
         if (!checkExecuteTaskRequest(request)) {
             throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
         TaskExecuteParam executeParam = buildExecuteParam(request);
-        TaskInstanceDTO taskInstanceDTO = taskExecuteService.createTaskInstanceForTask(executeParam);
-        taskExecuteService.startTask(taskInstanceDTO.getId());
+        TaskInstanceDTO taskInstanceDTO = taskExecuteService.executeJobPlan(executeParam);
 
         ServiceTaskExecuteResult result = new ServiceTaskExecuteResult();
         result.setTaskInstanceId(taskInstanceDTO.getId());
         result.setName(taskInstanceDTO.getName());
+        result.setCreateTime(taskInstanceDTO.getCreateTime());
         return InternalResponse.buildSuccessResp(result);
     }
 
     private TaskExecuteParam buildExecuteParam(ServiceTaskExecuteRequest request) {
         List<TaskVariableDTO> executeVariableValues = new ArrayList<>();
-        if (request.getTaskVariables() != null) {
-            for (ServiceTaskVariable serviceTaskVariable : request.getTaskVariables()) {
-                TaskVariableDTO taskVariableDTO = new TaskVariableDTO();
-                taskVariableDTO.setId(serviceTaskVariable.getId());
-                if (serviceTaskVariable.getType() == TaskVariableTypeEnum.STRING.getType()
-                    || serviceTaskVariable.getType() == TaskVariableTypeEnum.CIPHER.getType()
-                    || serviceTaskVariable.getType() == TaskVariableTypeEnum.INDEX_ARRAY.getType()
-                    || serviceTaskVariable.getType() == TaskVariableTypeEnum.ASSOCIATIVE_ARRAY.getType()) {
-                    taskVariableDTO.setValue(serviceTaskVariable.getStringValue());
-                } else if (serviceTaskVariable.getType() == TaskVariableTypeEnum.HOST_LIST.getType()) {
-                    ServiceTargetServers serviceServers = serviceTaskVariable.getServerValue();
-                    ServersDTO serversDTO = convertToServersDTO(serviceServers);
-                    taskVariableDTO.setTargetServers(serversDTO);
-                } else if (serviceTaskVariable.getType() == TaskVariableTypeEnum.NAMESPACE.getType()) {
-                    taskVariableDTO.setValue(serviceTaskVariable.getNamespaceValue());
-                }
-                executeVariableValues.add(taskVariableDTO);
-            }
-        }
-        return TaskExecuteParam
+        TaskExecuteParam taskExecuteParam = TaskExecuteParam
             .builder()
             .appId(request.getAppId())
             .planId(request.getPlanId())
@@ -121,31 +105,56 @@ public class ServiceExecuteTaskResourceImpl implements ServiceExecuteTaskResourc
             .taskName(request.getTaskName())
             .skipAuth(request.getCronTaskId() != null && request.isSkipAuth())
             .build();
+        if (request.getTaskVariables() == null) {
+            return taskExecuteParam;
+        }
+        // 解析构造全局变量
+        for (ServiceTaskVariable serviceTaskVariable : request.getTaskVariables()) {
+            TaskVariableDTO taskVariableDTO = new TaskVariableDTO();
+            taskVariableDTO.setId(serviceTaskVariable.getId());
+            if (serviceTaskVariable.getType() == TaskVariableTypeEnum.STRING.getType()
+                || serviceTaskVariable.getType() == TaskVariableTypeEnum.INDEX_ARRAY.getType()
+                || serviceTaskVariable.getType() == TaskVariableTypeEnum.ASSOCIATIVE_ARRAY.getType()) {
+                taskVariableDTO.setValue(serviceTaskVariable.getStringValue());
+            } else if (serviceTaskVariable.getType() == CIPHER.getType()) {
+                // 如果密码类型的变量传入为空或者“******”，那么密码使用系统中保存的
+                if (serviceTaskVariable.getStringValue() == null || "******".equals(serviceTaskVariable.getStringValue())) {
+                    continue;
+                } else {
+                    taskVariableDTO.setValue(serviceTaskVariable.getStringValue());
+                }
+            } else if (serviceTaskVariable.getType() == TaskVariableTypeEnum.HOST_LIST.getType()) {
+                ServiceTargetServers serviceServers = serviceTaskVariable.getServerValue();
+                ExecuteTargetDTO executeTargetDTO = convertToServersDTO(serviceServers);
+                taskVariableDTO.setExecuteTarget(executeTargetDTO);
+            } else if (serviceTaskVariable.getType() == TaskVariableTypeEnum.NAMESPACE.getType()) {
+                taskVariableDTO.setValue(serviceTaskVariable.getNamespaceValue());
+            }
+            executeVariableValues.add(taskVariableDTO);
+        }
+        taskExecuteParam.setExecuteVariableValues(executeVariableValues);
+        return taskExecuteParam;
     }
 
-    private ServersDTO convertToServersDTO(ServiceTargetServers servers) {
+    private ExecuteTargetDTO convertToServersDTO(ServiceTargetServers servers) {
         if (servers == null) {
             return null;
         }
-        ServersDTO serversDTO = new ServersDTO();
-        if (servers.getIps() != null) {
-            List<IpDTO> staticIpList = new ArrayList<>();
-            servers.getIps().forEach(ip -> staticIpList.add(new IpDTO(ip.getCloudAreaId(), ip.getIp())));
-            serversDTO.setStaticIpList(staticIpList);
-        }
+        ExecuteTargetDTO executeTargetDTO = new ExecuteTargetDTO();
+        executeTargetDTO.setStaticIpList(servers.getIps());
         if (servers.getDynamicGroupIds() != null) {
             List<DynamicServerGroupDTO> dynamicServerGroups = new ArrayList<>();
             servers.getDynamicGroupIds()
                 .forEach(groupId -> dynamicServerGroups.add(new DynamicServerGroupDTO(groupId)));
-            serversDTO.setDynamicServerGroups(dynamicServerGroups);
+            executeTargetDTO.setDynamicServerGroups(dynamicServerGroups);
         }
         if (servers.getTopoNodes() != null) {
             List<DynamicServerTopoNodeDTO> topoNodes = new ArrayList<>();
             servers.getTopoNodes().forEach(topoNode -> topoNodes.add(new DynamicServerTopoNodeDTO(topoNode.getId(),
                 topoNode.getNodeType())));
-            serversDTO.setTopoNodes(topoNodes);
+            executeTargetDTO.setTopoNodes(topoNodes);
         }
-        return serversDTO;
+        return executeTargetDTO;
     }
 
     private boolean checkExecuteTaskRequest(ServiceTaskExecuteRequest request) {

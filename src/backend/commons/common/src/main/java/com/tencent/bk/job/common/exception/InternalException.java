@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.common.exception;
 
+import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.model.error.ErrorType;
 import lombok.Getter;
 import lombok.ToString;
@@ -34,6 +35,10 @@ import lombok.ToString;
 @Getter
 @ToString
 public class InternalException extends ServiceException {
+
+    public InternalException(String message) {
+        super(message, ErrorType.INTERNAL, ErrorCode.INTERNAL_ERROR);
+    }
 
     public InternalException(Integer errorCode) {
         super(ErrorType.INTERNAL, errorCode);
@@ -61,6 +66,10 @@ public class InternalException extends ServiceException {
 
     public InternalException(String message, Throwable cause, Integer errorCode) {
         super(message, cause, ErrorType.INTERNAL, errorCode);
+    }
+
+    public InternalException(String message, Throwable cause) {
+        super(message, cause, ErrorType.INTERNAL, ErrorCode.INTERNAL_ERROR);
     }
 
     public InternalException(String message, Throwable cause, Integer errorCode,

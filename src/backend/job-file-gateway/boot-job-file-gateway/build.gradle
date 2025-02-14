@@ -28,14 +28,13 @@ dependencies {
     api project(":commons:common-redis")
     api project(":job-file-gateway:service-job-file-gateway")
     implementation 'org.springframework.boot:spring-boot-starter'
-    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.cloud:spring-cloud-starter-bootstrap'
     implementation 'org.springframework:spring-webmvc'
     implementation(group: 'org.springframework.boot', name: 'spring-boot-starter-data-redis')
-    runtimeOnly('mysql:mysql-connector-java')
+    runtimeOnly('com.mysql:mysql-connector-j')
 }
 springBoot {
-    mainClassName = "com.tencent.bk.job.file_gateway.JobFileGatewayBootApplication"
+    getMainClass().set("com.tencent.bk.job.file_gateway.JobFileGatewayBootApplication")
     buildInfo()
 }
 task renameArtifacts(type: Copy) {
@@ -44,8 +43,7 @@ task renameArtifacts(type: Copy) {
     destinationDir file('build/libs/')
     rename "boot-job-file-gateway-${version}.jar", "job-file-gateway-${version}.jar"
 }
-renameArtifacts.dependsOn jar
-assemble.dependsOn renameArtifacts
+renameArtifacts.dependsOn assemble
 
 task copyToLatestJar(type: Copy) {
     group = "local"
@@ -57,3 +55,4 @@ task copyToLatestJar(type: Copy) {
 copyToLatestJar.dependsOn assemble
 
 apply from: "$rootDir/task_job_package.gradle"
+copyToRelease.dependsOn renameArtifacts

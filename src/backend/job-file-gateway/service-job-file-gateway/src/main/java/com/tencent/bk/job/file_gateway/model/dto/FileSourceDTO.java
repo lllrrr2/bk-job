@@ -25,20 +25,27 @@
 package com.tencent.bk.job.file_gateway.model.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
+import com.tencent.bk.job.common.util.ApplicationContextRegister;
 import com.tencent.bk.job.common.util.json.LongTimestampSerializer;
 import com.tencent.bk.job.file_gateway.model.resp.common.SimpleFileSourceVO;
+import com.tencent.bk.job.file_gateway.model.resp.esb.v3.EsbFileSourceV3DTO;
 import com.tencent.bk.job.file_gateway.model.resp.web.FileSourceVO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 文件源
  */
+@Slf4j
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
@@ -85,7 +92,7 @@ public class FileSourceDTO {
      */
     private Boolean shareToAllApp;
     /**
-     * 凭据Id
+     * 凭证Id
      */
     private String credentialId;
     /**
@@ -133,10 +140,40 @@ public class FileSourceDTO {
         }
         SimpleFileSourceVO fileSourceVO = new SimpleFileSourceVO();
         fileSourceVO.setId(fileSourceDTO.getId());
-        fileSourceVO.setAppId(fileSourceDTO.getAppId());
+        AppScopeMappingService appScopeMappingService =
+            ApplicationContextRegister.getBean(AppScopeMappingService.class);
+        ResourceScope resourceScope = appScopeMappingService.getScopeByAppId(fileSourceDTO.getAppId());
+        fileSourceVO.setScopeType(resourceScope.getType().getValue());
+        fileSourceVO.setScopeId(resourceScope.getId());
         fileSourceVO.setCode(fileSourceDTO.getCode());
         fileSourceVO.setAlias(fileSourceDTO.getAlias());
         return fileSourceVO;
+    }
+
+    public static EsbFileSourceV3DTO toEsbFileSourceV3DTO(FileSourceDTO fileSourceDTO) {
+        if (fileSourceDTO == null) {
+            return null;
+        }
+        EsbFileSourceV3DTO fileSource = new EsbFileSourceV3DTO();
+        fileSource.setId(fileSourceDTO.getId());
+        AppScopeMappingService appScopeMappingService =
+            ApplicationContextRegister.getBean(AppScopeMappingService.class);
+        ResourceScope resourceScope = appScopeMappingService.getScopeByAppId(fileSourceDTO.getAppId());
+        fileSource.setScopeType(resourceScope.getType().getValue());
+        fileSource.setScopeId(resourceScope.getId());
+        fileSource.setCode(fileSourceDTO.getCode());
+        fileSource.setAlias(fileSourceDTO.getAlias());
+        fileSource.setCredentialId(fileSourceDTO.getCredentialId());
+        fileSource.setEnable(fileSourceDTO.getEnable());
+        fileSource.setFileSourceTypeCode(fileSourceDTO.getFileSourceType() != null ?
+            fileSourceDTO.getFileSourceType().getCode() : null);
+        fileSource.setPublicFlag(fileSourceDTO.getPublicFlag());
+        fileSource.setStatus(fileSourceDTO.getStatus());
+        fileSource.setCreateTime(fileSourceDTO.getCreateTime());
+        fileSource.setCreator(fileSourceDTO.getCreator());
+        fileSource.setLastModifyTime(fileSourceDTO.getLastModifyTime());
+        fileSource.setLastModifyUser(fileSourceDTO.getLastModifyUser());
+        return fileSource;
     }
 
     public static FileSourceVO toVO(FileSourceDTO fileSourceDTO) {
@@ -145,7 +182,13 @@ public class FileSourceDTO {
         }
         FileSourceVO fileSourceVO = new FileSourceVO();
         fileSourceVO.setId(fileSourceDTO.getId());
-        fileSourceVO.setAppId(fileSourceDTO.getAppId());
+
+        AppScopeMappingService appScopeMappingService =
+            ApplicationContextRegister.getBean(AppScopeMappingService.class);
+        ResourceScope resourceScope = appScopeMappingService.getScopeByAppId(fileSourceDTO.getAppId());
+        fileSourceVO.setScopeType(resourceScope.getType().getValue());
+        fileSourceVO.setScopeId(resourceScope.getId());
+
         fileSourceVO.setCode(fileSourceDTO.getCode());
         fileSourceVO.setAlias(fileSourceDTO.getAlias());
         Integer status = fileSourceDTO.getStatus();
@@ -158,7 +201,18 @@ public class FileSourceDTO {
         fileSourceVO.setStorageType(fileSourceDTO.getFileSourceType().getStorageType());
         fileSourceVO.setFileSourceInfoMap(fileSourceDTO.getFileSourceInfoMap());
         fileSourceVO.setPublicFlag(fileSourceDTO.getPublicFlag());
-        fileSourceVO.setSharedAppIdList(fileSourceDTO.getSharedAppIdList());
+        List<Long> sharedAppIdList = fileSourceDTO.getSharedAppIdList();
+        List<ResourceScope> sharedScopeList = new ArrayList<>();
+        Map<Long, ResourceScope> map = appScopeMappingService.getScopeByAppIds(sharedAppIdList);
+        for (Long appId : sharedAppIdList) {
+            ResourceScope scope = map.get(appId);
+            if (scope == null) {
+                log.warn("cannot find scope by appId:{}, ignore", appId);
+            } else {
+                sharedScopeList.add(scope);
+            }
+        }
+        fileSourceVO.setSharedScopeList(sharedScopeList);
         fileSourceVO.setShareToAllApp(fileSourceDTO.getShareToAllApp());
         fileSourceVO.setCredentialId(fileSourceDTO.getCredentialId());
         fileSourceVO.setFilePrefix(fileSourceDTO.getFilePrefix());
@@ -171,5 +225,9 @@ public class FileSourceDTO {
         fileSourceVO.setLastModifyUser(fileSourceDTO.getLastModifyUser());
         fileSourceVO.setLastModifyTime(fileSourceDTO.getLastModifyTime());
         return fileSourceVO;
+    }
+
+    public String getBasicDesc() {
+        return "(id=" + id + ", appId=" + appId + ", code=" + code + ", alias=" + alias + ", enable=" + enable + ")";
     }
 }

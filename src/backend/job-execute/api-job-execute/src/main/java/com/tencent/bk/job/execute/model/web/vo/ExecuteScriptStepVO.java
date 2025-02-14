@@ -25,6 +25,7 @@
 package com.tencent.bk.job.execute.model.web.vo;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.model.vo.TaskTargetVO;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -51,6 +52,9 @@ public class ExecuteScriptStepVO {
     @ApiModelProperty("脚本参数")
     private String scriptParam;
 
+    @ApiModelProperty("自定义Windows解释器路径")
+    private String windowsInterpreter;
+
     @ApiModelProperty("脚本超时时间")
     private Integer timeout;
 
@@ -62,7 +66,7 @@ public class ExecuteScriptStepVO {
     private String accountName;
 
     @ApiModelProperty("执行目标")
-    private ExecuteTargetVO executeTarget;
+    private TaskTargetVO executeTarget;
 
     @ApiModelProperty("敏感参数")
     private Integer secureParam;

@@ -34,26 +34,16 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class GseLogBatchPullResult<T> {
     /**
-     * 是否成功拉取到日志
-     */
-    private boolean success;
-    /**
-     * 错误信息
-     */
-    private String errorMsg;
-    /**
      * 是否最后一批
      */
     private boolean lastBatch;
     /**
      * GSE 任务执行日志
      */
-    private GseLog<T> gseLog;
+    private GseTaskResult<T> gseTaskResult;
 
-    public GseLogBatchPullResult(boolean success, boolean isLastBatch, GseLog<T> gseLog, String errorMsg) {
-        this.success = success;
+    public GseLogBatchPullResult(boolean isLastBatch, GseTaskResult<T> gseTaskResult) {
         this.lastBatch = isLastBatch;
-        this.gseLog = gseLog;
-        this.errorMsg = errorMsg;
+        this.gseTaskResult = gseTaskResult;
     }
 }

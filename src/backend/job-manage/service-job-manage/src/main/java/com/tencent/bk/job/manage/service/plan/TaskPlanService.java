@@ -27,13 +27,15 @@ package com.tencent.bk.job.manage.service.plan;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
 import com.tencent.bk.job.manage.model.dto.TaskPlanQueryDTO;
+import com.tencent.bk.job.manage.model.dto.task.TaskPlanBasicInfoDTO;
 import com.tencent.bk.job.manage.model.dto.task.TaskPlanInfoDTO;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
 /**
- * @since 16/10/2019 19:38
+ * 作业执行方案 Service
  */
 public interface TaskPlanService {
     /**
@@ -43,6 +45,7 @@ public interface TaskPlanService {
      * @return 执行方案ID列表
      */
     List<Long> listTaskPlanIds(Long templateId);
+
     /**
      * 查询执行方案列表
      *
@@ -83,6 +86,14 @@ public interface TaskPlanService {
     TaskPlanInfoDTO getTaskPlanById(Long planId);
 
     /**
+     * 根据 IDs 批量查询执行方案信息
+     *
+     * @param planIds 执行方案 IDs
+     * @return 执行方案信息列表
+     */
+    List<TaskPlanBasicInfoDTO> listTaskPlanByIds(Collection<Long> planIds);
+
+    /**
      * 根据 ID 查询执行方案信息
      *
      * @param appId  业务 ID
@@ -92,22 +103,71 @@ public interface TaskPlanService {
     TaskPlanInfoDTO getTaskPlanById(Long appId, Long planId);
 
     /**
-     * 保存执行方案信息
+     * 查询执行方案信息
      *
-     * @param taskPlanInfo 待保存的执行方案信息
-     * @return 执行方案 ID
+     * @param username   用户账号
+     * @param appId      业务 ID
+     * @param templateId 作业模版 ID
+     * @param planId     执行方案 ID
+     * @return 执行方案信息
      */
-    Long saveTaskPlan(TaskPlanInfoDTO taskPlanInfo);
+    TaskPlanInfoDTO getTaskPlan(String username, Long appId, Long templateId, Long planId);
+
+    /**
+     * 查询执行方案信息
+     *
+     * @param username 用户账号
+     * @param appId    业务 ID
+     * @param planId   执行方案 ID
+     * @return 执行方案信息
+     */
+    TaskPlanInfoDTO getTaskPlan(String username, Long appId, Long planId);
+
+    /**
+     * 新建执行方案
+     *
+     * @param username     用户账号
+     * @param taskPlanInfo 执行方案
+     * @return 新建的执行方案
+     */
+    TaskPlanInfoDTO createTaskPlan(String username, TaskPlanInfoDTO taskPlanInfo);
+
+    /**
+     * 新建执行方案
+     *
+     * @param taskPlanInfo 执行方案
+     * @return 新建的执行方案
+     */
+    TaskPlanInfoDTO createTaskPlan(TaskPlanInfoDTO taskPlanInfo);
+
+    /**
+     * 更新执行方案
+     *
+     * @param username     用户账号
+     * @param taskPlanInfo 执行方案
+     * @return 更新之后的执行方案
+     */
+    TaskPlanInfoDTO updateTaskPlan(String username, TaskPlanInfoDTO taskPlanInfo);
+
+    /**
+     * 更新内置的用于调试的执行方案
+     *
+     * @param username     用户账号
+     * @param taskPlanInfo 执行方案
+     * @return 更新之后的执行方案
+     */
+    TaskPlanInfoDTO updateDebugTaskPlan(String username, TaskPlanInfoDTO taskPlanInfo);
 
     /**
      * 删除执行方案
      *
+     * @param username   用户账号
      * @param appId      业务 ID
      * @param templateId 模版 ID
      * @param planId     执行方案 ID
-     * @return 是否删除成功
+     * @return 删除掉的执行方案
      */
-    Boolean deleteTaskPlan(Long appId, Long templateId, Long planId);
+    TaskPlanInfoDTO deleteTaskPlan(String username, Long appId, Long templateId, Long planId);
 
     /**
      * 获取调试执行方案（不存在则创建）
@@ -120,7 +180,16 @@ public interface TaskPlanService {
     TaskPlanInfoDTO getDebugTaskPlan(String username, Long appId, Long templateId);
 
     /**
-     * 根据执行方案 ID 列表批量获取执行方案基本信息
+     * 根据执行方案 ID 列表批量获取执行方案基本信息（含变量与模板信息）
+     *
+     * @param appId      业务 ID
+     * @param planIdList 执行方案 ID 列表
+     * @return 执行方案基本信息列表
+     */
+    List<TaskPlanInfoDTO> listPlanBasicInfoWithVariablesByIds(Long appId, List<Long> planIdList);
+
+    /**
+     * 根据执行方案 ID 列表批量获取执行方案基本信息（不含变量与模板信息）
      *
      * @param appId      业务 ID
      * @param planIdList 执行方案 ID 列表

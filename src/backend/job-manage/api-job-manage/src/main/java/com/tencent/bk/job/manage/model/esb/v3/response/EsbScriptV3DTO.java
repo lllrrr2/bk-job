@@ -25,31 +25,47 @@
 package com.tencent.bk.job.manage.model.esb.v3.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeDTO;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
-@Data
-public class EsbScriptV3DTO {
+@Getter
+@Setter
+@ToString
+public class EsbScriptV3DTO extends EsbAppScopeDTO {
+
+    @JsonPropertyDescription("Script id")
     private String id;
-    @JsonProperty("bk_biz_id")
-    private Long appId;
 
+    @JsonPropertyDescription("Script name")
     private String name;
 
     @JsonProperty("script_language")
+    @JsonPropertyDescription("Script language")
     private int type;
 
+    @JsonPropertyDescription("Creator")
     private String creator;
 
+    @JsonPropertyDescription("Create time")
     @JsonProperty("create_time")
     private Long createTime;
 
     @JsonProperty("last_modify_user")
+    @JsonPropertyDescription("Last modify user")
     private String lastModifyUser;
 
     @JsonProperty("last_modify_time")
+    @JsonPropertyDescription("Last modify time")
     private Long lastModifyTime;
 
     @JsonProperty("online_script_version_id")
+    @JsonPropertyDescription("Online script version id")
     private Long onlineScriptVersionId;
 
+    @JsonProperty("description")
+    @JsonPropertyDescription("Script description")
+    private String description;
 }

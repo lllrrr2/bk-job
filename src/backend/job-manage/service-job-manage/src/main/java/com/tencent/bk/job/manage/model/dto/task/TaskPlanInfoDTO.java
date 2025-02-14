@@ -25,22 +25,29 @@
 package com.tencent.bk.job.manage.model.dto.task;
 
 import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.esb.model.job.v3.EsbGlobalVarV3DTO;
+import com.tencent.bk.job.common.esb.util.EsbDTOAppScopeMappingHelper;
 import com.tencent.bk.job.common.exception.NotFoundException;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
+import com.tencent.bk.job.common.util.ApplicationContextRegister;
 import com.tencent.bk.job.common.util.date.DateUtils;
 import com.tencent.bk.job.manage.model.esb.v3.response.EsbPlanInfoV3DTO;
 import com.tencent.bk.job.manage.model.web.request.TaskPlanCreateUpdateReq;
+import com.tencent.bk.job.manage.model.web.vo.task.TaskPlanBasicInfoVO;
 import com.tencent.bk.job.manage.model.web.vo.task.TaskPlanVO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -153,10 +160,26 @@ public class TaskPlanInfoDTO {
      */
     private Long cronJobCount;
 
+    public static TaskPlanBasicInfoVO toBasicInfoVO(TaskPlanInfoDTO planInfo) {
+        TaskPlanBasicInfoVO taskPlanBasicInfoVO=new TaskPlanBasicInfoVO();
+        taskPlanBasicInfoVO.setId(planInfo.getId());
+        taskPlanBasicInfoVO.setName(planInfo.getName());
+        taskPlanBasicInfoVO.setTemplateId(planInfo.getTemplateId());
+        taskPlanBasicInfoVO.setCreator(planInfo.getCreator());
+        taskPlanBasicInfoVO.setCreateTime(planInfo.getCreateTime());
+        taskPlanBasicInfoVO.setLastModifyUser(planInfo.getLastModifyUser());
+        taskPlanBasicInfoVO.setLastModifyTime(planInfo.getLastModifyTime());
+        return taskPlanBasicInfoVO;
+    }
+
     public static TaskPlanVO toVO(TaskPlanInfoDTO planInfo) {
         TaskPlanVO planVO = new TaskPlanVO();
         planVO.setId(planInfo.getId());
-        planVO.setAppId(planInfo.getAppId());
+        AppScopeMappingService appScopeMappingService =
+            ApplicationContextRegister.getBean(AppScopeMappingService.class);
+        ResourceScope resourceScope = appScopeMappingService.getScopeByAppId(planInfo.getAppId());
+        planVO.setScopeType(resourceScope.getType().getValue());
+        planVO.setScopeId(resourceScope.getId());
         planVO.setTemplateId(planInfo.getTemplateId());
         planVO.setName(planInfo.getName());
         planVO.setCreator(planInfo.getCreator());
@@ -245,7 +268,7 @@ public class TaskPlanInfoDTO {
 
         Map<Long, String> variableDefaultValueMap = new ConcurrentHashMap<>();
         if (CollectionUtils.isNotEmpty(planInfo.getVariableList())) {
-            planInfo.getVariableList().parallelStream().forEach(taskVariableDTO -> {
+            planInfo.getVariableList().forEach(taskVariableDTO -> {
                 if (taskVariableDTO.getDefaultValue() == null) {
                     // No default value in request, skip
                     return;
@@ -292,7 +315,7 @@ public class TaskPlanInfoDTO {
 
         if (CollectionUtils.isNotEmpty(planInfo.getVariableList())) {
             taskPlanInfoDTO.setVariableList(
-                planInfo.getVariableList().parallelStream().map(TaskVariableDTO::fromVO).collect(Collectors.toList()));
+                planInfo.getVariableList().stream().map(TaskVariableDTO::fromVO).collect(Collectors.toList()));
         }
         taskPlanInfoDTO.setDebug(false);
         taskPlanInfoDTO.setVersion(planInfo.getVersion());
@@ -305,7 +328,7 @@ public class TaskPlanInfoDTO {
             return null;
         }
         EsbPlanInfoV3DTO esbPlanInfo = new EsbPlanInfoV3DTO();
-        esbPlanInfo.setAppId(taskPlanInfo.getAppId());
+        EsbDTOAppScopeMappingHelper.fillEsbAppScopeDTOByAppId(taskPlanInfo.getAppId(), esbPlanInfo);
         esbPlanInfo.setId(taskPlanInfo.getId());
         esbPlanInfo.setTemplateId(taskPlanInfo.getTemplateId());
         esbPlanInfo.setName(taskPlanInfo.getName());
@@ -313,30 +336,32 @@ public class TaskPlanInfoDTO {
         esbPlanInfo.setCreateTime(taskPlanInfo.getCreateTime());
         esbPlanInfo.setLastModifyUser(taskPlanInfo.getLastModifyUser());
         esbPlanInfo.setLastModifyTime(taskPlanInfo.getLastModifyTime());
-        if (CollectionUtils.isNotEmpty(taskPlanInfo.getVariableList())) {
-            esbPlanInfo.setGlobalVarList(taskPlanInfo.getVariableList().parallelStream()
-                .map(TaskVariableDTO::toEsbGlobalVarV3).collect(Collectors.toList()));
-        }
         if (CollectionUtils.isNotEmpty(taskPlanInfo.getStepList())) {
-            esbPlanInfo.setStepList(taskPlanInfo.getStepList().parallelStream()
+            esbPlanInfo.setStepList(taskPlanInfo.getStepList().stream()
                 .map(TaskStepDTO::toEsbStepV3).collect(Collectors.toList()));
+        }
+        if (CollectionUtils.isNotEmpty(taskPlanInfo.getVariableList())) {
+            Set<String> usedVars = new HashSet<>();
+            taskPlanInfo.getStepList().forEach(step -> {
+                if (CollectionUtils.isNotEmpty(step.getRefVariables())) {
+                    usedVars.addAll(
+                        step.getRefVariables().stream()
+                            .map(TaskVariableDTO::getName)
+                            .collect(Collectors.toList()));
+                }
+            });
+
+            esbPlanInfo.setGlobalVarList(
+                taskPlanInfo.getVariableList().stream()
+                    .map(var -> {
+                        EsbGlobalVarV3DTO esbGlobalVar = TaskVariableDTO.toEsbGlobalVarV3(var);
+                        esbGlobalVar.setUsed(usedVars.contains(var.getName()));
+                        return esbGlobalVar;
+                    })
+                    .collect(Collectors.toList())
+            );
         }
         return esbPlanInfo;
     }
 
-    public boolean validate() {
-        if (templateId == null || templateId <= 0) {
-            return false;
-        }
-        if (appId == null || appId <= 0) {
-            return false;
-        }
-        if (StringUtils.isBlank(name)) {
-            return false;
-        }
-        if (CollectionUtils.isEmpty(stepList)) {
-            return false;
-        }
-        return true;
-    }
 }

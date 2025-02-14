@@ -27,12 +27,11 @@ package com.tencent.bk.job.manage.model.dto.converter;
 import com.tencent.bk.job.common.i18n.locale.LocaleUtils;
 import com.tencent.bk.job.common.i18n.service.MessageI18nService;
 import com.tencent.bk.job.common.util.JobContextUtil;
-import com.tencent.bk.job.manage.common.consts.notify.NotifyConsts;
+import com.tencent.bk.job.manage.api.common.constants.notify.NotifyConsts;
 import com.tencent.bk.job.manage.dao.notify.NotifyEsbChannelDAO;
 import com.tencent.bk.job.manage.model.dto.notify.NotifyEsbChannelDTO;
 import com.tencent.bk.job.manage.model.dto.notify.NotifyTemplateDTO;
 import com.tencent.bk.job.manage.model.web.vo.notify.ChannelTemplateDetailVO;
-import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -43,14 +42,12 @@ public class NotifyTemplateConverter {
 
     final private MessageI18nService i18nService;
     final private NotifyEsbChannelDAO notifyEsbChannelDAO;
-    final private DSLContext dslContext;
 
     @Autowired
-    public NotifyTemplateConverter(MessageI18nService i18nService, NotifyEsbChannelDAO notifyEsbChannelDAO,
-                                   DSLContext dslContext) {
+    public NotifyTemplateConverter(MessageI18nService i18nService,
+                                   NotifyEsbChannelDAO notifyEsbChannelDAO) {
         this.i18nService = i18nService;
         this.notifyEsbChannelDAO = notifyEsbChannelDAO;
-        this.dslContext = dslContext;
     }
 
     public ChannelTemplateDetailVO convertToChannelTemplateDetailVO(NotifyTemplateDTO notifyTemplateDTO) {
@@ -58,7 +55,7 @@ public class NotifyTemplateConverter {
             return null;
         }
         String channel = notifyTemplateDTO.getChannel();
-        List<NotifyEsbChannelDTO> channelDTOList = notifyEsbChannelDAO.listNotifyEsbChannel(dslContext);
+        List<NotifyEsbChannelDTO> channelDTOList = notifyEsbChannelDAO.listNotifyEsbChannel();
         String channelLabel = "";
         for (NotifyEsbChannelDTO notifyEsbChannelDTO : channelDTOList) {
             if (notifyEsbChannelDTO.getType().equals(channel)) {

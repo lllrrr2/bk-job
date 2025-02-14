@@ -24,24 +24,39 @@
 
 package com.tencent.bk.job.file_gateway.api.inner;
 
+import com.tencent.bk.job.common.annotation.CompatibleImplementation;
 import com.tencent.bk.job.common.annotation.InternalAPI;
+import com.tencent.bk.job.common.constant.CompatibleType;
 import com.tencent.bk.job.common.model.InternalResponse;
+import com.tentent.bk.job.common.api.feign.annotation.SmartFeignClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 @Api(tags = {"job-file-gateway:service:FileSource"})
-@RequestMapping("/service/fileSource/")
-@RestController
+@SmartFeignClient(value = "job-file-gateway", contextId = "fileSourceResource")
 @InternalAPI
 public interface ServiceFileSourceResource {
 
     @ApiOperation(value = "获取文件源ID", produces = "application/json")
-    @GetMapping("getFileSourceIdByCode/codes/{code}")
+    @GetMapping("/service/app/{appId}/fileSource/getFileSourceIdByCode/codes/{code}")
+    InternalResponse<Integer> getFileSourceIdByCode(
+        @ApiParam(value = "Job业务ID", required = true) @PathVariable("appId") Long appId,
+        @ApiParam(value = "文件源标识", required = true) @PathVariable("code") String code);
+
+    @Deprecated
+    @CompatibleImplementation(name = "fileSourceId", deprecatedVersion = "3.9.x", type = CompatibleType.DEPLOY,
+        explain = "文件源标识仅在appId下唯一，发布完成后可删除")
+    @ApiOperation(value = "获取文件源ID", produces = "application/json")
+    @GetMapping("/service/fileSource/getFileSourceIdByCode/codes/{code}")
     InternalResponse<Integer> getFileSourceIdByCode(
         @ApiParam(value = "文件源标识", required = true) @PathVariable("code") String code);
+
+    @ApiOperation(value = "判断是否存在文件源引用了指定凭证", produces = "application/json")
+    @GetMapping("/service/app/{appId}/fileSource/existsFileSourceUsingCredential/credentialIds/{credentialId}")
+    InternalResponse<Boolean> existsFileSourceUsingCredential(
+        @ApiParam(value = "Job业务ID", required = true) @PathVariable("appId") Long appId,
+        @ApiParam(value = "凭证ID", required = true) @PathVariable("credentialId") String credentialId);
 }

@@ -25,6 +25,7 @@
 package com.tencent.bk.job.manage.model.inner;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.tencent.bk.job.common.constant.JobConstants;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
@@ -38,9 +39,6 @@ public class ServiceHostStatusDTO {
 
     @ApiModelProperty("服务器ID")
     private Long hostId;
-
-    @ApiModelProperty("主机IP")
-    private String ip;
 
     @ApiModelProperty("GSE Agent状态")
     private int alive;
@@ -56,5 +54,9 @@ public class ServiceHostStatusDTO {
     @Override
     public int hashCode() {
         return Objects.hash(hostId);
+    }
+
+    public boolean isAgentAlive() {
+        return alive == JobConstants.GSE_AGENT_STATUS_VALUE_ALIVE;
     }
 }

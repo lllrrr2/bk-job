@@ -24,17 +24,20 @@
 
 package com.tencent.bk.job.common.context;
 
+import com.tencent.bk.job.common.model.dto.AppResourceScope;
 import io.micrometer.core.instrument.Tag;
 import lombok.Data;
+import org.apache.commons.lang3.tuple.Pair;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.time.ZoneId;
 import java.util.AbstractList;
 import java.util.List;
+import java.util.Map;
 
 /**
- * @since 6/11/2019 10:26
+ * Job http 请求上下文
  */
 @Data
 public class JobContext {
@@ -43,11 +46,13 @@ public class JobContext {
 
     private String username;
 
-    private Long appId;
+    private AppResourceScope appResourceScope;
 
     private String requestId;
 
     private String userLang;
+
+    private String requestFrom;
 
     private List<String> debugMessage;
 
@@ -58,6 +63,8 @@ public class JobContext {
     private HttpServletRequest request;
 
     private HttpServletResponse response;
+
+    private Map<String, Pair<String, AbstractList<Tag>>> metricTagsMap;
 
     private String httpMetricName;
 

@@ -26,16 +26,25 @@ package com.tencent.bk.job.common.util.date;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.helpers.MessageFormatter;
 
 import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 时间处理
@@ -208,6 +217,45 @@ public class DateUtils {
             ZoneOffset.systemDefault().getRules().getOffset(Instant.now()));
     }
 
+    /**
+     * 尝试使用多种格式来解析字符串中的时间，只要有任意一种格式匹配即可成功解析
+     *
+     * @param dateTime 日期时间字符串
+     * @param patterns 多个可能的日期时间格式
+     * @return 本地日期时间对象
+     */
+    public static LocalDateTime convertFromStringDateByPatterns(String dateTime, String... patterns) {
+        if (patterns.length == 0) {
+            throw new IllegalArgumentException("patterns must not be empty");
+        }
+        LocalDateTime localDateTime;
+        Map<String, Exception> exceptionMap = new HashMap<>();
+        for (String pattern : patterns) {
+            try {
+                localDateTime = convertFromStringDate(dateTime, pattern);
+                if (localDateTime != null) {
+                    return localDateTime;
+                }
+            } catch (Exception e) {
+                exceptionMap.put(pattern, e);
+            }
+        }
+        String patternsInvalidMsg = MessageFormatter.format(
+            "Fail to convertFromStringDateByPatterns: dateTime={}, patterns={}, exceptions: ",
+            dateTime,
+            patterns
+        ).getMessage();
+        log.warn(patternsInvalidMsg);
+        exceptionMap.forEach((pattern, e) -> {
+            String patternInvalidMsg = MessageFormatter.format(
+                "pattern: {}, exception: ",
+                pattern
+            ).getMessage();
+            log.warn(patternInvalidMsg, e);
+        });
+        throw new IllegalArgumentException(patternsInvalidMsg);
+    }
+
     public static LocalDateTime convertFromStringDate(String dateTime, String pattern) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(pattern);
         return LocalDateTime.parse(dateTime, formatter);
@@ -301,7 +349,15 @@ public class DateUtils {
             Date previousDay = getPreviousDate(date, previousDays);
             return sdf.format(previousDay);
         } catch (ParseException e) {
-            log.error("Fail to calc date:{} - {}days, pattern={}", dateStr, previousDays, pattern, e);
+            String msg = MessageFormatter.arrayFormat(
+                "Fail to calc date:{} - {}days, pattern={}",
+                new String[]{
+                    dateStr,
+                    String.valueOf(previousDays),
+                    pattern
+                }
+            ).getMessage();
+            log.error(msg, e);
             return null;
         }
     }
@@ -327,8 +383,35 @@ public class DateUtils {
             Date endDate = sdf.parse(endDateStr);
             return (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000);
         } catch (ParseException e) {
-            log.error("Fail to calcDaysBetween:{},{},pattern={}", startDateStr, endDateStr, pattern, e);
+            String msg = MessageFormatter.arrayFormat(
+                "Fail to calcDaysBetween:{},{},pattern={}",
+                new String[]{
+                    startDateStr,
+                    endDateStr,
+                    pattern
+                }
+            ).getMessage();
+            log.error(msg, e);
             return null;
         }
+    }
+
+    /**
+     * 计算当天（UTC 时区)的截止时间戳
+     *
+     * @return 当天（UTC 时区)的截止时间戳，单位毫秒
+     */
+    public static long getUTCCurrentDayEndTimestamp() {
+        return getUTCDayEndTimestamp(LocalDate.now(ZoneId.of("UTC")));
+    }
+
+    /**
+     * 根据日期（UTC 时区)计算这一天的截止时间戳
+     *
+     * @return 日期（UTC 时区)对应当天截止时间戳，单位毫秒
+     */
+    public static long getUTCDayEndTimestamp(LocalDate localDateUTC) {
+
+        return 1000 * (localDateUTC.atStartOfDay().toEpochSecond(ZoneOffset.UTC) + 86400);
     }
 }

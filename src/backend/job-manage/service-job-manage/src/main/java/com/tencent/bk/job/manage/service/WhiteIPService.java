@@ -25,14 +25,16 @@
 package com.tencent.bk.job.manage.service;
 
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.model.dto.HostDTO;
 import com.tencent.bk.job.common.model.vo.CloudAreaInfoVO;
-import com.tencent.bk.job.manage.common.consts.whiteip.ActionScopeEnum;
-import com.tencent.bk.job.manage.model.dto.whiteip.CloudIPDTO;
+import com.tencent.bk.job.manage.api.common.constants.whiteip.ActionScopeEnum;
+import com.tencent.bk.job.manage.model.dto.whiteip.WhiteIPRecordDTO;
 import com.tencent.bk.job.manage.model.inner.ServiceWhiteIPInfo;
 import com.tencent.bk.job.manage.model.web.request.whiteip.WhiteIPRecordCreateUpdateReq;
 import com.tencent.bk.job.manage.model.web.vo.whiteip.ActionScopeVO;
 import com.tencent.bk.job.manage.model.web.vo.whiteip.WhiteIPRecordVO;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -45,16 +47,22 @@ public interface WhiteIPService {
                                                 Integer start, Integer pageSize, String orderField, Integer order);
 
     /**
-     * 查找对业务生效的IP信息
+     * 查找对业务生效的IP对应的主机信息
      *
-     * @param appId 业务Id
-     * @return
+     * @param appId Job业务Id
+     * @return 对业务生效的白名单IP对应的主机
      */
-    List<CloudIPDTO> listWhiteIP(Long appId, ActionScopeEnum actionScope);
+    List<HostDTO> listAvailableWhiteIPHost(Long appId, ActionScopeEnum actionScope, Collection<Long> hostIds);
 
-    Long saveWhiteIP(String username, WhiteIPRecordCreateUpdateReq createUpdateReq);
+    List<HostDTO> listAvailableWhiteIPHostByIps(Long appId, ActionScopeEnum actionScope, Collection<String> ips);
 
-    WhiteIPRecordVO getWhiteIPDetailById(String username, Long id);
+    List<HostDTO> listAvailableWhiteIPHostByIpv6s(Long appId, ActionScopeEnum actionScope, Collection<String> ipv6s);
+
+    WhiteIPRecordDTO createWhiteIP(String username, WhiteIPRecordCreateUpdateReq createUpdateReq);
+
+    WhiteIPRecordDTO updateWhiteIP(String username, WhiteIPRecordCreateUpdateReq createUpdateReq);
+
+    WhiteIPRecordDTO getWhiteIPDetailById(String username, Long id);
 
     List<CloudAreaInfoVO> listCloudAreas(String username);
 
@@ -62,7 +70,7 @@ public interface WhiteIPService {
 
     Long deleteWhiteIPById(String username, Long id);
 
-    List<String> getWhiteIPActionScopes(Long appId, String ip, Long cloudAreaId);
+    List<String> getWhiteIPActionScopes(Long appId, String ip, Long cloudAreaId, Long hostId);
 
     List<ServiceWhiteIPInfo> listWhiteIPInfos();
 }

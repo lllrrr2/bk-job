@@ -25,7 +25,9 @@
 package com.tencent.bk.job.manage.dao.globalsetting.impl;
 
 import com.tencent.bk.job.manage.dao.globalsetting.DangerousRuleDAO;
-import org.jooq.DSLContext;
+import com.tencent.bk.job.manage.model.dto.globalsetting.DangerousRuleDTO;
+import com.tencent.bk.job.manage.model.query.DangerousRuleQuery;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +37,9 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.context.jdbc.SqlConfig;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,18 +57,98 @@ class DangerousRuleDAOImplIntegrationTest {
     @Autowired
     private DangerousRuleDAO dangerousRuleDAO;
 
-    @Autowired
-    private DSLContext dslContext;
-
     @Test
     void listDangerousRulesByScriptType() {
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 1)).hasSize(5);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 2)).hasSize(4);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 3)).hasSize(3);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 4)).hasSize(2);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 5)).hasSize(1);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 6)).hasSize(0);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 7)).hasSize(0);
-        assertThat(dangerousRuleDAO.listDangerousRulesByScriptType(dslContext, 8)).hasSize(0);
+        DangerousRuleDTO dangerousRule = new DangerousRuleDTO();
+        dangerousRule.setScriptType(1);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(8);
+        dangerousRule.setScriptType(2);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(5);
+        dangerousRule.setScriptType(3);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(4);
+        dangerousRule.setScriptType(4);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(5);
+        dangerousRule.setScriptType(5);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(2);
+        dangerousRule.setScriptType(6);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(3);
+        dangerousRule.setScriptType(7);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(0);
+        dangerousRule.setScriptType(8);
+        assertThat(dangerousRuleDAO.listDangerousRules(dangerousRule)).hasSize(0);
+    }
+
+    @Test
+    @DisplayName("测试高危语句规则条件查询")
+    void listDangerousRulesByQuery() {
+        // 按sriptType模糊查询，略，因H2数据库不支持msyql原生的位运算
+
+        // 语法检测表达式模糊查询
+        DangerousRuleQuery query = DangerousRuleQuery
+            .builder()
+            .expression("sql")
+            .build();
+        List<DangerousRuleDTO> dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(3);
+        query.setExpression("shell");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(8);
+        query.setExpression("per");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(4);
+        query.setExpression("l");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(9);
+        query.setExpression("python");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(5);
+        query.setExpression("java");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(0);
+
+        // 规则说明模式查询
+        query.setExpression(null);
+        query.setDescription("Bat");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(5);
+        query.setDescription("test");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(0);
+        query.setDescription("pow");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(0);
+        query.setDescription(",SQL-6");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(2);
+        query.setDescription("Shell-1,Python-4");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(1);
+
+        // 拦截动作查询
+        query.setDescription(null);
+        query.setAction(Arrays.asList(new Byte[]{1}));
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(7);
+        query.setAction(Arrays.asList(new Byte[]{0}));
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(3);
+        query.setAction(Arrays.asList(new Byte[]{0, 1}));
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(10);
+
+        // 多添加查询
+        query.setAction(Arrays.asList(new Byte[]{0}));
+        query.setExpression("shell");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(2);
+        query.setAction(Arrays.asList(new Byte[]{0}));
+        query.setExpression("sql");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(0);
+        query.setAction(Arrays.asList(new Byte[]{1}));
+        query.setExpression("sql");
+        query.setDescription("SQL");
+        dangerousRuleDTOS = dangerousRuleDAO.listDangerousRules(query);
+        assertThat(dangerousRuleDTOS).hasSize(3);
     }
 }

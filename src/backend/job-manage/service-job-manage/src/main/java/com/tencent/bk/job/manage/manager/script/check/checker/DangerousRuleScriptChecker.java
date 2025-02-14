@@ -25,7 +25,7 @@
 package com.tencent.bk.job.manage.manager.script.check.checker;
 
 import com.google.common.collect.Lists;
-import com.tencent.bk.job.manage.common.consts.script.ScriptCheckErrorLevelEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptCheckErrorLevelEnum;
 import com.tencent.bk.job.manage.manager.script.check.ScriptCheckParam;
 import com.tencent.bk.job.manage.model.dto.ScriptCheckResultItemDTO;
 import com.tencent.bk.job.manage.model.dto.globalsetting.DangerousRuleDTO;
@@ -49,11 +49,11 @@ public class DangerousRuleScriptChecker extends DefaultChecker {
 
     @Override
     public List<ScriptCheckResultItemDTO> call() {
-        StopWatch watch = new StopWatch();
+        StopWatch watch = new StopWatch("DangerousRuleScriptChecker");
         ArrayList<ScriptCheckResultItemDTO> resultItems = Lists.newArrayList();
         try {
             for (DangerousRuleDTO dangerousRule : dangerousRules) {
-                watch.start(dangerousRule.getDescription());
+                watch.start(dangerousRule.getId().toString());
                 String[] lines = param.getLines();
                 checkScriptLines(resultItems, lines, dangerousRule);
                 watch.stop();

@@ -79,7 +79,15 @@ public enum StepActionEnum {
     /**
      * 恢复步骤执行
      */
-    RESUME(13);
+    RESUME(13),
+    /**
+     * 刷新步骤状态
+     */
+    REFRESH(14),
+    /**
+     * 准备文件
+     */
+    PREPARE_FILE(15);
 
     private final int value;
 
@@ -89,5 +97,14 @@ public enum StepActionEnum {
 
     public int getValue() {
         return value;
+    }
+
+    public static StepActionEnum valueOf(int value) {
+        for (StepActionEnum stepAction : values()) {
+            if (stepAction.getValue() == value) {
+                return stepAction;
+            }
+        }
+        throw new IllegalArgumentException("No StepActionEnum constant: " + value);
     }
 }

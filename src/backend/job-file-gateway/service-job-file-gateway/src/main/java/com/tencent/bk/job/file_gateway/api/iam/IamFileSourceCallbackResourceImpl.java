@@ -24,27 +24,39 @@
 
 package com.tencent.bk.job.file_gateway.api.iam;
 
-import com.tencent.bk.job.common.iam.constant.ResourceId;
+import com.tencent.bk.audit.utils.json.JsonSchemaUtils;
+import com.tencent.bk.job.common.iam.constant.ResourceTypeId;
 import com.tencent.bk.job.common.iam.service.BaseIamCallbackService;
 import com.tencent.bk.job.common.iam.util.IamRespUtil;
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.model.dto.ResourceScope;
+import com.tencent.bk.job.common.service.AppScopeMappingService;
+import com.tencent.bk.job.file_gateway.model.dto.FileSourceBasicInfoDTO;
 import com.tencent.bk.job.file_gateway.model.dto.FileSourceDTO;
+import com.tencent.bk.job.file_gateway.model.resp.esb.v3.EsbFileSourceV3DTO;
 import com.tencent.bk.job.file_gateway.service.FileSourceService;
 import com.tencent.bk.sdk.iam.dto.PathInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.CallbackRequestDTO;
 import com.tencent.bk.sdk.iam.dto.callback.request.IamSearchCondition;
 import com.tencent.bk.sdk.iam.dto.callback.response.CallbackBaseResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.FetchInstanceInfoResponseDTO;
+import com.tencent.bk.sdk.iam.dto.callback.response.FetchResourceTypeSchemaResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.InstanceInfoDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.ListInstanceResponseDTO;
 import com.tencent.bk.sdk.iam.dto.callback.response.SearchInstanceResponseDTO;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.helpers.MessageFormatter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -53,10 +65,13 @@ public class IamFileSourceCallbackResourceImpl extends BaseIamCallbackService
     implements IamFileSourceCallbackResource {
 
     private final FileSourceService fileSourceService;
+    private final AppScopeMappingService appScopeMappingService;
 
     @Autowired
-    public IamFileSourceCallbackResourceImpl(FileSourceService fileSourceService) {
+    public IamFileSourceCallbackResourceImpl(FileSourceService fileSourceService,
+                                             AppScopeMappingService appScopeMappingService) {
         this.fileSourceService = fileSourceService;
+        this.appScopeMappingService = appScopeMappingService;
     }
 
     @Data
@@ -88,11 +103,11 @@ public class IamFileSourceCallbackResourceImpl extends BaseIamCallbackService
     private FileSourceSearchCondition getSearchCondition(CallbackRequestDTO callbackRequest) {
         IamSearchCondition searchCondition = IamSearchCondition.fromReq(callbackRequest);
         // 文件源列表实现
-        List<Long> appIdList = searchCondition.getAppIdList();
+        Long appId = appScopeMappingService.getAppIdByScope(extractResourceScopeCondition(searchCondition));
         List<String> idStrList = searchCondition.getIdList();
         List<Integer> fileSourceIdList = null;
         if (idStrList != null) {
-            fileSourceIdList = idStrList.parallelStream().map(Integer::parseInt).collect(Collectors.toList());
+            fileSourceIdList = idStrList.stream().map(Integer::parseInt).collect(Collectors.toList());
         }
 
         int start = searchCondition.getStart().intValue();
@@ -100,7 +115,7 @@ public class IamFileSourceCallbackResourceImpl extends BaseIamCallbackService
 
         String keyword = callbackRequest.getFilter().getKeyword();
         return new FileSourceSearchCondition(
-            appIdList, idStrList, fileSourceIdList, start, length, keyword
+            Collections.singletonList(appId), idStrList, fileSourceIdList, start, length, keyword
         );
     }
 
@@ -157,37 +172,67 @@ public class IamFileSourceCallbackResourceImpl extends BaseIamCallbackService
         return IamRespUtil.getSearchInstanceRespFromPageData(fileSourceDTOPageData, this::convert);
     }
 
+    private InstanceInfoDTO buildInstance(FileSourceBasicInfoDTO fileSourceBasicInfoDTO,
+                                          Map<Long, ResourceScope> appIdScopeMap) {
+        Long appId = fileSourceBasicInfoDTO.getAppId();
+        // 拓扑路径构建
+        List<PathInfoDTO> path = new ArrayList<>();
+        PathInfoDTO rootNode = getPathNodeByAppId(appId, appIdScopeMap);
+        PathInfoDTO fileSourceNode = new PathInfoDTO();
+        fileSourceNode.setType(ResourceTypeId.FILE_SOURCE);
+        fileSourceNode.setId(fileSourceBasicInfoDTO.getId().toString());
+        rootNode.setChild(fileSourceNode);
+        path.add(rootNode);
+        // 实例组装
+        InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
+        instanceInfo.setId(fileSourceBasicInfoDTO.getId().toString());
+        instanceInfo.setDisplayName(fileSourceBasicInfoDTO.getAlias());
+        instanceInfo.setPath(path);
+        return instanceInfo;
+    }
+
     @Override
     protected CallbackBaseResponseDTO fetchInstanceResp(
         CallbackRequestDTO callbackRequest
     ) {
         IamSearchCondition searchCondition = IamSearchCondition.fromReq(callbackRequest);
         List<Object> instanceAttributeInfoList = new ArrayList<>();
+        List<Integer> fileSourceIdList = new ArrayList<>();
         for (String instanceId : searchCondition.getIdList()) {
             try {
-                // 文件源详情查询实现
-                FileSourceDTO fileSourceDTO = fileSourceService.getFileSourceById(Integer.parseInt(instanceId));
-                if (fileSourceDTO == null) {
-                    return getNotFoundRespById(instanceId);
-                }
-                // 拓扑路径构建
-                List<PathInfoDTO> path = new ArrayList<>();
-                PathInfoDTO rootNode = new PathInfoDTO();
-                rootNode.setType(ResourceId.APP);
-                rootNode.setId(fileSourceDTO.getAppId().toString());
-                PathInfoDTO fileSourceNode = new PathInfoDTO();
-                fileSourceNode.setType(ResourceId.FILE_SOURCE);
-                fileSourceNode.setId(fileSourceDTO.getId().toString());
-                rootNode.setChild(fileSourceNode);
-                path.add(rootNode);
-                // 实例组装
-                InstanceInfoDTO instanceInfo = new InstanceInfoDTO();
-                instanceInfo.setId(instanceId);
-                instanceInfo.setDisplayName(fileSourceDTO.getAlias());
-                instanceInfo.setPath(path);
-                instanceAttributeInfoList.add(instanceInfo);
+                Integer id = Integer.parseInt(instanceId);
+                fileSourceIdList.add(id);
             } catch (NumberFormatException e) {
-                log.error("Parse object id failed!|{}", instanceId, e);
+                String msg = MessageFormatter.format(
+                    "Parse fileSource id failed!|{}",
+                    instanceId
+                ).getMessage();
+                log.error(msg, e);
+            }
+        }
+        List<FileSourceBasicInfoDTO> fileSourceBasicInfoDTOList =
+            fileSourceService.listFileSourceByIds(fileSourceIdList);
+        Map<Integer, FileSourceBasicInfoDTO> fileSourceBasicInfoDTOMap =
+            new HashMap<>(fileSourceBasicInfoDTOList.size());
+        Set<Long> appIdSet = new HashSet<>();
+        for (FileSourceBasicInfoDTO fileSourceBasicInfoDTO : fileSourceBasicInfoDTOList) {
+            fileSourceBasicInfoDTOMap.put(fileSourceBasicInfoDTO.getId(), fileSourceBasicInfoDTO);
+            appIdSet.add(fileSourceBasicInfoDTO.getAppId());
+        }
+        // Job app --> CMDB biz/businessSet转换
+        Map<Long, ResourceScope> appIdScopeMap = appScopeMappingService.getScopeByAppIds(appIdSet);
+        for (Integer id : fileSourceIdList) {
+            // 文件源详情查询实现
+            FileSourceBasicInfoDTO fileSourceBasicInfoDTO = fileSourceBasicInfoDTOMap.get(id);
+            if (fileSourceBasicInfoDTO == null) {
+                logNotExistId(id);
+                continue;
+            }
+            try {
+                InstanceInfoDTO instanceInfo = buildInstance(fileSourceBasicInfoDTO, appIdScopeMap);
+                instanceAttributeInfoList.add(instanceInfo);
+            } catch (Exception e) {
+                logBuildInstanceFailure(fileSourceBasicInfoDTO, e);
             }
         }
 
@@ -200,5 +245,13 @@ public class IamFileSourceCallbackResourceImpl extends BaseIamCallbackService
     @Override
     public CallbackBaseResponseDTO callback(CallbackRequestDTO callbackRequest) {
         return baseCallback(callbackRequest);
+    }
+
+    @Override
+    protected FetchResourceTypeSchemaResponseDTO fetchResourceTypeSchemaResp(
+        CallbackRequestDTO callbackRequest) {
+        FetchResourceTypeSchemaResponseDTO resp = new FetchResourceTypeSchemaResponseDTO();
+        resp.setData(JsonSchemaUtils.generateJsonSchema(EsbFileSourceV3DTO.class));
+        return resp;
     }
 }

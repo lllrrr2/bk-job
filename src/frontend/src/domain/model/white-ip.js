@@ -23,37 +23,34 @@
  * IN THE SOFTWARE.
 */
 
-import I18n from '@/i18n';
 import Model from '@model/model';
 
+import I18n from '@/i18n';
+
 export default class WhiteIp extends Model {
-    constructor (payload) {
-        super();
-        this.actionScopeList = payload.actionScopeList;
-        this.appList = payload.appList || [];
-        this.cloudAreaId = payload.cloudAreaId;
-        this.createTime = payload.createTime;
-        this.creator = payload.creator;
-        this.id = payload.id;
-        this.ipList = payload.ipList || [];
-        this.lastModifier = payload.lastModifier;
-        this.lastModifyTime = payload.lastModifyTime;
-        this.remark = payload.remark;
-        this.canManage = payload.canManage;
-    }
+  constructor(payload) {
+    super();
+    this.actionScopeList = payload.actionScopeList;
+    this.scopeList = payload.scopeList || [];
+    this.allScope = Boolean(payload.allScope);
+    this.createTime = payload.createTime;
+    this.creator = payload.creator;
+    this.id = payload.id;
+    this.hostList = payload.hostList || [];
+    this.lastModifier = payload.lastModifier;
+    this.lastModifyTime = payload.lastModifyTime;
+    this.remark = payload.remark;
+    this.canManage = payload.canManage;
+  }
 
-    get ip () {
-        if (this.ipList.length < 2) {
-            return this.ipList[0];
-        }
-        return `${I18n.t('共')}${this.ipList.length}${I18n.t('个')}`;
-    }
+  get scopeText() {
+    return this.actionScopeList.map(item => item.name).join('，');
+  }
 
-    get scopeText () {
-        return this.actionScopeList.map(item => item.name).join('，');
+  get appText() {
+    if (this.scopeList.length < 1) {
+      return I18n.t('全业务');
     }
-
-    get appText () {
-        return this.appList.map(_ => _.name).join('，');
-    }
+    return this.scopeList.map(_ => _.name).join('，');
+  }
 }

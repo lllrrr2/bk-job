@@ -30,6 +30,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 文件上传参数VO
  */
@@ -39,7 +41,12 @@ import lombok.NoArgsConstructor;
 @Data
 public class FileUploadSettingVO {
     @ApiModelProperty("数量")
-    private Long amount;
+    private Float amount;
     @ApiModelProperty("单位")
     private String unit;
+    @ApiModelProperty("限制模式，0:禁止范围，1：允许范围")
+    private Integer restrictMode;
+    @ApiModelProperty("后缀列表")
+    private List<String> suffixList;
+
 }

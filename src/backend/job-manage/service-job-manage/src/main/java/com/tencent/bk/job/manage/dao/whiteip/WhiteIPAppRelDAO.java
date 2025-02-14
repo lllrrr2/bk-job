@@ -24,16 +24,25 @@
 
 package com.tencent.bk.job.manage.dao.whiteip;
 
-import org.jooq.DSLContext;
+import com.tencent.bk.job.manage.model.dto.whiteip.WhiteIPAppRelDTO;
 
 import java.util.List;
 
 public interface WhiteIPAppRelDAO {
-    int insertWhiteIPAppRel(DSLContext dslContext, String username, Long recordId, Long appId);
 
-    int deleteWhiteIPAppRelByRecordId(DSLContext dslContext, Long recordId);
+    // 查询
+    List<Long> listAppIdByRecordId(Long recordId);
 
-    int deleteWhiteIPAppRelByAppId(DSLContext dslContext, Long appId);
+    List<WhiteIPAppRelDTO> listAppRelByRecordIds(List<Long> recordIdList);
 
-    List<Long> listAppIdByRecordId(DSLContext dslContext, Long recordId);
+    List<WhiteIPAppRelDTO> listAppRelByAppId(Long appId);
+
+    // 新增
+    void insertWhiteIPAppRel(String username, Long recordId, Long appId);
+
+    // 更新
+    int updateAppId(Long srcAppId, Long targetAppId);
+
+    // 删除
+    int deleteWhiteIPAppRelByRecordId(Long recordId);
 }

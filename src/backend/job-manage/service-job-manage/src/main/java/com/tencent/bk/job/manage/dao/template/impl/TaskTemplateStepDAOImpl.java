@@ -24,16 +24,20 @@
 
 package com.tencent.bk.job.manage.dao.template.impl;
 
-import com.tencent.bk.job.manage.common.consts.task.TaskTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskTypeEnum;
 import com.tencent.bk.job.manage.common.util.DbRecordMapper;
 import com.tencent.bk.job.manage.dao.AbstractTaskStepDAO;
 import com.tencent.bk.job.manage.dao.TaskStepDAO;
 import com.tencent.bk.job.manage.model.dto.task.TaskStepDTO;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStep;
+import com.tencent.bk.job.manage.model.tables.records.TaskTemplateStepRecord;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.jooq.*;
-import org.jooq.generated.tables.TaskTemplateStep;
-import org.jooq.generated.tables.records.TaskTemplateStepRecord;
+import org.jooq.Condition;
+import org.jooq.DSLContext;
+import org.jooq.Record11;
+import org.jooq.Result;
+import org.jooq.UpdateSetMoreStep;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -112,7 +116,7 @@ public class TaskTemplateStepDAOImpl extends AbstractTaskStepDAO implements Task
             .columns(TABLE.TEMPLATE_ID, TABLE.NAME, TABLE.TYPE, TABLE.PREVIOUS_STEP_ID, TABLE.NEXT_STEP_ID,
                 TABLE.IS_DELETED)
             .values(ULong.valueOf(taskStep.getTemplateId()), taskStep.getName(),
-                UByte.valueOf(taskStep.getType().getType()), ULong.valueOf(taskStep.getPreviousStepId()),
+                UByte.valueOf(taskStep.getType().getValue()), ULong.valueOf(taskStep.getPreviousStepId()),
                 ULong.valueOf(taskStep.getNextStepId()), UByte.valueOf(0))
             .returning(TABLE.ID).fetchOne();
         return record.getId().longValue();
@@ -152,7 +156,7 @@ public class TaskTemplateStepDAOImpl extends AbstractTaskStepDAO implements Task
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TABLE.ID.eq(ULong.valueOf(taskStep.getId())));
         conditions.add(TABLE.TEMPLATE_ID.eq(ULong.valueOf(taskStep.getTemplateId())));
-        conditions.add(TABLE.TYPE.eq(UByte.valueOf(taskStep.getType().getType())));
+        conditions.add(TABLE.TYPE.eq(UByte.valueOf(taskStep.getType().getValue())));
         return 1 == updateStep.where(conditions).limit(1).execute();
     }
 
@@ -171,7 +175,7 @@ public class TaskTemplateStepDAOImpl extends AbstractTaskStepDAO implements Task
         }
 
         List<ULong> uLongTemplateIdList =
-            parentIdList.parallelStream().map(ULong::valueOf).collect(Collectors.toList());
+            parentIdList.stream().map(ULong::valueOf).collect(Collectors.toList());
 
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TABLE.TEMPLATE_ID.in(uLongTemplateIdList));

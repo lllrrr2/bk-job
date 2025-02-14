@@ -24,20 +24,29 @@
 
 package com.tencent.bk.job.manage.dao.globalsetting.impl;
 
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
-import com.tencent.bk.job.manage.common.util.JooqDataTypeUtil;
+import com.tencent.bk.job.common.mysql.util.JooqDataTypeUtil;
+import com.tencent.bk.job.manage.api.common.constants.EnableStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
 import com.tencent.bk.job.manage.dao.globalsetting.DangerousRuleDAO;
 import com.tencent.bk.job.manage.model.dto.globalsetting.DangerousRuleDTO;
+import com.tencent.bk.job.manage.model.query.DangerousRuleQuery;
+import com.tencent.bk.job.manage.model.tables.DangerousRule;
+import com.tencent.bk.job.manage.model.tables.records.DangerousRuleRecord;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.lang3.StringUtils;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.Result;
 import org.jooq.conf.ParamType;
-import org.jooq.generated.tables.DangerousRule;
 import org.jooq.impl.DSL;
 import org.jooq.types.ULong;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -47,6 +56,12 @@ import java.util.stream.Collectors;
 public class DangerousRuleDAOImpl implements DangerousRuleDAO {
 
     private static final DangerousRule T = DangerousRule.DANGEROUS_RULE;
+    private final DSLContext dslContext;
+
+    @Autowired
+    public DangerousRuleDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext dslContext) {
+        this.dslContext = dslContext;
+    }
 
     private void setDefaultValue(DangerousRuleDTO dangerousRuleDTO) {
         if (dangerousRuleDTO.getScriptType() == null) {
@@ -55,7 +70,7 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public Long insertDangerousRule(DSLContext dslContext, DangerousRuleDTO dangerousRuleDTO) {
+    public Long insertDangerousRule(DangerousRuleDTO dangerousRuleDTO) {
         setDefaultValue(dangerousRuleDTO);
         val query = dslContext.insertInto(T,
             T.EXPRESSION,
@@ -90,7 +105,7 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public int updateDangerousRule(DSLContext dslContext, DangerousRuleDTO dangerousRuleDTO) {
+    public int updateDangerousRule(DangerousRuleDTO dangerousRuleDTO) {
         val query = dslContext.update(T)
             .set(T.EXPRESSION, dangerousRuleDTO.getExpression())
             .set(T.DESCRIPTION, dangerousRuleDTO.getDescription())
@@ -112,14 +127,14 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
 
 
     @Override
-    public int deleteDangerousRuleById(DSLContext dslContext, Long id) {
+    public int deleteDangerousRuleById(Long id) {
         return dslContext.deleteFrom(T).where(
             T.ID.eq(id)
         ).execute();
     }
 
     @Override
-    public DangerousRuleDTO getDangerousRuleById(DSLContext dslContext, Long id) {
+    public DangerousRuleDTO getDangerousRuleById(Long id) {
         val record = dslContext.selectFrom(T).where(
             T.ID.eq(id)
         ).fetchOne();
@@ -131,7 +146,7 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public DangerousRuleDTO getDangerousRuleByPriority(DSLContext dslContext, int priority) {
+    public DangerousRuleDTO getDangerousRuleByPriority(int priority) {
         val record = dslContext.selectFrom(T).where(
             T.PRIORITY.eq(priority)
         ).fetchOne();
@@ -143,7 +158,7 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public List<DangerousRuleDTO> listDangerousRules(DSLContext dslContext) {
+    public List<DangerousRuleDTO> listDangerousRules() {
         val records = dslContext.selectFrom(T).orderBy(T.PRIORITY).fetch();
         if (records.isEmpty()) {
             return Collections.emptyList();
@@ -153,20 +168,64 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public List<DangerousRuleDTO> listDangerousRulesByScriptType(DSLContext dslContext, Integer scriptType) {
+    public List<DangerousRuleDTO> listDangerousRules(DangerousRuleDTO dangerousRuleQuery) {
+        Integer scriptType = dangerousRuleQuery.getScriptType();
+        List<Condition> conditions = new ArrayList<>();
+        if (dangerousRuleQuery.getStatus() != null) {
+            conditions.add(T.STATUS.eq(JooqDataTypeUtil.getByteFromInteger(dangerousRuleQuery.getStatus())));
+        }
         val records =
-            dslContext.selectFrom(T).orderBy(T.PRIORITY).fetch();
+            dslContext.selectFrom(T).where(conditions).orderBy(T.PRIORITY).fetch();
         if (records.isEmpty()) {
             return Collections.emptyList();
         } else {
             List<DangerousRuleDTO> dangerousRuleList = records.map(this::convertRecordToDto);
+            if (scriptType == null) {
+                return dangerousRuleList;
+            }
             int typeFlag = 1 << scriptType - 1;
-            return dangerousRuleList.stream().filter(rule -> (rule.getScriptType() & (typeFlag)) == typeFlag).collect(Collectors.toList());
+            return dangerousRuleList.stream()
+                .filter(rule -> (rule.getScriptType() & (typeFlag)) == typeFlag)
+                .collect(Collectors.toList());
         }
     }
 
     @Override
-    public int getMaxPriority(DSLContext dslContext) {
+    public List<DangerousRuleDTO> listDangerousRules(DangerousRuleQuery query) {
+        List<Condition> conditions = buildConditionList(query);
+        Result<DangerousRuleRecord> records = dslContext.selectFrom(T)
+            .where(conditions)
+            .orderBy(T.PRIORITY)
+            .fetch();
+        return records.map(this::convertRecordToDto);
+    }
+
+    private List<Condition> buildConditionList(DangerousRuleQuery query) {
+        List<Condition> conditions = new ArrayList<>();
+        if (StringUtils.isNotBlank(query.getExpression())) {
+            conditions.add(T.EXPRESSION.like("%" + query.getExpression() + "%"));
+        }
+        if (StringUtils.isNotBlank(query.getDescription())) {
+            conditions.add(T.DESCRIPTION.like("%" + query.getDescription() + "%"));
+        }
+        if (query.getScriptTypeList() != null) {
+            List<Byte> typeList = query.getScriptTypeList();
+            int scriptType = 0;
+            for (Byte type : typeList) {
+                if (type > 0 && type <= 8) {
+                    scriptType |= 1 << (type - 1);
+                }
+            }
+            conditions.add(DSL.bitAnd(T.SCRIPT_TYPE, scriptType).greaterThan(0));
+        }
+        if (query.getAction() != null) {
+            conditions.add(T.ACTION.in(query.getAction()));
+        }
+        return conditions;
+    }
+
+    @Override
+    public int getMaxPriority() {
         val record = dslContext.select(DSL.max(T.PRIORITY)).from(T).fetchOne();
         if (record == null || record.value1() == null) {
             return 0;
@@ -176,12 +235,28 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
     }
 
     @Override
-    public int getMinPriority(DSLContext dslContext) {
+    public int getMinPriority() {
         val record = dslContext.select(DSL.min(T.PRIORITY)).from(T).fetchOne();
         if (record == null || record.value1() == null) {
             return 0;
         } else {
             return record.value1();
+        }
+    }
+
+    @Override
+    public int updateDangerousRuleStatus(String userName, Long id, EnableStatusEnum status) {
+        val query = dslContext.update(T)
+            .set(T.LAST_MODIFY_USER, userName)
+            .set(T.LAST_MODIFY_TIME, ULong.valueOf(System.currentTimeMillis()))
+            .set(T.STATUS, (byte) status.getValue())
+            .where(T.ID.eq(id));
+        try {
+            return query.execute();
+        } catch (Exception e) {
+            val sql = query.getSQL(ParamType.INLINED);
+            log.error(sql);
+            throw e;
         }
     }
 
@@ -199,4 +274,5 @@ public class DangerousRuleDAOImpl implements DangerousRuleDAO {
             record.get(T.ACTION).intValue(),
             record.get(T.STATUS).intValue());
     }
+
 }

@@ -25,20 +25,18 @@
 package com.tencent.bk.job.manage.dao.notify.impl;
 
 import com.tencent.bk.job.manage.dao.notify.NotifyConfigStatusDAO;
+import com.tencent.bk.job.manage.model.tables.NotifyConfigStatus;
 import lombok.val;
 import org.joda.time.DateTimeUtils;
 import org.jooq.DSLContext;
-import org.jooq.generated.tables.NotifyConfigStatus;
+import org.jooq.conf.ParamType;
 import org.jooq.types.ULong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Repository;
 
-/**
- * @Description
- * @Date 2020/1/2
- * @Version 1.0
- */
 @Repository
 public class NotifyConfigStatusDAOImpl implements NotifyConfigStatusDAO {
 
@@ -46,8 +44,15 @@ public class NotifyConfigStatusDAOImpl implements NotifyConfigStatusDAO {
     private static final NotifyConfigStatus T_NOTIFY_CONFIG_STATUS = NotifyConfigStatus.NOTIFY_CONFIG_STATUS;
     private static final NotifyConfigStatus defaultTable = T_NOTIFY_CONFIG_STATUS;
 
+    private final DSLContext dslContext;
+
+    @Autowired
+    public NotifyConfigStatusDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext dslContext) {
+        this.dslContext = dslContext;
+    }
+
     @Override
-    public int insertNotifyConfigStatus(DSLContext dslContext, String userName, Long appId) {
+    public int insertNotifyConfigStatus(String userName, Long appId) {
         val query = dslContext.insertInto(defaultTable,
             defaultTable.USERNAME,
             defaultTable.APP_ID,
@@ -57,7 +62,7 @@ public class NotifyConfigStatusDAOImpl implements NotifyConfigStatusDAO {
             appId,
             ULong.valueOf(DateTimeUtils.currentTimeMillis())
         );
-        val sql = query.getSQL(true);
+        val sql = query.getSQL(ParamType.INLINED);
         try {
             return query.execute();
         } catch (Exception e) {
@@ -67,19 +72,11 @@ public class NotifyConfigStatusDAOImpl implements NotifyConfigStatusDAO {
     }
 
     @Override
-    public int deleteNotifyConfigStatus(DSLContext dslContext, String userName, Long appId) {
-        return dslContext.deleteFrom(defaultTable)
-            .where(defaultTable.USERNAME.eq(userName))
-            .and(defaultTable.APP_ID.eq(appId))
-            .execute();
-    }
-
-    @Override
-    public boolean exist(DSLContext dslContext, String userName, Long appId) {
+    public boolean exist(String userName, Long appId) {
         val records = dslContext.selectFrom(defaultTable)
             .where(defaultTable.USERNAME.eq(userName))
             .and(defaultTable.APP_ID.eq(appId))
             .fetch();
-        return records != null && records.size() > 0;
+        return records.size() > 0;
     }
 }

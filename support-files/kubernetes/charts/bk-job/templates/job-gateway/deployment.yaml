@@ -1,3 +1,4 @@
+{{- if .Values.gatewayConfig.enabled }}
 apiVersion: {{ include "common.capabilities.deployment.apiVersion" . }}
 kind: Deployment
 metadata:
@@ -12,7 +13,6 @@ metadata:
     {{- include "common.tplvalues.render" ( dict "value" .Values.commonLabels "context" $ ) | nindent 4 }}
     {{- end }}
   annotations:
-  {{ include "annotations.sha256sum.configmap" ( dict "service" "job-gateway" "context" . ) | nindent 4 }}
   {{- if .Values.commonAnnotations }}
   {{- include "common.tplvalues.render" ( dict "value" .Values.commonAnnotations "context" $ ) | nindent 4 }}
   {{- end }}
@@ -31,7 +31,10 @@ spec:
         app.kubernetes.io/component: "job-gateway"
         {{ include "job.labelKeys.jobScope" . }}: {{ include "job.labelValues.jobScope.backend" . }}
         {{ include "job.labelKeys.imageTag" . }}: {{ .Values.gatewayConfig.image.tag | quote }}
+      annotations:
+        {{ include "annotations.sha256sum.configmap" ( dict "service" "job-gateway" "context" . ) | nindent 8 }}
     spec:
+      {{- include "job.podTerminationGracePeriodSeconds" . | nindent 6 }}
       {{- include "job.imagePullSecrets" . | nindent 6 }}
       hostAliases: {{- include "common.tplvalues.render" (dict "value" .Values.hostAliases "context" $) | nindent 8 }}
       {{- if .Values.gatewayConfig.affinity }}
@@ -55,6 +58,8 @@ spec:
       {{- if .Values.gatewayConfig.podSecurityContext.enabled }}
       securityContext: {{- omit .Values.gatewayConfig.podSecurityContext "enabled" | toYaml | nindent 8 }}
       {{- end }}
+      initContainers:
+      {{- include "job.initContainer.waitForDependServices"   ( dict "currentServiceName" "bk-job-gateway" "context" $) | nindent 8 }}
       containers:
         - name: "job-gateway"
           {{- if .Values.gatewayConfig.containerSecurityContext.enabled }}
@@ -63,28 +68,17 @@ spec:
           image: {{ include "job-gateway.image" . }}
           imagePullPolicy: {{ .Values.gatewayConfig.image.pullPolicy }}
           env:
+            {{- include "job.common.env" . | nindent 12 }}
             - name: BK_JOB_APP_NAME
               value: "job-gateway"
             - name: BK_JOB_JVM_OPTION
               value: {{ .Values.gatewayConfig.jvmOptions | quote }}
-            - name: BK_JOB_PROFILE
-              value: {{ include "job.profile" . }}
             - name: BK_JOB_JAR
               value: job-gateway.jar
             - name: JOB_APPLICATION_CONFIGMAP_NAME
               value: {{ include "common.names.fullname" . }}-gateway
-            - name: JOB_COMMON_CONFIGMAP_NAME
-              value: {{ include "common.names.fullname" . }}-common
-            - name: spring_cloud_kubernetes_secrets_paths
-              value: /etc/secrets
-            - name: KUBERNETES_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: BK_JOB_POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
+            - name: JOB_COMMON_REFRESHABLE_CONFIGMAP_NAME
+              value: {{ include "common.names.fullname" . }}-common-refreshable
           ports:
             - name: http
               containerPort: {{ .Values.gatewayConfig.containerPort.http }}
@@ -95,39 +89,25 @@ spec:
             - name: management
               containerPort: {{ .Values.gatewayConfig.containerPort.management }}
               protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: management
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30
-            successThreshold: 1
-          readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: management
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30
-            successThreshold: 1
+          {{- include "job.service.probes" ( dict "port" "management" "context" . ) | nindent 10 }}
           resources:
             {{- toYaml .Values.gatewayConfig.resources | nindent 12 }}
           volumeMounts:
             - name: job-storage
-              mountPath: /data/job/storage
+              mountPath: {{ .Values.persistence.localStorage.path }}
             - name: job-gateway-tls-certs
               mountPath: /data/job/cert
               readOnly: true
             - name: job-gateway-tls-password
               mountPath: /etc/secrets
               readOnly: true
+            - name: rabbitmq
+              mountPath: /etc/secrets/rabbitmq
+              readOnly: true
       volumes:
         - name: job-storage
           persistentVolumeClaim:
-            claimName: {{ include "common.names.fullname" . }}-pv-claim
+            claimName: {{ include "job.storage.pvc.name" . }}
         - name: job-gateway-tls-certs
           secret:
             secretName: {{ printf "%s-gateway-%s" (include "common.names.fullname" .) "tls-cert" }}
@@ -144,3 +124,7 @@ spec:
                 path: keystore.password
               - key: truststore.password
                 path: truststore.password
+        - name: rabbitmq
+          secret:
+            secretName: {{ include "job.rabbitmq.secretName" . }}
+{{- end }}

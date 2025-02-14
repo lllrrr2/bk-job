@@ -1,4 +1,4 @@
-{{- if .Values.frontendConfig.ingress.enabled -}}
+{{- if and (.Values.frontendConfig.enabled) (.Values.frontendConfig.ingress.enabled) -}}
 apiVersion: {{ template "common.capabilities.ingress.apiVersion" . }}
 kind: Ingress
 metadata:
@@ -35,7 +35,7 @@ spec:
             {{- if eq "true" (include "common.ingress.supportsPathType" .) }}
             pathType: {{ .Values.frontendConfig.ingress.pathType }}
             {{- end }}
-            backend: {{- include "common.ingress.backend" (dict "serviceName" (printf "%s-frontend" (include "common.names.fullname" .)) "servicePort" .Values.frontendConfig.service.port "context" $)  | nindent 14 }}
+            backend: {{- include "common.ingress.backend" (dict "serviceName" "bk-job-frontend" "servicePort" .Values.frontendConfig.service.port "context" $)  | nindent 14 }}
     {{- end }}
     {{- range .Values.frontendConfig.ingress.extraHosts }}
     - host: {{ .name }}
@@ -45,12 +45,9 @@ spec:
             {{- if eq "true" (include "common.ingress.supportsPathType" $) }}
             pathType: {{ default "ImplementationSpecific" .pathType }}
             {{- end }}
-            backend: {{- include "common.ingress.backend" (dict "serviceName" (printf "%s-frontend" (include "common.names.fullname" $)) "servicePort" "http" "context" $)  | nindent 14 }}
+            backend: {{- include "common.ingress.backend" (dict "serviceName" "bk-job-frontend" "servicePort" "http" "context" $)  | nindent 14 }}
     {{- end }}
-  {{- if .Values.job.web.https.enabled }}
-  tls:
-    - hosts:
-        - {{ .Values.job.web.domain }}
-      secretName: {{ include "common.names.fullname" . }}-ingress-tls
+  {{- if .Values.job.ingress.https.enabled }}
+  {{- include "job.ingress.frontend.tls" . | nindent 2 }}
   {{- end }}
 {{- end }}

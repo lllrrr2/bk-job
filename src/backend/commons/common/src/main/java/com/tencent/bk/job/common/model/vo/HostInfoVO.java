@@ -24,21 +24,25 @@
 
 package com.tencent.bk.job.common.model.vo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.tencent.bk.job.common.model.dto.ApplicationHostInfoDTO;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.util.JobContextUtil;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Objects;
 
 /**
  * @since 7/11/2019 16:08
  */
+@Slf4j
 @NoArgsConstructor
 @AllArgsConstructor
 @ApiModel("主机信息")
@@ -46,59 +50,53 @@ import java.util.Objects;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class HostInfoVO {
 
-    @ApiModelProperty(value = "服务器 ID", required = true)
+    @ApiModelProperty(value = "主机ID", required = true)
     private Long hostId;
 
     @ApiModelProperty("主机 IP")
     private String ip;
 
+    @ApiModelProperty("主机 IPv6")
+    private String ipv6;
+
     @ApiModelProperty("展示用的IP，主要针对多内网IP问题")
     private String displayIp;
 
-    @ApiModelProperty("描述")
-    private String ipDesc;
+    @ApiModelProperty("主机名称")
+    private String hostName;
+
+    // agent状态：-2：未找到，-1：查询失败，0：初始安装，1：启动中，2：运行中，3：有损状态，4：繁忙，5：升级中，6：停止中，7：解除安装
+    @JsonIgnore
+    private Integer agentStatus;
 
     @ApiModelProperty("agent 状态 0-异常 1-正常")
     private Integer alive;
 
     @ApiModelProperty("云区域信息")
-    private CloudAreaInfoVO cloudAreaInfo;
+    private CloudAreaInfoVO cloudArea;
 
     /**
      * 操作系统
      */
     @ApiModelProperty("操作系统")
-    private String os;
+    private String osName;
 
-    public static ApplicationHostInfoDTO toDTO(HostInfoVO hostInfo) {
-        if (hostInfo == null) {
-            return null;
-        }
-        ApplicationHostInfoDTO hostInfoDTO = new ApplicationHostInfoDTO();
-        hostInfoDTO.setHostId(hostInfo.getHostId());
-        hostInfoDTO.setIp(hostInfo.getIp());
-        hostInfoDTO.setDisplayIp(hostInfo.getDisplayIp());
-        hostInfoDTO.setIpDesc(hostInfo.getIpDesc());
-        if (hostInfo.getAlive() != null) {
-            hostInfoDTO.setGseAgentAlive(hostInfo.getAlive() == 1);
-        } else {
-            hostInfoDTO.setGseAgentAlive(false);
-        }
-        hostInfoDTO.setCloudAreaId(hostInfo.getCloudAreaInfo().getId());
-        hostInfoDTO.setOs(hostInfo.getOs());
-        return hostInfoDTO;
-    }
+    @ApiModelProperty("系统类型")
+    @JsonProperty("osType")
+    private String osTypeName;
 
-    public boolean validate(boolean isCreate) {
-        if (cloudAreaInfo == null) {
-            JobContextUtil.addDebugMessage("Missing host info cloud area info!");
-            return false;
+    @ApiModelProperty("AgentId")
+    private String agentId;
+
+    @ApiModelProperty("所属云厂商")
+    @JsonProperty("cloudVendor")
+    private String cloudVendorName;
+
+    public void validate() throws InvalidParamException {
+        if (!JobContextUtil.isAllowMigration() && (hostId == null || hostId <= 0)) {
+            log.warn("Missing host_id!");
+            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
         }
-        if (StringUtils.isNotBlank(ip) && cloudAreaInfo.validate(isCreate)) {
-            return true;
-        }
-        JobContextUtil.addDebugMessage("Invalid ip or cloud area info!");
-        return false;
     }
 
     @Override

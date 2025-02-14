@@ -24,21 +24,28 @@
 
 package com.tencent.bk.job.execute.api.esb.v3;
 
+import com.tencent.bk.audit.annotations.AuditEntry;
+import com.tencent.bk.audit.annotations.AuditRequestBody;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.JobConstants;
 import com.tencent.bk.job.common.esb.metrics.EsbApiTimed;
 import com.tencent.bk.job.common.esb.model.EsbResp;
 import com.tencent.bk.job.common.exception.InvalidParamException;
 import com.tencent.bk.job.common.exception.ServiceException;
+import com.tencent.bk.job.common.iam.constant.ActionId;
 import com.tencent.bk.job.common.metrics.CommonMetricNames;
 import com.tencent.bk.job.common.model.ValidateResult;
 import com.tencent.bk.job.common.util.date.DateUtils;
+import com.tencent.bk.job.common.web.metrics.CustomTimed;
 import com.tencent.bk.job.execute.api.esb.common.ConfigFileUtil;
 import com.tencent.bk.job.execute.common.constants.RunStatusEnum;
 import com.tencent.bk.job.execute.common.constants.StepExecuteTypeEnum;
 import com.tencent.bk.job.execute.common.constants.TaskStartupModeEnum;
 import com.tencent.bk.job.execute.common.constants.TaskTypeEnum;
-import com.tencent.bk.job.execute.config.StorageSystemConfig;
+import com.tencent.bk.job.execute.config.FileDistributeConfig;
+import com.tencent.bk.job.execute.metrics.ExecuteMetricsConstants;
+import com.tencent.bk.job.execute.model.ExecuteTargetDTO;
+import com.tencent.bk.job.execute.model.FastTaskDTO;
 import com.tencent.bk.job.execute.model.FileDetailDTO;
 import com.tencent.bk.job.execute.model.FileSourceDTO;
 import com.tencent.bk.job.execute.model.StepInstanceDTO;
@@ -47,13 +54,14 @@ import com.tencent.bk.job.execute.model.esb.v3.EsbJobExecuteV3DTO;
 import com.tencent.bk.job.execute.model.esb.v3.request.EsbPushConfigFileV3Request;
 import com.tencent.bk.job.execute.service.AgentService;
 import com.tencent.bk.job.execute.service.TaskExecuteService;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -62,21 +70,29 @@ public class EsbPushConfigFileResourceV3Impl
     extends JobExecuteCommonV3Processor
     implements EsbPushConfigFileV3Resource {
     private final TaskExecuteService taskExecuteService;
-    private final StorageSystemConfig storageSystemConfig;
+    private final FileDistributeConfig fileDistributeConfig;
     private final AgentService agentService;
 
     @Autowired
     public EsbPushConfigFileResourceV3Impl(TaskExecuteService taskExecuteService,
-                                           StorageSystemConfig storageSystemConfig,
+                                           FileDistributeConfig fileDistributeConfig,
                                            AgentService agentService) {
         this.taskExecuteService = taskExecuteService;
-        this.storageSystemConfig = storageSystemConfig;
+        this.fileDistributeConfig = fileDistributeConfig;
         this.agentService = agentService;
     }
 
     @Override
     @EsbApiTimed(value = CommonMetricNames.ESB_API, extraTags = {"api_name", "v3_push_config_file"})
-    public EsbResp<EsbJobExecuteV3DTO> pushConfigFile(EsbPushConfigFileV3Request request) {
+    @CustomTimed(metricName = ExecuteMetricsConstants.NAME_JOB_TASK_START,
+        extraTags = {
+            ExecuteMetricsConstants.TAG_KEY_START_MODE, ExecuteMetricsConstants.TAG_VALUE_START_MODE_API,
+            ExecuteMetricsConstants.TAG_KEY_TASK_TYPE, ExecuteMetricsConstants.TAG_VALUE_TASK_TYPE_FAST_CONFIG_FILE
+        })
+    @AuditEntry(actionId = ActionId.QUICK_TRANSFER_FILE)
+    public EsbResp<EsbJobExecuteV3DTO> pushConfigFile(String username,
+                                                      String appCode,
+                                                      @AuditRequestBody EsbPushConfigFileV3Request request) {
         ValidateResult checkResult = checkPushConfigFileRequest(request);
         if (!checkResult.isPass()) {
             log.warn("Fast transfer file request is illegal!");
@@ -85,18 +101,20 @@ public class EsbPushConfigFileResourceV3Impl
 
         request.trimIps();
 
-        TaskInstanceDTO taskInstance = buildFastFileTaskInstance(request);
-        StepInstanceDTO stepInstance = buildFastFileStepInstance(request, request.getFileList());
-        long taskInstanceId = taskExecuteService.createTaskInstanceFast(taskInstance, stepInstance);
-        taskExecuteService.startTask(taskInstanceId);
+        TaskInstanceDTO taskInstance = buildFastFileTaskInstance(username, appCode, request);
+        StepInstanceDTO stepInstance = buildFastFileStepInstance(username, request, request.getFileList());
+        TaskInstanceDTO executeTaskInstance = taskExecuteService.executeFastTask(
+            FastTaskDTO.builder().taskInstance(taskInstance).stepInstance(stepInstance).build());
 
         EsbJobExecuteV3DTO jobExecuteInfo = new EsbJobExecuteV3DTO();
-        jobExecuteInfo.setTaskInstanceId(taskInstanceId);
+        jobExecuteInfo.setTaskInstanceId(executeTaskInstance.getId());
         jobExecuteInfo.setTaskName(stepInstance.getName());
         return EsbResp.buildSuccessResp(jobExecuteInfo);
     }
 
-    private TaskInstanceDTO buildFastFileTaskInstance(EsbPushConfigFileV3Request request) {
+    private TaskInstanceDTO buildFastFileTaskInstance(String username,
+                                                      String appCode,
+                                                      EsbPushConfigFileV3Request request) {
         TaskInstanceDTO taskInstance = new TaskInstanceDTO();
         taskInstance.setType(TaskTypeEnum.FILE.getValue());
         if (StringUtils.isNotEmpty(request.getName())) {
@@ -104,22 +122,23 @@ public class EsbPushConfigFileResourceV3Impl
         } else {
             taskInstance.setName("API_PUSH_CONFIG_FILE_" + DateUtils.currentTimeMillis());
         }
-        taskInstance.setTaskId(-1L);
+        taskInstance.setPlanId(-1L);
         taskInstance.setCronTaskId(-1L);
         taskInstance.setTaskTemplateId(-1L);
         taskInstance.setAppId(request.getAppId());
-        taskInstance.setStatus(RunStatusEnum.BLANK.getValue());
+        taskInstance.setStatus(RunStatusEnum.BLANK);
         taskInstance.setStartupMode(TaskStartupModeEnum.API.getValue());
-        taskInstance.setOperator(request.getUserName());
+        taskInstance.setOperator(username);
         taskInstance.setCreateTime(DateUtils.currentTimeMillis());
-        taskInstance.setCurrentStepId(0L);
+        taskInstance.setCurrentStepInstanceId(0L);
         taskInstance.setDebugTask(false);
-        taskInstance.setAppCode(request.getAppCode());
+        taskInstance.setAppCode(appCode);
         taskInstance.setCallbackUrl(request.getCallbackUrl());
         return taskInstance;
     }
 
     private StepInstanceDTO buildFastFileStepInstance(
+        String username,
         EsbPushConfigFileV3Request request,
         List<EsbPushConfigFileV3Request.EsbConfigFileDTO> configFileList
     ) {
@@ -132,13 +151,13 @@ public class EsbPushConfigFileResourceV3Impl
         stepInstance.setAccountId(request.getAccountId());
         stepInstance.setAccountAlias(request.getAccountAlias());
         stepInstance.setStepId(-1L);
-        stepInstance.setExecuteType(StepExecuteTypeEnum.SEND_FILE.getValue());
+        stepInstance.setExecuteType(StepExecuteTypeEnum.SEND_FILE);
         stepInstance.setFileTargetPath(request.getTargetPath());
-        stepInstance.setFileSourceList(convertConfigFileSource(request.getUserName(), configFileList));
+        stepInstance.setFileSourceList(convertConfigFileSource(username, configFileList));
         stepInstance.setAppId(request.getAppId());
-        stepInstance.setTargetServers(convertToServersDTO(request.getTargetServer()));
-        stepInstance.setOperator(request.getUserName());
-        stepInstance.setStatus(RunStatusEnum.BLANK.getValue());
+        stepInstance.setTargetExecuteObjects(convertToServersDTO(request.getTargetServer()));
+        stepInstance.setOperator(username);
+        stepInstance.setStatus(RunStatusEnum.BLANK);
         stepInstance.setCreateTime(DateUtils.currentTimeMillis());
         stepInstance.setTimeout(JobConstants.DEFAULT_JOB_TIMEOUT_SECONDS);
         return stepInstance;
@@ -158,27 +177,25 @@ public class EsbPushConfigFileResourceV3Impl
             fileSourceDTO.setLocalUpload(false);
             fileSourceDTO.setFileType(TaskFileTypeEnum.BASE64_FILE.getType());
             List<FileDetailDTO> files = new ArrayList<>();
-            // 保存配置文件至机器
+            // 保存配置文件至主机
             String configFileLocalPath = ConfigFileUtil.saveConfigFileToLocal(
-                storageSystemConfig.getJobStorageRootPath(),
+                fileDistributeConfig.getJobDistributeRootPath(),
                 userName,
                 configFile.getFileName(),
                 configFile.getContent()
             );
             files.add(new FileDetailDTO(configFileLocalPath));
             fileSourceDTO.setFiles(files);
-            // 设置配置文件所在机器IP信息
-            fileSourceDTO.setServers(agentService.getLocalServersDTO());
+            // 设置配置文件所在主机信息
+            ExecuteTargetDTO fileSourceExecuteObjects = new ExecuteTargetDTO();
+            fileSourceExecuteObjects.setStaticIpList(Collections.singletonList(agentService.getLocalAgentHost()));
+            fileSourceDTO.setServers(fileSourceExecuteObjects);
             fileSourceDTOS.add(fileSourceDTO);
         });
         return fileSourceDTOS;
     }
 
     private ValidateResult checkPushConfigFileRequest(EsbPushConfigFileV3Request request) {
-        if (request.getAppId() == null || request.getAppId() < 1) {
-            log.warn("Push config file, appId is empty or invalid!");
-            return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME, "bk_biz_id");
-        }
         if (StringUtils.isBlank(request.getTargetPath())) {
             log.warn("Push config file, targetPath is empty!");
             return ValidateResult.fail(ErrorCode.MISSING_OR_ILLEGAL_PARAM_WITH_PARAM_NAME,

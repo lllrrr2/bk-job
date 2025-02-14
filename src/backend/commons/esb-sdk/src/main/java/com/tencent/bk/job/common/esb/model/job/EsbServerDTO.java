@@ -25,6 +25,7 @@
 package com.tencent.bk.job.common.esb.model.job;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.model.openapi.v3.EsbCmdbTopoNodeDTO;
 import lombok.Data;
 
 import java.util.List;
@@ -47,5 +48,5 @@ public class EsbServerDTO {
      * 分布式拓扑节点列表
      */
     @JsonProperty("topo_node_list")
-    private List<EsbCCTopoNodeDTO> topoNodes;
+    private List<EsbCmdbTopoNodeDTO> topoNodes;
 }

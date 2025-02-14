@@ -1,19 +1,16 @@
-FROM blueking/jdk:0.0.1
+FROM bkjob/tool-set:0.0.1
 
 LABEL maintainer="Tencent BlueKing Job"
+LABEL dockerfile.version="0.0.1"
 
-ENV BK_JOB_HOME=/data/job/exec \
-    BK_JOB_LOGS_DIR=/data/job/storage/logs
+ENV BK_JOB_HOME=/data/job/exec
 
 COPY ./ /data/job/exec/
 
 RUN yum -y install mysql
-RUN yum install -y epel-release
-RUN yum install -y python-pip
-RUN pip install requests
-
 RUN ln -snf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo 'Asia/Shanghai' > /etc/timezone && \
+    chmod +x /data/job/exec/runUpgrader.sh && \
     chmod +x /data/job/exec/startup.sh
 
 ENV LANG en_US.utf8

@@ -25,19 +25,19 @@
 package com.tencent.bk.job.manage.api.inner.impl;
 
 import com.tencent.bk.job.common.model.InternalResponse;
+import com.tencent.bk.job.manage.api.common.constants.JobResourceStatusEnum;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.script.ScriptTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskFileTypeEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskScriptSourceEnum;
+import com.tencent.bk.job.manage.api.common.constants.task.TaskStepTypeEnum;
 import com.tencent.bk.job.manage.api.inner.ServiceMetricsResource;
-import com.tencent.bk.job.manage.common.consts.JobResourceStatusEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
-import com.tencent.bk.job.manage.common.consts.script.ScriptTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskFileTypeEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskScriptSourceEnum;
-import com.tencent.bk.job.manage.common.consts.task.TaskStepTypeEnum;
 import com.tencent.bk.job.manage.model.dto.ResourceTagDTO;
 import com.tencent.bk.job.manage.service.AccountService;
-import com.tencent.bk.job.manage.service.ApplicationHostService;
 import com.tencent.bk.job.manage.service.ApplicationService;
-import com.tencent.bk.job.manage.service.ScriptService;
+import com.tencent.bk.job.manage.service.ScriptManager;
 import com.tencent.bk.job.manage.service.TagService;
+import com.tencent.bk.job.manage.service.host.HostService;
 import com.tencent.bk.job.manage.service.plan.TaskPlanService;
 import com.tencent.bk.job.manage.service.template.TaskTemplateService;
 import lombok.extern.slf4j.Slf4j;
@@ -45,36 +45,40 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
-@RestController
+@RestController("manageMetricsResource")
 @Slf4j
 public class ServiceMetricsResourceImpl implements ServiceMetricsResource {
 
     private final ApplicationService applicationService;
     private final AccountService accountService;
-    private final ScriptService scriptService;
+    private final ScriptManager scriptManager;
     private final TaskTemplateService taskTemplateService;
     private final TaskPlanService taskPlanService;
-    private final ApplicationHostService applicationHostService;
+    private final HostService hostService;
     private final TagService tagService;
 
     @Autowired
-    public ServiceMetricsResourceImpl(ApplicationService applicationService, AccountService accountService,
-                                      ScriptService scriptService, TaskTemplateService taskTemplateService,
-                                      TaskPlanService taskPlanService, ApplicationHostService applicationHostService,
+    public ServiceMetricsResourceImpl(ApplicationService applicationService,
+                                      AccountService accountService,
+                                      ScriptManager scriptManager,
+                                      TaskTemplateService taskTemplateService,
+                                      TaskPlanService taskPlanService,
+                                      HostService hostService,
                                       TagService tagService) {
         this.applicationService = applicationService;
         this.accountService = accountService;
-        this.scriptService = scriptService;
+        this.scriptManager = scriptManager;
         this.taskTemplateService = taskTemplateService;
         this.taskPlanService = taskPlanService;
-        this.applicationHostService = applicationHostService;
+        this.hostService = hostService;
         this.tagService = tagService;
     }
 
     @Override
     public InternalResponse<Integer> countApps(String username) {
-        return InternalResponse.buildSuccessResp(applicationService.countApps(username));
+        return InternalResponse.buildSuccessResp(applicationService.countApps());
     }
 
     @Override
@@ -89,33 +93,33 @@ public class ServiceMetricsResourceImpl implements ServiceMetricsResource {
 
     @Override
     public InternalResponse<Integer> countTemplateSteps(Long appId, TaskStepTypeEnum taskStepType,
-                                                   TaskScriptSourceEnum scriptSource, TaskFileTypeEnum fileType) {
+                                                        TaskScriptSourceEnum scriptSource, TaskFileTypeEnum fileType) {
         return InternalResponse.buildSuccessResp(taskTemplateService.countTemplateSteps(appId, taskStepType,
             scriptSource, fileType));
     }
 
     @Override
     public InternalResponse<Integer> countScripts(Long appId, ScriptTypeEnum scriptTypeEnum,
-                                             JobResourceStatusEnum jobResourceStatusEnum) {
-        return InternalResponse.buildSuccessResp(scriptService.countScripts(appId, scriptTypeEnum,
+                                                  JobResourceStatusEnum jobResourceStatusEnum) {
+        return InternalResponse.buildSuccessResp(scriptManager.countScripts(appId, scriptTypeEnum,
             jobResourceStatusEnum));
     }
 
     @Override
     public InternalResponse<Integer> countCiteScripts(Long appId) {
-        return InternalResponse.buildSuccessResp(scriptService.countCiteScripts(appId));
+        return InternalResponse.buildSuccessResp(scriptManager.countCiteScripts(appId));
     }
 
     @Override
     public InternalResponse<Integer> countCiteScriptSteps(Long appId) {
-        List<String> scriptIdList = scriptService.listScriptIds(appId);
+        List<String> scriptIdList = scriptManager.listScriptIds(appId);
         return InternalResponse.buildSuccessResp(taskTemplateService.countCiteScriptSteps(appId, scriptIdList));
     }
 
     @Override
     public InternalResponse<Integer> countScriptVersions(Long appId, ScriptTypeEnum scriptTypeEnum,
-                                                    JobResourceStatusEnum jobResourceStatusEnum) {
-        return InternalResponse.buildSuccessResp(scriptService.countScriptVersions(appId, scriptTypeEnum,
+                                                         JobResourceStatusEnum jobResourceStatusEnum) {
+        return InternalResponse.buildSuccessResp(scriptManager.countScriptVersions(appId, scriptTypeEnum,
             jobResourceStatusEnum));
     }
 
@@ -126,12 +130,17 @@ public class ServiceMetricsResourceImpl implements ServiceMetricsResource {
 
     @Override
     public InternalResponse<Long> countHostsByOsType(String osType) {
-        return InternalResponse.buildSuccessResp(applicationHostService.countHostsByOsType(osType));
+        return InternalResponse.buildSuccessResp(hostService.countHostsByOsType(osType));
+    }
+
+    @Override
+    public InternalResponse<Map<String, Integer>> groupHostByOsType() {
+        return InternalResponse.buildSuccessResp(hostService.groupHostByOsType());
     }
 
     @Override
     public InternalResponse<Long> tagCitedCount(Long appId, Long tagId) {
         List<ResourceTagDTO> scriptResourceTags = tagService.listResourceTagsByTagId(appId, tagId);
-        return InternalResponse.buildSuccessResp(Long.valueOf(scriptResourceTags.size()));
+        return InternalResponse.buildSuccessResp((long) scriptResourceTags.size());
     }
 }

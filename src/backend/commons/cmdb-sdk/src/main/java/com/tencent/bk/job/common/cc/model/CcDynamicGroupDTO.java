@@ -25,6 +25,7 @@
 package com.tencent.bk.job.common.cc.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.tencent.bk.job.common.model.dto.DynamicGroupWithHost;
 import lombok.Data;
 
 import java.util.List;
@@ -34,12 +35,24 @@ import java.util.List;
  */
 @Data
 public class CcDynamicGroupDTO {
+    /**
+     * cmdb业务ID
+     */
     @JsonProperty("bk_biz_id")
-    private Long appId;
+    private Long bizId;
 
+    /**
+     * cmdb动态分组ID
+     */
     private String id;
 
+    /**
+     * cmdb动态分组名称
+     */
     private String name;
+
+    @JsonProperty("last_time")
+    private String lastTime;
 
     @JsonProperty("bk_obj_id")
     private String objId;
@@ -112,5 +125,13 @@ public class CcDynamicGroupDTO {
         public void setCondition(List<DynamicGroupObjCondition> condition) {
             this.condition = condition;
         }
+    }
+
+    public DynamicGroupWithHost toDynamicGroupWithHost() {
+        DynamicGroupWithHost dynamicGroupWithHost = new DynamicGroupWithHost();
+        dynamicGroupWithHost.setId(this.getId());
+        dynamicGroupWithHost.setBizId(this.getBizId());
+        dynamicGroupWithHost.setName(this.getName());
+        return dynamicGroupWithHost;
     }
 }

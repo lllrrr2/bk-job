@@ -24,7 +24,9 @@
 
 package com.tencent.bk.job.manage.model.dto.task;
 
-import com.tencent.bk.job.common.esb.model.job.EsbCCTopoNodeDTO;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.tencent.bk.job.common.annotation.PersistenceObject;
+import com.tencent.bk.job.common.model.openapi.v3.EsbCmdbTopoNodeDTO;
 import com.tencent.bk.job.common.model.vo.TargetNodeVO;
 import com.tencent.bk.job.manage.model.inner.ServiceTaskNodeInfoDTO;
 import lombok.AllArgsConstructor;
@@ -35,10 +37,12 @@ import lombok.NoArgsConstructor;
 /**
  * @since 12/12/2019 22:12
  */
+@PersistenceObject
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class TaskNodeInfoDTO {
 
     private Long id;
@@ -52,25 +56,25 @@ public class TaskNodeInfoDTO {
             return null;
         }
         TaskNodeInfoDTO nodeInfo = new TaskNodeInfoDTO();
-        nodeInfo.setId(targetNodeVO.getId());
-        nodeInfo.setType(targetNodeVO.getType());
+        nodeInfo.setId(targetNodeVO.getInstanceId());
+        nodeInfo.setType(targetNodeVO.getObjectId());
         return nodeInfo;
     }
 
-    public static EsbCCTopoNodeDTO toEsbCCTopoNode(TaskNodeInfoDTO taskNodeInfo) {
+    public static EsbCmdbTopoNodeDTO toEsbCmdbTopoNode(TaskNodeInfoDTO taskNodeInfo) {
         if (taskNodeInfo == null) {
             return null;
         }
-        EsbCCTopoNodeDTO esbCCTopoNode = new EsbCCTopoNodeDTO();
-        esbCCTopoNode.setId(taskNodeInfo.getId());
-        esbCCTopoNode.setNodeType(taskNodeInfo.getType());
-        return esbCCTopoNode;
+        EsbCmdbTopoNodeDTO esbCmdbTopoNodeDTO = new EsbCmdbTopoNodeDTO();
+        esbCmdbTopoNodeDTO.setId(taskNodeInfo.getId());
+        esbCmdbTopoNodeDTO.setNodeType(taskNodeInfo.getType());
+        return esbCmdbTopoNodeDTO;
     }
 
     public TargetNodeVO toVO() {
         TargetNodeVO targetNodeVO = new TargetNodeVO();
-        targetNodeVO.setId(this.getId());
-        targetNodeVO.setType(this.getType());
+        targetNodeVO.setInstanceId(this.getId());
+        targetNodeVO.setObjectId(this.getType());
         return targetNodeVO;
     }
 

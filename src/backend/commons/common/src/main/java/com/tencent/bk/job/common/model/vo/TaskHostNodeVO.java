@@ -24,62 +24,91 @@
 
 package com.tencent.bk.job.common.model.vo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.tencent.bk.job.common.util.JobContextUtil;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.tencent.bk.job.common.constant.ErrorCode;
+import com.tencent.bk.job.common.exception.InvalidParamException;
+import com.tencent.bk.job.common.util.json.JsonUtils;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.commons.lang3.StringUtils;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-/**
- * @since 1/11/2019 12:15
- */
 @Data
 @ApiModel("主机节点信息")
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Slf4j
 public class TaskHostNodeVO {
 
-    @ApiModelProperty("机器 IP 列表")
-    private List<HostInfoVO> ipList;
+    @ApiModelProperty("主机列表")
+    private List<HostInfoVO> hostList;
 
-    @ApiModelProperty("节点 ID")
-    private List<TargetNodeVO> topoNodeList;
+    @ApiModelProperty("拓扑节点 ID")
+    private List<TargetNodeVO> nodeList;
 
-    @ApiModelProperty("动态分组 ID")
-    private List<String> dynamicGroupList;
+    @ApiModelProperty("动态分组")
+    private List<DynamicGroupIdWithMeta> dynamicGroupList;
 
-    public boolean validate(boolean isCreate) {
+    public void validate() throws InvalidParamException {
         boolean allEmpty = true;
-        if (CollectionUtils.isNotEmpty(topoNodeList)) {
+        if (CollectionUtils.isNotEmpty(nodeList)) {
             allEmpty = false;
-            for (TargetNodeVO targetNodeVO : topoNodeList) {
-                if (!targetNodeVO.validate(isCreate)) {
-                    JobContextUtil.addDebugMessage("Host node info validate failed!");
-                    return false;
-                }
+            for (TargetNodeVO targetNodeVO : nodeList) {
+                targetNodeVO.validate();
             }
         }
         if (CollectionUtils.isNotEmpty(dynamicGroupList)) {
             allEmpty = false;
-            for (String dynamicGroup : dynamicGroupList) {
-                if (!StringUtils.isNoneBlank(dynamicGroup)) {
-                    JobContextUtil.addDebugMessage("Host dynamic group id is empty!");
-                    return false;
+            for (Object dynamicGroup : dynamicGroupList) {
+                if (dynamicGroup == null) {
+                    log.warn("Host dynamic group id is empty!");
+                    throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
                 }
             }
         }
-        if (CollectionUtils.isNotEmpty(ipList)) {
+        if (CollectionUtils.isNotEmpty(hostList)) {
             allEmpty = false;
-            for (HostInfoVO hostInfoVO : ipList) {
-                if (!hostInfoVO.validate(isCreate)) {
-                    JobContextUtil.addDebugMessage("Host info validate failed!");
-                    return false;
-                }
+            for (HostInfoVO hostInfoVO : hostList) {
+                hostInfoVO.validate();
             }
         }
-        return !allEmpty;
+        if (allEmpty) {
+            log.warn("TaskHostNode is empty!");
+            throw new InvalidParamException(ErrorCode.ILLEGAL_PARAM);
+        }
+    }
+
+    @JsonIgnore
+    public List<String> getDynamicGroupIdList() {
+        if (org.springframework.util.CollectionUtils.isEmpty(dynamicGroupList)) {
+            return Collections.emptyList();
+        }
+        List<String> dynamicGroupIdList = new ArrayList<>();
+        for (DynamicGroupIdWithMeta dynamicGroup : dynamicGroupList) {
+            DynamicGroupIdWithMeta dynamicGroupIdWithMeta = JsonUtils.fromJson(
+                JsonUtils.toJson(dynamicGroup),
+                new TypeReference<DynamicGroupIdWithMeta>() {
+                }
+            );
+            dynamicGroupIdList.add(dynamicGroupIdWithMeta.getId());
+        }
+        return dynamicGroupIdList;
+    }
+
+    public void setDynamicGroupIdList(List<String> dynamicGroupIdList) {
+        if (dynamicGroupIdList == null) {
+            return;
+        }
+        List<DynamicGroupIdWithMeta> dynamicGroupList = new ArrayList<>();
+        for (String id : dynamicGroupIdList) {
+            dynamicGroupList.add(new DynamicGroupIdWithMeta(id));
+        }
+        this.dynamicGroupList = dynamicGroupList;
     }
 }

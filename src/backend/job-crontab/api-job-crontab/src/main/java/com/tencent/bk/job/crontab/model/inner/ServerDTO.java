@@ -24,12 +24,17 @@
 
 package com.tencent.bk.job.crontab.model.inner;
 
-import com.tencent.bk.job.common.esb.model.job.EsbCCTopoNodeDTO;
+import com.tencent.bk.job.common.annotation.PersistenceObject;
 import com.tencent.bk.job.common.esb.model.job.EsbIpDTO;
-import com.tencent.bk.job.common.esb.model.job.v3.EsbDynamicGroupDTO;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbServerV3DTO;
-import com.tencent.bk.job.common.model.dto.CCTopoNodeDTO;
+import com.tencent.bk.job.common.model.dto.CmdbTopoNodeDTO;
 import com.tencent.bk.job.common.model.dto.HostDTO;
+import com.tencent.bk.job.common.model.openapi.v3.EsbCmdbTopoNodeDTO;
+import com.tencent.bk.job.common.model.openapi.v3.EsbDynamicGroupDTO;
+import com.tencent.bk.job.common.model.vo.DynamicGroupIdWithMeta;
+import com.tencent.bk.job.common.model.vo.HostInfoVO;
+import com.tencent.bk.job.common.model.vo.TargetNodeVO;
+import com.tencent.bk.job.common.model.vo.TaskExecuteObjectsInfoVO;
 import com.tencent.bk.job.common.model.vo.TaskHostNodeVO;
 import com.tencent.bk.job.common.model.vo.TaskTargetVO;
 import com.tencent.bk.job.execute.model.inner.ServiceTargetServers;
@@ -43,9 +48,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@PersistenceObject
 @ApiModel("目标服务器，四个不可同时为空")
 @Data
-public class ServerDTO {
+public class ServerDTO implements Cloneable {
     /**
      * 全局变量名
      * <p>
@@ -70,7 +76,7 @@ public class ServerDTO {
      * 拓扑节点列表
      */
     @ApiModelProperty(value = "分布式拓扑节点列表")
-    private List<CCTopoNodeDTO> topoNodes;
+    private List<CmdbTopoNodeDTO> topoNodes;
 
     public static TaskTargetVO toTargetVO(ServerDTO server) {
         if (server == null) {
@@ -78,18 +84,31 @@ public class ServerDTO {
         }
         TaskTargetVO taskTarget = new TaskTargetVO();
         taskTarget.setVariable(server.getVariable());
+        TaskExecuteObjectsInfoVO taskExecuteObjectsInfoVO = new TaskExecuteObjectsInfoVO();
         TaskHostNodeVO taskHostNode = new TaskHostNodeVO();
+        taskTarget.setExecuteObjectsInfo(taskExecuteObjectsInfoVO);
+        taskTarget.setHostNodeInfo(taskHostNode);
+
+        // 聚合通过hostId与IP指定的主机信息
+        List<HostInfoVO> hostInfoVOList = new ArrayList<>();
         if (CollectionUtils.isNotEmpty(server.getIps())) {
-            taskHostNode.setIpList(server.getIps().parallelStream().map(HostDTO::toVO).collect(Collectors.toList()));
+            hostInfoVOList.addAll(server.getIps().stream().map(HostDTO::toHostInfoVO).collect(Collectors.toList()));
+        }
+        if (!hostInfoVOList.isEmpty()) {
+            taskExecuteObjectsInfoVO.setHostList(hostInfoVOList);
+            taskHostNode.setHostList(hostInfoVOList);
         }
         if (CollectionUtils.isNotEmpty(server.getDynamicGroupIds())) {
-            taskHostNode.setDynamicGroupList(server.getDynamicGroupIds());
+            taskExecuteObjectsInfoVO.setDynamicGroupList(
+                server.getDynamicGroupIds().stream().map(DynamicGroupIdWithMeta::new).collect(Collectors.toList()));
+            taskHostNode.setDynamicGroupIdList(server.getDynamicGroupIds());
         }
         if (CollectionUtils.isNotEmpty(server.getTopoNodes())) {
-            taskHostNode.setTopoNodeList(server.getTopoNodes().parallelStream()
-                .map(CCTopoNodeDTO::toVO).collect(Collectors.toList()));
+            List<TargetNodeVO> nodeList = server.getTopoNodes().stream()
+                .map(CmdbTopoNodeDTO::toVO).collect(Collectors.toList());
+            taskExecuteObjectsInfoVO.setNodeList(nodeList);
+            taskHostNode.setNodeList(nodeList);
         }
-        taskTarget.setHostNodeInfo(taskHostNode);
         return taskTarget;
     }
 
@@ -99,18 +118,19 @@ public class ServerDTO {
         }
         ServerDTO server = new ServerDTO();
         server.setVariable(taskTarget.getVariable());
-        if (taskTarget.getHostNodeInfo() != null) {
-            TaskHostNodeVO hostNodeInfo = taskTarget.getHostNodeInfo();
-            if (CollectionUtils.isNotEmpty(hostNodeInfo.getIpList())) {
-                server.setIps(hostNodeInfo.getIpList().parallelStream()
-                    .map(HostDTO::fromVO).collect(Collectors.toList()));
+        if (taskTarget.getExecuteObjectsInfoCompatibly() != null) {
+            TaskExecuteObjectsInfoVO taskExecuteObjectsInfoVO = taskTarget.getExecuteObjectsInfoCompatibly();
+            if (CollectionUtils.isNotEmpty(taskExecuteObjectsInfoVO.getHostList())) {
+                server.setIps(taskExecuteObjectsInfoVO.getHostList().stream()
+                    .map(HostDTO::fromHostInfoVO).collect(Collectors.toList()));
             }
-            if (CollectionUtils.isNotEmpty(hostNodeInfo.getDynamicGroupList())) {
-                server.setDynamicGroupIds(hostNodeInfo.getDynamicGroupList());
+            if (CollectionUtils.isNotEmpty(taskExecuteObjectsInfoVO.getDynamicGroupList())) {
+                server.setDynamicGroupIds(taskExecuteObjectsInfoVO.getDynamicGroupList().stream()
+                    .map(DynamicGroupIdWithMeta::getId).collect(Collectors.toList()));
             }
-            if (CollectionUtils.isNotEmpty(hostNodeInfo.getTopoNodeList())) {
-                server.setTopoNodes(hostNodeInfo.getTopoNodeList().parallelStream()
-                    .map(CCTopoNodeDTO::fromVO).collect(Collectors.toList()));
+            if (CollectionUtils.isNotEmpty(taskExecuteObjectsInfoVO.getNodeList())) {
+                server.setTopoNodes(taskExecuteObjectsInfoVO.getNodeList().stream()
+                    .map(CmdbTopoNodeDTO::fromVO).collect(Collectors.toList()));
             }
         }
         return server;
@@ -122,8 +142,8 @@ public class ServerDTO {
         }
         ServerDTO serverDTO = new ServerDTO();
         if (CollectionUtils.isNotEmpty(server.getTopoNodes())) {
-            List<CCTopoNodeDTO> topoNodes = new ArrayList<>();
-            server.getTopoNodes().forEach(topoNode -> topoNodes.add(new CCTopoNodeDTO(topoNode.getId(),
+            List<CmdbTopoNodeDTO> topoNodes = new ArrayList<>();
+            server.getTopoNodes().forEach(topoNode -> topoNodes.add(new CmdbTopoNodeDTO(topoNode.getId(),
                 topoNode.getNodeType())));
             serverDTO.setTopoNodes(topoNodes);
         }
@@ -132,11 +152,18 @@ public class ServerDTO {
             server.getDynamicGroups().forEach(group -> dynamicGroupIds.add(group.getId()));
             serverDTO.setDynamicGroupIds(dynamicGroupIds);
         }
+        List<HostDTO> hosts = new ArrayList<>();
         if (CollectionUtils.isNotEmpty(server.getIps())) {
             List<HostDTO> staticIpList = new ArrayList<>();
-            server.getIps().forEach(ip -> staticIpList.add(new HostDTO(ip.getCloudAreaId(), ip.getIp())));
-            serverDTO.setIps(staticIpList);
+            server.getIps().forEach(ip -> staticIpList.add(new HostDTO(ip.getBkCloudId(), ip.getIp())));
+            hosts.addAll(staticIpList);
         }
+        if (CollectionUtils.isNotEmpty(server.getHostIds())) {
+            List<HostDTO> hostIdHostList = new ArrayList<>();
+            server.getHostIds().forEach(hostId -> hostIdHostList.add(HostDTO.fromHostId(hostId)));
+            hosts.addAll(hostIdHostList);
+        }
+        serverDTO.setIps(hosts);
         return serverDTO;
     }
 
@@ -147,18 +174,18 @@ public class ServerDTO {
         EsbServerV3DTO esbServer = new EsbServerV3DTO();
         esbServer.setVariable(server.getVariable());
         if (CollectionUtils.isNotEmpty(server.getIps())) {
-            esbServer.setIps(server.getIps().parallelStream().map(EsbIpDTO::fromHost).collect(Collectors.toList()));
+            esbServer.setIps(server.getIps().stream().map(EsbIpDTO::fromHost).collect(Collectors.toList()));
         }
         if (CollectionUtils.isNotEmpty(server.getDynamicGroupIds())) {
-            esbServer.setDynamicGroups(server.getDynamicGroupIds().parallelStream().map(id -> {
+            esbServer.setDynamicGroups(server.getDynamicGroupIds().stream().map(id -> {
                 EsbDynamicGroupDTO esbDynamicGroup = new EsbDynamicGroupDTO();
                 esbDynamicGroup.setId(id);
                 return esbDynamicGroup;
             }).collect(Collectors.toList()));
         }
         if (CollectionUtils.isNotEmpty(server.getTopoNodes())) {
-            esbServer.setTopoNodes(server.getTopoNodes().parallelStream()
-                .map(EsbCCTopoNodeDTO::fromCCTopoNode).collect(Collectors.toList()));
+            esbServer.setTopoNodes(server.getTopoNodes().stream()
+                .map(EsbCmdbTopoNodeDTO::fromCmdbTopoNode).collect(Collectors.toList()));
         }
         return esbServer;
     }
@@ -169,9 +196,11 @@ public class ServerDTO {
         }
         ServiceTargetServers serviceServer = new ServiceTargetServers();
         serviceServer.setVariable(server.getVariable());
+        List<HostDTO> hosts = new ArrayList<>();
         if (CollectionUtils.isNotEmpty(server.getIps())) {
-            serviceServer.setIps(server.getIps());
+            hosts.addAll(server.getIps());
         }
+        serviceServer.setIps(hosts);
         serviceServer.setDynamicGroupIds(server.getDynamicGroupIds());
         if (CollectionUtils.isNotEmpty(server.getTopoNodes())) {
             serviceServer.setTopoNodes(server.getTopoNodes());
@@ -196,5 +225,39 @@ public class ServerDTO {
             });
             this.dynamicGroupIds = standardDynamicGroupIdList;
         }
+    }
+
+    @SuppressWarnings("MethodDoesntCallSuperMethod")
+    @Override
+    public ServerDTO clone() {
+        ServerDTO serverDTO = new ServerDTO();
+        serverDTO.setVariable(variable);
+        if (null != ips) {
+            List<HostDTO> cloneIps = new ArrayList<>(ips.size());
+            for (HostDTO ip : ips) {
+                if (ip != null) {
+                    cloneIps.add(ip.clone());
+                } else {
+                    cloneIps.add(null);
+                }
+            }
+            serverDTO.setIps(cloneIps);
+        }
+        if (null != dynamicGroupIds) {
+            List<String> cloneDynamicGroupIds = new ArrayList<>(dynamicGroupIds);
+            serverDTO.setDynamicGroupIds(cloneDynamicGroupIds);
+        }
+        if (null != topoNodes) {
+            List<CmdbTopoNodeDTO> cloneTopoNodes = new ArrayList<>(topoNodes.size());
+            for (CmdbTopoNodeDTO topoNode : topoNodes) {
+                if (topoNode != null) {
+                    cloneTopoNodes.add(topoNode.clone());
+                } else {
+                    cloneTopoNodes.add(null);
+                }
+            }
+            serverDTO.setTopoNodes(cloneTopoNodes);
+        }
+        return serverDTO;
     }
 }

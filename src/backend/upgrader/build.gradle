@@ -39,8 +39,10 @@ dependencies {
     api project(":commons:common-api")
     api project(":commons:common-iam")
     api project(":commons:common-utils")
+    api project(":commons:common-jwt")
     api project(":commons:esb-sdk")
     api project(":commons:artifactory-sdk")
+    api(project(":job-manage:api-job-manage"))
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     implementation 'ch.qos.logback:logback-core'
@@ -59,9 +61,6 @@ apply plugin: "application"
 mainClassName = "com.tencent.bk.job.upgrader.Upgrader"
 
 shadowJar {
-    // baseName为插件默认打包名+".jar"，bkdevops-plugin.jar
-    // 如果修改，则要一同修改插件task.json中的target启动命令
-    // 为了省事，建议不用修改
     classifier = null
     zip64 true
 }

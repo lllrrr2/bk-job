@@ -26,9 +26,13 @@ package com.tencent.bk.job.execute.model.esb.v2;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.tencent.bk.job.common.esb.model.EsbAppScopeDTO;
 import com.tencent.bk.job.common.util.json.LongTimestampSerializer;
 import com.tencent.bk.job.common.util.json.LongToDecimalJsonSerializer;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
 import java.util.List;
 import java.util.Map;
@@ -44,8 +48,10 @@ public class EsbStepInstanceStatusDTO {
     @JsonProperty("step_instance_analyse_result")
     private List<Map<String, Object>> ayalyseResult;
 
-    @Data
-    public static class StepInstance {
+    @Getter
+    @Setter
+    @ToString
+    public static class StepInstance extends EsbAppScopeDTO {
         @JsonProperty("step_instance_id")
         private Long id;
 
@@ -60,12 +66,6 @@ public class EsbStepInstanceStatusDTO {
          */
         @JsonProperty("job_instance_id")
         private Long taskInstanceId;
-
-        /**
-         * 业务id
-         */
-        @JsonProperty("bk_biz_id")
-        private Long appId;
 
         /**
          * 名称

@@ -44,13 +44,12 @@ public enum LogTypeEnum {
     /**
      * 导入日志
      */
-    IMPORT(2),
-    ;
+    IMPORT(2);
 
     @JsonValue
     private final Integer type;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static LogTypeEnum valueOf(Integer type) {
         for (LogTypeEnum value : values()) {
             if (value.type.equals(type)) {

@@ -24,6 +24,7 @@
 
 package com.tencent.bk.job.crontab.model.dto;
 
+import com.tencent.bk.job.common.annotation.PersistenceObject;
 import com.tencent.bk.job.common.constant.ErrorCode;
 import com.tencent.bk.job.common.constant.TaskVariableTypeEnum;
 import com.tencent.bk.job.common.esb.model.job.v3.EsbGlobalVarV3DTO;
@@ -39,11 +40,12 @@ import lombok.NoArgsConstructor;
 /**
  * @since 3/10/2019 17:14
  */
+@PersistenceObject
 @Data
 @EqualsAndHashCode
 @NoArgsConstructor
 @AllArgsConstructor
-public class CronJobVariableDTO {
+public class CronJobVariableDTO implements Cloneable {
     /**
      * 变量 ID
      */
@@ -141,5 +143,19 @@ public class CronJobVariableDTO {
         esbGlobalVar.setValue(cronJobVariableDTO.getValue());
         esbGlobalVar.setServer(ServerDTO.toEsbServerV3(cronJobVariableDTO.getServer()));
         return esbGlobalVar;
+    }
+
+    @SuppressWarnings("MethodDoesntCallSuperMethod")
+    @Override
+    public CronJobVariableDTO clone() {
+        CronJobVariableDTO cronJobVariableDTO = new CronJobVariableDTO();
+        cronJobVariableDTO.setId(id);
+        cronJobVariableDTO.setType(type);
+        cronJobVariableDTO.setName(name);
+        cronJobVariableDTO.setValue(value);
+        if (server != null) {
+            cronJobVariableDTO.setServer(server.clone());
+        }
+        return cronJobVariableDTO;
     }
 }

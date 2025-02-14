@@ -24,14 +24,23 @@
 
 package com.tencent.bk.job.manage.dao.impl;
 
+import com.tencent.bk.job.common.constant.AccountCategoryEnum;
+import com.tencent.bk.job.common.crypto.scenario.DbPasswordCryptoService;
 import com.tencent.bk.job.common.model.BaseSearchCondition;
 import com.tencent.bk.job.common.model.PageData;
+import com.tencent.bk.job.common.mysql.util.JooqDataTypeUtil;
 import com.tencent.bk.job.common.util.date.DateUtils;
-import com.tencent.bk.job.manage.common.consts.account.AccountCategoryEnum;
-import com.tencent.bk.job.manage.common.consts.account.AccountTypeEnum;
-import com.tencent.bk.job.manage.common.util.JooqDataTypeUtil;
+import com.tencent.bk.job.manage.api.common.constants.account.AccountTypeEnum;
 import com.tencent.bk.job.manage.dao.AccountDAO;
 import com.tencent.bk.job.manage.model.dto.AccountDTO;
+import com.tencent.bk.job.manage.model.dto.AccountDisplayDTO;
+import com.tencent.bk.job.manage.model.tables.Account;
+import com.tencent.bk.job.manage.model.tables.TaskTemplate;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStep;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStepFile;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStepFileList;
+import com.tencent.bk.job.manage.model.tables.TaskTemplateStepScript;
+import com.tencent.bk.job.manage.model.tables.records.AccountRecord;
 import lombok.val;
 import org.apache.commons.lang3.StringUtils;
 import org.jooq.Condition;
@@ -43,10 +52,6 @@ import org.jooq.SelectConditionStep;
 import org.jooq.SortField;
 import org.jooq.TableField;
 import org.jooq.UpdateSetMoreStep;
-import org.jooq.generated.tables.Account;
-import org.jooq.generated.tables.TaskTemplateStepFile;
-import org.jooq.generated.tables.TaskTemplateStepFileList;
-import org.jooq.generated.tables.TaskTemplateStepScript;
 import org.jooq.types.UByte;
 import org.jooq.types.ULong;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,56 +66,118 @@ import java.util.List;
 @Repository
 public class AccountDAOImpl implements AccountDAO {
     private static final Account TB_ACCOUNT = Account.ACCOUNT;
-    private static final TableField[] ALL_FILED = {TB_ACCOUNT.ID, TB_ACCOUNT.ACCOUNT_, TB_ACCOUNT.ALIAS,
-        TB_ACCOUNT.CATEGORY, TB_ACCOUNT.TYPE, TB_ACCOUNT.APP_ID, TB_ACCOUNT.GRANTEE, TB_ACCOUNT.REMARK,
-        TB_ACCOUNT.OS, TB_ACCOUNT.PASSWORD, TB_ACCOUNT.DB_PASSWORD, TB_ACCOUNT.DB_PORT, TB_ACCOUNT.DB_SYSTEM_ACCOUNT_ID,
-        TB_ACCOUNT.CREATOR, TB_ACCOUNT.CREATE_TIME, TB_ACCOUNT.LAST_MODIFY_USER, TB_ACCOUNT.LAST_MODIFY_TIME};
-    private DSLContext ctx;
+    private static final TableField[] ALL_FILED = {
+        TB_ACCOUNT.ID,
+        TB_ACCOUNT.ACCOUNT_,
+        TB_ACCOUNT.ALIAS,
+        TB_ACCOUNT.CATEGORY,
+        TB_ACCOUNT.TYPE,
+        TB_ACCOUNT.APP_ID,
+        TB_ACCOUNT.GRANTEE,
+        TB_ACCOUNT.REMARK,
+        TB_ACCOUNT.OS,
+        TB_ACCOUNT.PASSWORD,
+        TB_ACCOUNT.DB_PASSWORD,
+        TB_ACCOUNT.DB_PORT,
+        TB_ACCOUNT.DB_SYSTEM_ACCOUNT_ID,
+        TB_ACCOUNT.CREATOR,
+        TB_ACCOUNT.CREATE_TIME,
+        TB_ACCOUNT.LAST_MODIFY_USER,
+        TB_ACCOUNT.LAST_MODIFY_TIME
+    };
+    private final DSLContext ctx;
+    private final DbPasswordCryptoService dbPasswordCryptoService;
 
     @Autowired
-    public AccountDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext create) {
+    public AccountDAOImpl(@Qualifier("job-manage-dsl-context") DSLContext create,
+                          DbPasswordCryptoService dbPasswordCryptoService) {
         this.ctx = create;
+        this.dbPasswordCryptoService = dbPasswordCryptoService;
     }
 
     @Override
     public long saveAccountWithId(AccountDTO account) {
-        Record record = ctx.insertInto(TB_ACCOUNT, TB_ACCOUNT.ID, TB_ACCOUNT.ACCOUNT_, TB_ACCOUNT.ALIAS,
-            TB_ACCOUNT.CATEGORY, TB_ACCOUNT.TYPE, TB_ACCOUNT.APP_ID, TB_ACCOUNT.GRANTEE,
-            TB_ACCOUNT.REMARK, TB_ACCOUNT.OS, TB_ACCOUNT.PASSWORD, TB_ACCOUNT.DB_PASSWORD, TB_ACCOUNT.DB_PORT,
+        Record record = ctx.insertInto(
+            TB_ACCOUNT,
+            TB_ACCOUNT.ID,
+            TB_ACCOUNT.ACCOUNT_,
+            TB_ACCOUNT.ALIAS,
+            TB_ACCOUNT.CATEGORY,
+            TB_ACCOUNT.TYPE,
+            TB_ACCOUNT.APP_ID,
+            TB_ACCOUNT.GRANTEE,
+            TB_ACCOUNT.REMARK,
+            TB_ACCOUNT.OS,
+            TB_ACCOUNT.PASSWORD,
+            TB_ACCOUNT.DB_PASSWORD,
+            TB_ACCOUNT.DB_PORT,
             TB_ACCOUNT.DB_SYSTEM_ACCOUNT_ID,
-            TB_ACCOUNT.CREATOR, TB_ACCOUNT.CREATE_TIME, TB_ACCOUNT.LAST_MODIFY_USER, TB_ACCOUNT.LAST_MODIFY_TIME)
-            .values(account.getId(), account.getAccount(), account.getAlias(),
-                JooqDataTypeUtil.getByteFromInteger(account.getCategory().getValue()),
-                JooqDataTypeUtil.getByteFromInteger(account.getType().getType()), account.getAppId(),
-                account.getGrantees(),
-                account.getRemark(), account.getOs(), account.getPassword(), account.getDbPassword(),
-                account.getDbPort(),
-                account.getDbSystemAccountId(), account.getCreator(), ULong.valueOf(account.getCreateTime()),
-                account.getLastModifyUser(),
-                ULong.valueOf(account.getLastModifyTime()))
-            .returning(TB_ACCOUNT.ID)
+            TB_ACCOUNT.CREATOR,
+            TB_ACCOUNT.CREATE_TIME,
+            TB_ACCOUNT.LAST_MODIFY_USER,
+            TB_ACCOUNT.LAST_MODIFY_TIME
+        ).values(
+            account.getId(),
+            account.getAccount(),
+            account.getAlias(),
+            JooqDataTypeUtil.getByteFromInteger(account.getCategory().getValue()),
+            JooqDataTypeUtil.getByteFromInteger(account.getType().getType()),
+            account.getAppId(),
+            account.getGrantees(),
+            account.getRemark(),
+            account.getOs(),
+            account.getPassword(),
+            dbPasswordCryptoService.encryptDbPasswordIfNeeded(account.getCategory(), account.getDbPassword()),
+            account.getDbPort(),
+            account.getDbSystemAccountId(),
+            account.getCreator(),
+            ULong.valueOf(account.getCreateTime()),
+            account.getLastModifyUser(),
+            ULong.valueOf(account.getLastModifyTime())
+        ).returning(TB_ACCOUNT.ID)
             .fetchOne();
+        assert record != null;
         return record.get(TB_ACCOUNT.ID);
     }
 
     @Override
     public long saveAccount(AccountDTO account) {
-        Record record = ctx.insertInto(TB_ACCOUNT, TB_ACCOUNT.ACCOUNT_, TB_ACCOUNT.ALIAS, TB_ACCOUNT.CATEGORY,
-            TB_ACCOUNT.TYPE, TB_ACCOUNT.APP_ID, TB_ACCOUNT.GRANTEE,
-            TB_ACCOUNT.REMARK, TB_ACCOUNT.OS, TB_ACCOUNT.PASSWORD, TB_ACCOUNT.DB_PASSWORD, TB_ACCOUNT.DB_PORT,
+        Record record = ctx.insertInto(TB_ACCOUNT,
+            TB_ACCOUNT.ACCOUNT_,
+            TB_ACCOUNT.ALIAS,
+            TB_ACCOUNT.CATEGORY,
+            TB_ACCOUNT.TYPE,
+            TB_ACCOUNT.APP_ID,
+            TB_ACCOUNT.GRANTEE,
+            TB_ACCOUNT.REMARK,
+            TB_ACCOUNT.OS,
+            TB_ACCOUNT.PASSWORD,
+            TB_ACCOUNT.DB_PASSWORD,
+            TB_ACCOUNT.DB_PORT,
             TB_ACCOUNT.DB_SYSTEM_ACCOUNT_ID,
-            TB_ACCOUNT.CREATOR, TB_ACCOUNT.CREATE_TIME, TB_ACCOUNT.LAST_MODIFY_USER, TB_ACCOUNT.LAST_MODIFY_TIME)
-            .values(account.getAccount(), account.getAlias(),
-                JooqDataTypeUtil.getByteFromInteger(account.getCategory().getValue()),
-                JooqDataTypeUtil.getByteFromInteger(account.getType().getType()), account.getAppId(),
-                account.getGrantees(),
-                account.getRemark(), account.getOs(), account.getPassword(), account.getDbPassword(),
-                account.getDbPort(),
-                account.getDbSystemAccountId(), account.getCreator(), ULong.valueOf(account.getCreateTime()),
-                account.getLastModifyUser(),
-                ULong.valueOf(DateUtils.currentTimeMillis()))
-            .returning(TB_ACCOUNT.ID)
+            TB_ACCOUNT.CREATOR,
+            TB_ACCOUNT.CREATE_TIME,
+            TB_ACCOUNT.LAST_MODIFY_USER,
+            TB_ACCOUNT.LAST_MODIFY_TIME
+        ).values(account.getAccount(),
+            account.getAlias(),
+            JooqDataTypeUtil.getByteFromInteger(account.getCategory().getValue()),
+            JooqDataTypeUtil.getByteFromInteger(account.getType().getType()),
+            account.getAppId(),
+            account.getGrantees(),
+            account.getRemark(),
+            account.getOs(),
+            account.getPassword(),
+            dbPasswordCryptoService.encryptDbPasswordIfNeeded(account.getCategory(), account.getDbPassword()),
+            account.getDbPort(),
+            account.getDbSystemAccountId(),
+            account.getCreator(),
+            ULong.valueOf(account.getCreateTime()),
+            account.getLastModifyUser(),
+            ULong.valueOf(DateUtils.currentTimeMillis())
+        ).returning(TB_ACCOUNT.ID)
             .fetchOne();
+        assert record != null;
         return record.get(TB_ACCOUNT.ID);
     }
 
@@ -119,6 +186,28 @@ public class AccountDAOImpl implements AccountDAO {
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TB_ACCOUNT.ID.eq(accountId));
         return getOnlyOneAccountByConditions(conditions);
+    }
+
+    @Override
+    public List<AccountDisplayDTO> listAccountDisplayInfoByIds(Collection<Long> accountIds) {
+        List<Condition> conditions = new ArrayList<>();
+        conditions.add(TB_ACCOUNT.ID.in(accountIds));
+        val records = ctx.select(
+            TB_ACCOUNT.ID,
+            TB_ACCOUNT.ACCOUNT_,
+            TB_ACCOUNT.ALIAS,
+            TB_ACCOUNT.CATEGORY,
+            TB_ACCOUNT.TYPE,
+            TB_ACCOUNT.APP_ID
+        ).from(TB_ACCOUNT)
+            .where(conditions)
+            .and(TB_ACCOUNT.IS_DELETED.eq(UByte.valueOf(0)))
+            .fetch();
+        if (records.size() == 0) {
+            return Collections.emptyList();
+        } else {
+            return records.map(this::extractDisplayInfo);
+        }
     }
 
     @Override
@@ -156,6 +245,20 @@ public class AccountDAOImpl implements AccountDAO {
         }
     }
 
+    private AccountDisplayDTO extractDisplayInfo(Record record) {
+        if (record == null) {
+            return null;
+        }
+        AccountDisplayDTO accountDisplayDTO = new AccountDisplayDTO();
+        accountDisplayDTO.setId(record.get(TB_ACCOUNT.ID));
+        accountDisplayDTO.setAccount(record.get(TB_ACCOUNT.ACCOUNT_));
+        accountDisplayDTO.setAlias(record.get(TB_ACCOUNT.ALIAS));
+        accountDisplayDTO.setCategory(AccountCategoryEnum.valOf(record.get(TB_ACCOUNT.CATEGORY).intValue()));
+        accountDisplayDTO.setType(AccountTypeEnum.valueOf(record.get(TB_ACCOUNT.TYPE).intValue()));
+        accountDisplayDTO.setAppId(record.get(TB_ACCOUNT.APP_ID));
+        return accountDisplayDTO;
+    }
+
     private AccountDTO extract(Record record) {
         if (record == null) {
             return null;
@@ -171,7 +274,15 @@ public class AccountDAOImpl implements AccountDAO {
         account.setRemark(record.get(TB_ACCOUNT.REMARK));
         account.setOs(record.get(TB_ACCOUNT.OS));
         account.setPassword(record.get(TB_ACCOUNT.PASSWORD));
-        account.setDbPassword(record.get(TB_ACCOUNT.DB_PASSWORD));
+
+        // 解密DB账号密码
+        String encryptedDbPassword = record.get(TB_ACCOUNT.DB_PASSWORD);
+        String dbPassword = dbPasswordCryptoService.decryptDbPasswordIfNeeded(
+            account.getCategory(),
+            encryptedDbPassword
+        );
+
+        account.setDbPassword(dbPassword);
         account.setDbPort(record.get(TB_ACCOUNT.DB_PORT));
         account.setDbSystemAccountId(record.get(TB_ACCOUNT.DB_SYSTEM_ACCOUNT_ID));
         account.setCreator(record.get(TB_ACCOUNT.CREATOR));
@@ -183,7 +294,7 @@ public class AccountDAOImpl implements AccountDAO {
 
     @Override
     public void updateAccount(AccountDTO account) {
-        UpdateSetMoreStep update = ctx.update(TB_ACCOUNT)
+        UpdateSetMoreStep<AccountRecord> update = ctx.update(TB_ACCOUNT)
             .set(TB_ACCOUNT.GRANTEE, account.getGrantees())
             .set(TB_ACCOUNT.REMARK, account.getRemark())
             .set(TB_ACCOUNT.DB_PORT, account.getDbPort())
@@ -197,7 +308,10 @@ public class AccountDAOImpl implements AccountDAO {
             update.set(TB_ACCOUNT.PASSWORD, account.getPassword());
         }
         if (StringUtils.isNotEmpty(account.getDbPassword())) {
-            update.set(TB_ACCOUNT.DB_PASSWORD, account.getDbPassword());
+            update.set(TB_ACCOUNT.DB_PASSWORD, dbPasswordCryptoService.encryptDbPasswordIfNeeded(
+                account.getCategory(),
+                account.getDbPassword()
+            ));
         }
         update.where(TB_ACCOUNT.ID.eq(account.getId()))
             .execute();
@@ -210,12 +324,6 @@ public class AccountDAOImpl implements AccountDAO {
 
     private void deleteAccountHardly(Long accountId) {
         ctx.deleteFrom(TB_ACCOUNT)
-            .where(TB_ACCOUNT.ID.eq(accountId)).execute();
-    }
-
-    private void deleteAccountSoftly(Long accountId) {
-        ctx.update(TB_ACCOUNT)
-            .set(TB_ACCOUNT.IS_DELETED, UByte.valueOf(1))
             .where(TB_ACCOUNT.ID.eq(accountId)).execute();
     }
 
@@ -267,7 +375,7 @@ public class AccountDAOImpl implements AccountDAO {
 
         int start = baseSearchCondition.getStartOrDefault(0);
         int length = baseSearchCondition.getLengthOrDefault(10);
-        Result result =
+        Result<Record> result =
             ctx.select(ALL_FILED)
                 .from(TB_ACCOUNT)
                 .where(conditions)
@@ -295,7 +403,9 @@ public class AccountDAOImpl implements AccountDAO {
      */
     private long getPageAccountCount(Long appId, String keyword, BaseSearchCondition baseSearchCondition) {
         List<Condition> conditions = buildConditionList(appId, keyword, baseSearchCondition);
-        return ctx.selectCount().from(TB_ACCOUNT).where(conditions).fetchOne(0, Long.class);
+        Long count = ctx.selectCount().from(TB_ACCOUNT).where(conditions).fetchOne(0, Long.class);
+        assert count != null;
+        return count;
     }
 
 
@@ -304,7 +414,13 @@ public class AccountDAOImpl implements AccountDAO {
      */
     private long getPageAccountCount(AccountDTO accountQuery, BaseSearchCondition baseSearchCondition) {
         List<Condition> conditions = buildConditionList(accountQuery, baseSearchCondition);
-        return ctx.selectCount().from(TB_ACCOUNT).where(conditions).fetchOne(0, Long.class);
+        return countAccountByConditions(conditions);
+    }
+
+    private long countAccountByConditions(List<Condition> conditions) {
+        Long count = ctx.selectCount().from(TB_ACCOUNT).where(conditions).fetchOne(0, Long.class);
+        assert count != null;
+        return count;
     }
 
     private List<Condition> buildConditionList(AccountDTO accountQuery, BaseSearchCondition baseSearchCondition) {
@@ -330,6 +446,9 @@ public class AccountDAOImpl implements AccountDAO {
         if (StringUtils.isNotBlank(accountQuery.getLastModifyUser())) {
             conditions.add(TB_ACCOUNT.LAST_MODIFY_USER.like("%" + accountQuery.getLastModifyUser() + "%"));
         }
+        if (StringUtils.isNotBlank(accountQuery.getRemark())) {
+            conditions.add(TB_ACCOUNT.REMARK.like("%" + accountQuery.getRemark() + "%"));
+        }
         conditions.add(TB_ACCOUNT.APP_ID.eq(accountQuery.getAppId()));
         conditions.add(TB_ACCOUNT.IS_DELETED.eq(UByte.valueOf(0)));
 
@@ -338,7 +457,7 @@ public class AccountDAOImpl implements AccountDAO {
 
     private List<Condition> buildConditionList(Long appId, String keyword, BaseSearchCondition baseSearchCondition) {
         List<Condition> conditions = new ArrayList<>();
-        Condition condition = null;
+        Condition condition;
         if (keyword != null) {
             String likeKeyword = "%" + keyword + "%";
             condition = TB_ACCOUNT.ID.like(likeKeyword);
@@ -346,6 +465,7 @@ public class AccountDAOImpl implements AccountDAO {
             condition.or(TB_ACCOUNT.ALIAS.like(likeKeyword));
             condition.or(TB_ACCOUNT.CREATOR.like(likeKeyword));
             condition.or(TB_ACCOUNT.LAST_MODIFY_USER.like(likeKeyword));
+            condition.or(TB_ACCOUNT.REMARK.like(likeKeyword));
             conditions.add(condition);
         }
         conditions.add(TB_ACCOUNT.APP_ID.eq(appId));
@@ -353,7 +473,7 @@ public class AccountDAOImpl implements AccountDAO {
         return conditions;
     }
 
-    private List<Condition> genBaseConditions(Long appId, AccountCategoryEnum category) {
+    private List<Condition> genBaseConditions(Long appId, AccountCategoryEnum category, String account, String alias) {
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TB_ACCOUNT.IS_DELETED.eq(UByte.valueOf(0)));
         if (appId != null) {
@@ -362,19 +482,28 @@ public class AccountDAOImpl implements AccountDAO {
         if (category != null) {
             conditions.add(TB_ACCOUNT.CATEGORY.eq(JooqDataTypeUtil.getByteFromInteger(category.getValue())));
         }
+        if (StringUtils.isNotBlank(account)) {
+            conditions.add(TB_ACCOUNT.ACCOUNT_.eq(account));
+        }
+        if (StringUtils.isNotBlank(alias)) {
+            conditions.add(TB_ACCOUNT.ALIAS.eq(alias));
+        }
         return conditions;
     }
 
     @Override
-    public List<AccountDTO> listAllAppAccount(Long appId, AccountCategoryEnum category,
-                                              BaseSearchCondition baseSearchCondition) {
-        List<Condition> conditions = genBaseConditions(appId, category);
+    public List<AccountDTO> listAppAccount(Long appId,
+                                           AccountCategoryEnum category,
+                                           String account,
+                                           String alias,
+                                           BaseSearchCondition baseSearchCondition) {
+        List<Condition> conditions = genBaseConditions(appId, category, account, alias);
         return listAllAppAccount(conditions, baseSearchCondition);
     }
 
     @Override
-    public Integer countAllAppAccount(Long appId, AccountCategoryEnum category) {
-        List<Condition> conditions = genBaseConditions(appId, category);
+    public Integer countAppAccount(Long appId, AccountCategoryEnum category, String account, String alias) {
+        List<Condition> conditions = genBaseConditions(appId, category, account, alias);
         return countAllAppAccount(conditions);
     }
 
@@ -390,10 +519,10 @@ public class AccountDAOImpl implements AccountDAO {
 
     public List<AccountDTO> listAllAppAccount(Collection<Condition> conditions,
                                               BaseSearchCondition baseSearchCondition) {
-        SelectConditionStep select = ctx.select(ALL_FILED)
+        SelectConditionStep<Record> select = ctx.select(ALL_FILED)
             .from(TB_ACCOUNT)
             .where(conditions);
-        Result result = null;
+        Result<Record> result;
         if (baseSearchCondition == null) {
             result = select.fetch();
         } else {
@@ -409,9 +538,7 @@ public class AccountDAOImpl implements AccountDAO {
         }
         List<AccountDTO> accountDTOS = new ArrayList<>();
         if (result.size() != 0) {
-            result.into(record -> {
-                accountDTOS.add(extract(record));
-            });
+            result.into(record -> accountDTOS.add(extract(record)));
         }
         return accountDTOS;
     }
@@ -431,15 +558,9 @@ public class AccountDAOImpl implements AccountDAO {
     @Override
     public AccountDTO getAccount(Long appId, AccountCategoryEnum category, AccountTypeEnum type, String account,
                                  String alias) {
-        List<Condition> conditions = genBaseConditions(appId, category);
+        List<Condition> conditions = genBaseConditions(appId, category, account, alias);
         if (type != null) {
             conditions.add(TB_ACCOUNT.TYPE.eq(JooqDataTypeUtil.getByteFromInteger(type.getType())));
-        }
-        if (StringUtils.isNotBlank(account)) {
-            conditions.add(TB_ACCOUNT.ACCOUNT_.eq(account));
-        }
-        if (StringUtils.isNotBlank(alias)) {
-            conditions.add(TB_ACCOUNT.ALIAS.eq(alias));
         }
         Record record = ctx.select(ALL_FILED)
             .from(TB_ACCOUNT)
@@ -450,10 +571,17 @@ public class AccountDAOImpl implements AccountDAO {
 
     @Override
     public boolean isAccountRefByAnyScriptStep(Long accountId) {
-        TaskTemplateStepScript tb = TaskTemplateStepScript.TASK_TEMPLATE_STEP_SCRIPT;
-        Record record = ctx.select(tb.STEP_ID)
-            .from(tb)
-            .where(tb.EXECUTE_ACCOUNT.eq(ULong.valueOf(accountId)))
+        TaskTemplateStepScript tbStepScript = TaskTemplateStepScript.TASK_TEMPLATE_STEP_SCRIPT;
+        TaskTemplateStep tbStep = TaskTemplateStep.TASK_TEMPLATE_STEP;
+        TaskTemplate tbTemplate = TaskTemplate.TASK_TEMPLATE;
+        Record record = ctx.select(tbStepScript.STEP_ID)
+            .from(tbStepScript)
+            .join(tbStep)
+            .on(tbStepScript.STEP_ID.eq(tbStep.ID))
+            .join(tbTemplate)
+            .on(tbStep.TEMPLATE_ID.eq(tbTemplate.ID))
+            .where(tbStepScript.EXECUTE_ACCOUNT.eq(ULong.valueOf(accountId)))
+            .and(tbTemplate.IS_DELETED.eq(UByte.valueOf(0)))
             .limit(1)
             .fetchOne();
         return record != null;
@@ -461,10 +589,17 @@ public class AccountDAOImpl implements AccountDAO {
 
     @Override
     public boolean isAccountRefByAnyFileStep(Long accountId) {
-        TaskTemplateStepFile tb = TaskTemplateStepFile.TASK_TEMPLATE_STEP_FILE;
-        Record record = ctx.select(tb.STEP_ID)
-            .from(tb)
-            .where(tb.EXECUTE_ACCOUNT.eq(ULong.valueOf(accountId)))
+        TaskTemplateStepFile tbStepFile = TaskTemplateStepFile.TASK_TEMPLATE_STEP_FILE;
+        TaskTemplateStep tbStep = TaskTemplateStep.TASK_TEMPLATE_STEP;
+        TaskTemplate tbTemplate = TaskTemplate.TASK_TEMPLATE;
+        Record record = ctx.select(tbStepFile.STEP_ID)
+            .from(tbStepFile)
+            .join(tbStep)
+            .on(tbStepFile.STEP_ID.eq(tbStep.ID))
+            .join(tbTemplate)
+            .on(tbStep.TEMPLATE_ID.eq(tbTemplate.ID))
+            .where(tbStepFile.EXECUTE_ACCOUNT.eq(ULong.valueOf(accountId)))
+            .and(tbTemplate.IS_DELETED.eq(UByte.valueOf(0)))
             .limit(1)
             .fetchOne();
         return record != null;
@@ -472,10 +607,17 @@ public class AccountDAOImpl implements AccountDAO {
 
     @Override
     public boolean isAccountRefByAnySourceFile(Long accountId) {
-        TaskTemplateStepFileList tb = TaskTemplateStepFileList.TASK_TEMPLATE_STEP_FILE_LIST;
-        Record record = ctx.select(tb.STEP_ID)
-            .from(tb)
-            .where(tb.HOST_ACCOUNT.eq(ULong.valueOf(accountId)))
+        TaskTemplateStepFileList tbStepFileList = TaskTemplateStepFileList.TASK_TEMPLATE_STEP_FILE_LIST;
+        TaskTemplateStep tbStep = TaskTemplateStep.TASK_TEMPLATE_STEP;
+        TaskTemplate tbTemplate = TaskTemplate.TASK_TEMPLATE;
+        Record record = ctx.select(tbStepFileList.STEP_ID)
+            .from(tbStepFileList)
+            .join(tbStep)
+            .on(tbStepFileList.STEP_ID.eq(tbStep.ID))
+            .join(tbTemplate)
+            .on(tbStep.TEMPLATE_ID.eq(tbTemplate.ID))
+            .where(tbStepFileList.HOST_ACCOUNT.eq(ULong.valueOf(accountId)))
+            .and(tbTemplate.IS_DELETED.eq(UByte.valueOf(0)))
             .limit(1)
             .fetchOne();
         return record != null;
@@ -527,8 +669,12 @@ public class AccountDAOImpl implements AccountDAO {
     }
 
     private void updateDbPasswordAccount(DSLContext dsl, AccountDTO account) {
-        dsl.update(TB_ACCOUNT).set(TB_ACCOUNT.DB_PASSWORD, account.getDbPassword())
-            .where(TB_ACCOUNT.ID.eq(account.getId()))
+        dsl.update(TB_ACCOUNT).set(
+            TB_ACCOUNT.DB_PASSWORD, dbPasswordCryptoService.encryptDbPasswordIfNeeded(
+                account.getCategory(),
+                account.getDbPassword()
+            )
+        ).where(TB_ACCOUNT.ID.eq(account.getId()))
             .and(TB_ACCOUNT.CATEGORY.eq(JooqDataTypeUtil.getByteFromInteger(AccountCategoryEnum.DB.getValue())))
             .execute();
     }

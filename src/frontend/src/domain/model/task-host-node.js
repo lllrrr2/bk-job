@@ -26,52 +26,61 @@
 import I18n from '@/i18n';
 
 export default class TaskHostNode {
-    static isHostNodeInfoEmpty (hostNodeInfo) {
-        const { dynamicGroupList, ipList, topoNodeList } = hostNodeInfo;
-        return dynamicGroupList.length < 1
-            && ipList.length < 1
-            && topoNodeList.length < 1;
-    }
-    
-    constructor (payload = {}) {
-        this.variable = payload.variable || '';
-        this.hostNodeInfo = this.initHostNodeInfo(payload.hostNodeInfo || {});
-    }
-    
-    get isEmpty () {
-        const { dynamicGroupList, ipList, topoNodeList } = this.hostNodeInfo;
-        return !this.variable
-            && dynamicGroupList.length < 1
-            && ipList.length < 1
-            && topoNodeList.length < 1;
-    }
+  static isHostNodeInfoEmpty(hostNodeInfo) {
+    const {
+      dynamicGroupList,
+      hostList,
+      nodeList,
+      containerList,
+    } = hostNodeInfo;
 
-    get text () {
-        const { dynamicGroupList, ipList, topoNodeList } = this.hostNodeInfo;
-        const strs = [];
-        if (ipList.length > 0) {
-            strs.push(`${ipList.length} ${I18n.t('台主机.result')}`);
-        }
-        if (topoNodeList.length > 0) {
-            strs.push(`${topoNodeList.length} ${I18n.t('个节点.result')}`);
-        }
-        if (dynamicGroupList.length > 0) {
-            strs.push(`${dynamicGroupList.length} ${I18n.t('个分组.result')}`);
-        }
-        return strs.length > 0 ? strs.join('，') : '--';
-    }
+    return dynamicGroupList.length < 1
+            && hostList.length < 1
+            && nodeList.length < 1
+            && containerList.length < 1;
+  }
 
-    initHostNodeInfo (hostNodeInfo) {
-        const {
-            ipList,
-            dynamicGroupList,
-            topoNodeList,
-        } = hostNodeInfo;
+  constructor(payload = {}) {
+    this.variable = payload.variable || '';
+    this.hostNodeInfo = this.initHostNodeInfo(payload.hostNodeInfo || {});
+  }
 
-        return Object.freeze({
-            ipList: ipList || [],
-            dynamicGroupList: dynamicGroupList || [],
-            topoNodeList: topoNodeList || [],
-        });
+  get isEmpty() {
+    return !this.variable && TaskHostNode.isHostNodeInfoEmpty(this.hostNodeInfo);
+  }
+
+  get text() {
+    const {
+      dynamicGroupList,
+      hostList,
+      nodeList,
+    } = this.hostNodeInfo;
+    const strs = [];
+    if (hostList.length > 0) {
+      strs.push(`${hostList.length} ${I18n.t('台主机_result')}`);
     }
+    if (nodeList.length > 0) {
+      strs.push(`${nodeList.length} ${I18n.t('个节点_result')}`);
+    }
+    if (dynamicGroupList.length > 0) {
+      strs.push(`${dynamicGroupList.length} ${I18n.t('个分组_result')}`);
+    }
+    return strs.length > 0 ? strs.join('，') : '--';
+  }
+
+  initHostNodeInfo(hostNodeInfo) {
+    const {
+      hostList,
+      dynamicGroupList,
+      nodeList,
+      containerList,
+    } = hostNodeInfo;
+
+    return Object.freeze({
+      hostList: hostList || [],
+      dynamicGroupList: dynamicGroupList || [],
+      nodeList: nodeList || [],
+      containerList: containerList || [],
+    });
+  }
 }

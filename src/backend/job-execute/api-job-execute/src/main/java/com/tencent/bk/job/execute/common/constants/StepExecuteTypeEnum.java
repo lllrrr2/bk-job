@@ -28,8 +28,10 @@ package com.tencent.bk.job.execute.common.constants;
  * 步骤执行类型
  */
 public enum StepExecuteTypeEnum {
-    DEFAULT(0, "未定义"), EXECUTE_SCRIPT(1, "执行脚本"), SEND_FILE(2, "分发文件"), MANUAL_CONFIRM(3, "人工确认"), EXECUTE_SQL(4,
-        "执行SQL脚本");
+    EXECUTE_SCRIPT(1, "执行脚本"),
+    SEND_FILE(2, "分发文件"),
+    MANUAL_CONFIRM(3, "人工确认"),
+    EXECUTE_SQL(4, "执行SQL脚本");
 
     private final Integer value;
     private final String name;
@@ -39,13 +41,22 @@ public enum StepExecuteTypeEnum {
         this.name = name;
     }
 
-    public static StepExecuteTypeEnum valueOf(int type) {
+    public static StepExecuteTypeEnum valOf(int type) {
         for (StepExecuteTypeEnum stepType : values()) {
             if (stepType.getValue() == type) {
                 return stepType;
             }
         }
-        return DEFAULT;
+        throw new IllegalArgumentException("StepExecuteTypeEnum:" + type);
+    }
+
+    public static StepExecuteTypeEnum valOf(byte type) {
+        for (StepExecuteTypeEnum stepType : values()) {
+            if (stepType.getValue() == type) {
+                return stepType;
+            }
+        }
+        throw new IllegalArgumentException("StepExecuteTypeEnum:" + type);
     }
 
     public Integer getValue() {
